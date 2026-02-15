@@ -1,0 +1,15 @@
+[package]
+name = "bevy-prototyping"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.18.0"
+
+# Enable fast compiles for development (Bevy recommendation)
+# Disable when profiling or benchmarking
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
