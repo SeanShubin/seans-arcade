@@ -38,7 +38,7 @@ The critical design choice: Factorio could give you the solution earlier. The te
 
 - **Tutorials that teach mechanics before you need them.** "Press X to use your grappling hook!" But you haven't encountered a gap you can't cross yet, so the grappling hook is abstract information, not a relief.
 - **Skill trees that unlock abilities for areas you haven't reached.** You buy the swimming upgrade but haven't encountered water. When you find water, the upgrade is a checkbox you already ticked, not a discovery.
-- **Difficulty settings at the start.** The player hasn't experienced the game yet. They don't know what "Normal" means.
+- **Difficulty settings at the start.** The player hasn't experienced the game yet. They don't know what "Normal" means. (Exception: difficulty framed as emotional posture toward uncertainty — "how cautious are you?" — works because it describes the player's tolerance for not-yet-knowing, which is the one thing they DO understand. See [discovered-contract.md](discovered-contract.md).)
 
 The solution feels like nothing when delivered before the pain. It feels like everything when delivered after.
 

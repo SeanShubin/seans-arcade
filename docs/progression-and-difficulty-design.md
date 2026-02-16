@@ -91,6 +91,26 @@ They form a spectrum of how much the designer controls the experience vs how muc
 | Low | High | Breath of the Wild - almost everything optional |
 | None | Total | Challenge runs - player invents their own rules |
 
+## 6. Difficulty as Error Budget (Discovery-Phase Difficulty)
+
+A distinct approach from all of the above: difficulty controls how much the learning process hurts, not how hard the game is once learned.
+
+When a game hides its rules and the player discovers them through play (see [discovered-contract.md](discovered-contract.md)), every early action is an uninformed decision with unknown cost. Difficulty doesn't adjust enemy stats, puzzle complexity, or resource scarcity. It adjusts how many costly uninformed decisions the player can survive before they've learned enough to make informed ones.
+
+- **Cautious (easy):** wide error margin. Multiple expensive discoveries can be absorbed. The player has a long runway to learn.
+- **Daring (hard):** narrow error margin. Every discovery matters immediately. Misreading a visual cue could end the game.
+
+This is NOT the anti-pattern of difficulty settings at the start ("the player doesn't know what Normal means"). The player doesn't need to understand the game to answer "how cautious are you?" — the framing describes emotional posture toward uncertainty, not mechanical tuning. It works because the one thing every player knows at the start is that they don't know the rules.
+
+By late game, cautious and daring players converge — both know the rules, both have power. Knowledge replaces the difficulty buffer as the player's protection against bad outcomes. Difficulty mattered most when knowledge was lowest.
+
+| Difficulty type | What it adjusts | When it matters most | Example |
+|----------------|----------------|---------------------|---------|
+| Challenge scaling | Enemy stats, puzzle complexity | Throughout the game | Most action games |
+| Soft gating | Cost of deviating from intended path | When exploring off the critical path | Mega Man |
+| Self-imposed constraints | Player removes axes of power | Late game, after mastery | Challenge runs |
+| Error budget | Tolerance for uninformed decisions | Early game, during discovery | Vantage |
+
 ## For Implementation
 
 In Bevy terms, a key-lock system is:

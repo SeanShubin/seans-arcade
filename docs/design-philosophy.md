@@ -60,6 +60,8 @@ The player should feel clever, observant, or creative - genuinely, not as a manu
 
 **The reasoning test.** Target reaction: "I should have seen that sooner." Design failure: "How was I supposed to know that?" Every discoverable thing needs a hint, even a subtle one.
 
+**The deepest form: rules as discovery.** Some games hide not just secrets within the rules, but the rules themselves. The player discovers how the game works through play, and each discovered rule transforms how they evaluate all future actions. When the rules are the content, the knowledge progression axis dominates early game. See [discovered-contract.md](discovered-contract.md).
+
 ---
 
 ## 4. Pain Before Relief
@@ -108,6 +110,8 @@ The player maintains an internal ledger of effort vs reward. When it balances, t
 **Readable difficulty.** Visual language communicates threat: enemy size, color, environmental hostility. "That looks too hard right now, I'll come back stronger" is a valid and satisfying decision.
 
 **Parallel solutions don't invalidate each other.** The grinder shouldn't feel stupid for not finding the shortcut. The explorer shouldn't feel they missed the grind rewards. Different paths give laterally equivalent rewards, not the same reward at different cost.
+
+**The contract can evolve.** Some designs intentionally start with an incomplete fairness contract — the player can't fully reason about outcomes because the rules are still being discovered. This is fair when: the stakes match the information (low knowledge = bounded downside), visual cues provide partial reasoning, and the contract tightens as the player learns. See [discovered-contract.md](discovered-contract.md).
 
 ---
 
@@ -206,6 +210,7 @@ Games may have adversarial mechanics (competition, PvP, territory control), but 
 | Does this choice have visible, irrevocable, remembered consequences? | Meaningful choice |
 | Is every second spent here worthwhile? | Time respect |
 | Are we paying any technical cost to prevent cheating? | Player trust |
+| If rules are hidden, do stakes match the player's current knowledge? | Discovered contract |
 
 ---
 

@@ -49,6 +49,8 @@ What the player knows about the world: secret passages, enemy weaknesses, optima
 
 This axis respects attention. "I noticed the cracked wall, I read the old man's hint, I tried using the lantern on the dark room." They were paying attention, and the game rewarded it.
 
+**Deeper form: knowledge of rules.** Most games assume the player knows the rules and discovers secrets within them (hidden passages, enemy weaknesses). Some designs hide the rules themselves — the player discovers how the game works through play. Knowledge of rules is the most powerful form because it's transferable: learning one rule calibrates your judgment for ALL future decisions, not just the specific situation. When rules are the discovery content, the knowledge axis dominates early game and the other axes become relevant once the player knows enough to use them strategically. See [discovered-contract.md](discovered-contract.md).
+
 ## How The Axes Interact
 
 The magic happens when the axes substitute for each other:
