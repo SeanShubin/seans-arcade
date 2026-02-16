@@ -169,6 +169,25 @@ A choice is meaningful only when the world visibly changes, the decision can't b
 
 ---
 
+## 11. Trust Between Players
+
+Games may have adversarial mechanics (competition, PvP, territory control), but the architecture assumes all players are acting in good faith. Distrust between players is a game mechanic, not a technical reality.
+
+**No cost for distrust.** The game should never spend processing power, bandwidth, or architectural complexity on the assumption that players are trying to cheat or corrupt each other's experience. Server-authoritative architectures that exist primarily to prevent cheating are paying a permanent tax for a problem that doesn't exist in a trusted group.
+
+**Prefer P2P deterministic simulation.** When all players are trusted, every client can run the full simulation independently. Only inputs need to travel over the network. This minimizes bandwidth and eliminates the need for a powerful central server. A lightweight coordinator orders inputs; every client computes the world state from those inputs.
+
+**Determinism is an engineering discipline, not a trust mechanism.** Ensuring all clients arrive at the same game state is a correctness problem, not a security problem. Checksums detect accidental drift from hardware or floating-point differences, not malicious manipulation.
+
+**Implications:**
+- No input validation on a central server — clients are trusted to send legitimate inputs
+- No server-side simulation to "check" client results
+- No bandwidth spent on state snapshots that exist only to override client predictions
+- Anti-cheat is not a design consideration
+- If competitive integrity matters, it's solved socially (playing with friends, community norms), not technically
+
+---
+
 ## Design Decision Checklist
 
 | Question | Violated principle |
@@ -184,6 +203,7 @@ A choice is meaningful only when the world visibly changes, the decision can't b
 | Does this moment complement what came before? | Pacing |
 | Does this choice have visible, irrevocable, remembered consequences? | Meaningful choice |
 | Is every second spent here worthwhile? | Time respect |
+| Are we paying any technical cost to prevent cheating? | Player trust |
 
 ---
 
