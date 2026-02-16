@@ -1,5 +1,5 @@
 [workspace]
-members = []
+members = ["crates/relay", "crates/net_pong"]
 
 [package]
 name = "bevy-prototyping"
