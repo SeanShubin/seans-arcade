@@ -1,5 +1,7 @@
 # Network Multiplayer in Bevy
 
+Architecture and concepts for the lockstep relay networking model. For the key decisions and their rationale, see [architecture-decisions.md](architecture-decisions.md). For operations (diagnostics, debugging, deployment, persistence, connection handling), see [network-operations.md](network-operations.md).
+
 ## Terminology
 
 The networking pattern we prefer (see design philosophy #11) is **deterministic lockstep with a relay server**. The pieces:
@@ -64,6 +66,110 @@ All crates provide Bevy plugins that register systems into schedules:
 **Client each frame:** capture local input → send to server → apply local prediction (immediate feel) → receive server state → reconcile (if prediction was wrong, roll back and re-simulate) → interpolate remote entities (other players shown slightly behind, smoothed between snapshots)
 
 **P2P each frame:** exchange inputs with peers → simulate locally → if late input contradicts prediction, roll back and re-simulate forward
+
+## How Lockstep Relay Works
+
+A progressive walkthrough of the networking concepts specific to our chosen strategy (deterministic lockstep with a relay server). Later sections go deeper on individual topics; this section shows how they fit together.
+
+### The Fundamental Problem
+
+Two players on different machines need to see the same game. Data takes time to travel between them. Everything else follows from this.
+
+### Ticks: A Shared Clock That Isn't a Clock
+
+The simulation doesn't advance in real-world time — it advances in **ticks**. Tick 150 means "the game state after 150 simulation steps." Every client agrees on what tick 150 means in terms of game state, but they don't process tick 150 at the same wall-clock moment.
+
+This is the foundation. Without a shared logical clock, you can't even talk about whether two machines agree. See [Logical Clocks and Frame Agreement](#logical-clocks-and-frame-agreement) for how different architectures handle tick synchronization.
+
+### The Relay Server: Ordering, Not Simulating
+
+The relay server solves one specific problem: **input ordering**. If player A presses "up" and player B presses "left" during tick 50, every client needs to process those inputs in the same order. The relay collects inputs from all clients, stamps them with a tick number, and broadcasts the canonical package.
+
+The relay has no game state. It doesn't know what "up" means. It's a mailbox that ensures everyone reads the same letters in the same order. If it crashes, any client could become the new relay because the relay holds nothing. See [Who Coordinates Inputs in P2P?](#who-coordinates-inputs-in-p2p) for coordination topology options.
+
+### Determinism: Same Inputs, Same State
+
+Since every client runs the full simulation, they must all produce **identical results** from identical inputs. Not "approximately the same" — bit-for-bit identical.
+
+Where this breaks: floating-point transcendentals (`sin`, `cos`) can return slightly different results on different hardware. A difference of 0.000001 on tick 50 compounds into a completely different world by tick 500. See [Why Not Just Share Inputs?](#why-not-just-share-inputs-the-determinism-problem) for what breaks determinism and [Making P2P Determinism Practical](#making-p2p-determinism-practical) for the mitigation strategy.
+
+### The Latency Problem
+
+The round trip from client to relay and back takes time — say 50ms. Without any mitigation:
+
+1. You press "move right" on tick 100
+2. Your input travels to the relay (~25ms)
+3. The relay broadcasts it to everyone (~25ms)
+4. Everyone (including you) applies it on tick 100
+5. **You see your own action 50ms after you pressed the button**
+
+At 60 ticks/second, that's 3 ticks of delay before your own input takes effect. This feels sluggish.
+
+### Latency Hiding: Prediction Without Rollback
+
+Our strategy uses Factorio's approach, which is distinct from rollback. The difference matters.
+
+**Rollback** (used in P2P fighting games via GGRS) means the authoritative simulation advances using predicted inputs, then **rewinds and re-simulates** when the real input arrives and contradicts the prediction. The authoritative state is temporarily wrong and must be corrected.
+
+**Latency hiding** (our model) never lets the authoritative state be wrong. Instead, each client maintains two separate states:
+
+| State | What it is | What it's for |
+|-------|-----------|---------------|
+| **Authoritative state** | The simulation using only confirmed inputs (received back from the relay) | The "real" game state — identical on every client |
+| **Latency state** | Authoritative state + unconfirmed local inputs replayed on top | What the player sees on screen — feels responsive |
+
+Each tick:
+1. Advance the authoritative state using the latest confirmed input package from the relay
+2. Copy the authoritative state
+3. Replay all unconfirmed local inputs on top of the copy
+4. Render the latency state
+
+When the relay confirms an input, it enters the authoritative state and is removed from the unconfirmed list. The latency state and authoritative state converge naturally. Nothing is rewound. The latency state is disposable — rebuilt fresh every tick.
+
+### Input Buffering: Absorbing Jitter
+
+Network latency isn't constant. One packet takes 20ms, the next takes 45ms. If the simulation stalls whenever an input packet is late, the game stutters.
+
+**Input buffering** means sending inputs a few ticks early. If the round-trip time is ~50ms (3 ticks), inputs are sent 4-5 ticks ahead. The relay collects them and has them ready before they're needed. The extra tick or two absorbs jitter — a delayed packet still arrives in time.
+
+The tradeoff: more buffering = smoother play but slightly more input delay. Less buffering = more responsive but more risk of stalls.
+
+### Stalls vs. Dropping: What Happens When Someone Lags
+
+In pure lockstep, if one player's input for tick 200 hasn't arrived, **nobody simulates tick 200**. One slow connection freezes everyone. This is why pure P2P lockstep caps at ~24 players.
+
+The relay model (following Factorio's evolution) solves this: if a player's input is missing, the relay **omits it** rather than stalling. The slow player's character just doesn't act that tick. Everyone else keeps going. The slow player catches up by processing multiple ticks in one frame when their connection recovers.
+
+### Checksums: Trust But Verify
+
+Even with all the determinism precautions, bugs happen. Every 30-60 ticks, each client hashes its authoritative game state and sends the hash through the relay. 8 bytes — negligible bandwidth. If hashes match, everything is fine. If they diverge, it's a determinism bug to find and fix. See [State Checksums: Detecting Drift](#state-checksums-detecting-drift) for implementation details.
+
+### One Tick, End to End
+
+Putting it all together — what one client does each tick:
+
+```
+1. Receive confirmed input package from relay for tick N
+2. Advance authoritative state: tick N-1 → tick N
+3. Capture local input for tick N + buffer_size
+4. Send local input to relay
+5. Rebuild latency state:
+   a. Copy authoritative state
+   b. Replay all unconfirmed local inputs on top
+6. Render the latency state
+7. If checksum tick: hash authoritative state, send to relay
+```
+
+Every client does this identically (except step 3, which captures that player's local inputs). The authoritative states converge. The latency states differ per player (each sees their own unconfirmed inputs predicted). The relay just keeps the mail flowing.
+
+### Concepts That Don't Apply to This Strategy
+
+These are relevant to other networking architectures but not to lockstep relay:
+
+- **Client-side prediction (server-authoritative sense)** — where the server can override the client's predicted state. In our model, the authoritative state is never wrong, so there's nothing to override.
+- **Rollback / re-simulation of authoritative state** — the authoritative state only advances with confirmed inputs. The latency state is rebuilt fresh, not rolled back.
+- **State replication** — sending entity data (positions, health, etc.) over the wire. Only inputs travel over the network; each client computes entity state locally.
+- **Interpolation of remote entities** — smoothing other players' positions between state snapshots. Every client runs the full simulation, so remote entities are already at their correct positions.
 
 ## Logical Clocks and Frame Agreement
 
@@ -440,62 +546,7 @@ The coordinator adds maybe 1-2% overhead on top of what the host is already doin
 
 For cooperative, non-adversarial games, the host's latency advantage is imperceptible. In competitive PvP it could matter — but if trust between players is assumed (see design philosophy), this is a non-issue.
 
-### Host Disconnection
-
-- **Simple approach:** Game ends. Someone else hosts from a save file. Disruptive but easy.
-- **Host migration:** Another client takes over as coordinator. Straightforward since the coordinator has no simulation state — just redirect input packets to the new host. Every client already has the full game state, so the simulation continues uninterrupted.
-
-## Connecting Over the Internet
-
-With the relay lockstep model, NAT (routers blocking incoming connections) is a non-issue. Both clients make **outbound** connections to the relay server, and NAT routers allow outbound connections freely. The problem NAT creates — unsolicited incoming packets getting dropped — never applies because nobody connects directly to another player.
-
-**Setup:**
-1. Deploy a small Rust binary on a cheap cloud VM (~$4-6/month) with a public IP
-2. The relay is a plain UDP socket application — no web server, no HTTP, no browser, no database. Just receives and forwards packets.
-3. Players launch the game client, type in the relay's IP address (or domain name if you register one), and play. All coordination is invisible to the player.
-4. Relay assigns player slots, merges inputs per tick, and forwards to all clients. No game logic.
-
-For pong, total network traffic is ~540 bytes/second. The relay uses a negligible fraction of even the cheapest VM.
-
-**Hosting options:** Any cheap VM works. AWS Lightsail (~$3.50/month), DigitalOcean/Vultr (~$4-6/month), or Fly.io (free tier may suffice). Lambda/serverless does NOT work — the relay needs a persistent UDP socket, not per-request invocations.
-
-**Packaging:** A single compiled Rust binary with no dependencies. Can deploy as a bare binary or in a Docker container. Container adds auto-restart (`--restart=always`) and repeatable deployment for minimal extra effort. Required if using Fly.io. Either approach works on a plain VM.
-
-## Project Structure for Networked Examples
-
-Standalone examples (single-file, run with `cargo run --example`) stay in `examples/`. Networked examples that need separate binaries (relay server + game client) live as workspace crates under `crates/`.
-
-```
-bevy-prototyping/
-├── Cargo.toml              # root [package] + [workspace]
-├── src/lib.rs              # shared utilities
-├── examples/               # standalone examples (cargo run --example pong)
-│   ├── pong.rs
-│   ├── neon_pong.rs
-│   └── ...
-├── crates/                 # multi-crate workspace members
-│   ├── relay/              # relay server (game-agnostic input coordinator)
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── main.rs     # binary entry point
-│   │       └── lib.rs      # shared protocol types (messages, tick types)
-│   └── net_pong/           # networked pong client
-│       ├── Cargo.toml
-│       └── src/main.rs
-```
-
-| Command | What it runs |
-|---------|-------------|
-| `cargo run --example pong` | Standalone pong (unchanged) |
-| `cargo run -p relay` | Relay server |
-| `cargo run -p net_pong` | Networked pong client |
-| `cargo clippy --workspace -- -D warnings` | Lint everything |
-
-### Game-Agnostic Relay
-
-The relay server knows nothing about pong, health bars, or any game concept. It coordinates **opaque input bytes** organized by tick and player slot. Any game that implements the same message protocol can reuse the same relay binary. The game-specific logic lives entirely in the client crate (e.g., `net_pong`).
-
-The relay's `lib.rs` exports the shared protocol types (message enums, tick ID, player slot) so both the relay and client crates can depend on them without duplicating definitions.
+For connection disruptions (player leave, host migration, player join mid-game), deployment, persistent state, diagnostics, and debugging, see [network-operations.md](network-operations.md).
 
 ## Quick Recommendation
 
