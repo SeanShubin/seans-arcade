@@ -5,7 +5,9 @@
 //! Connect one or two gamepads to see live analog stick, trigger, and button
 //! values displayed side by side. Useful for diagnosing local multiplayer setups.
 
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
 fn main() {
     App::new()
@@ -21,7 +23,12 @@ struct DualInputDisplayPlugin;
 
 impl Plugin for DualInputDisplayPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((DualGamepadInputPlugin, DualInputDisplayUiPlugin));
+        app.add_plugins((
+            DualGamepadInputPlugin,
+            MouseInputPlugin,
+            WindowInfoPlugin,
+            DualInputDisplayUiPlugin,
+        ));
     }
 }
 
@@ -119,8 +126,14 @@ struct DualInputDisplayUiPlugin;
 
 impl Plugin for DualInputDisplayUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_ui)
-            .add_systems(Update, update_display.after(read_gamepad_input));
+        app.add_systems(Startup, setup_ui).add_systems(
+            Update,
+            (
+                update_display.after(read_gamepad_input),
+                update_mouse_display.after(read_mouse_input),
+                update_window_display.after(read_window_info),
+            ),
+        );
     }
 }
 
@@ -130,48 +143,83 @@ struct GamepadDisplayText {
 }
 
 const FONT_SIZE: f32 = 20.0;
+const GRID_GAP: f32 = 10.0;
+const GRID_MARGIN: f32 = 10.0;
+const BORDER_WIDTH: f32 = 2.0;
+const PANEL_PADDING: f32 = 12.0;
+const BORDER_COLOR: Color = Color::srgb(0.4, 0.4, 0.4);
 
-// Layout derivation: position columns so they cannot overlap.
-//
-// Widest content line (characters):
-//   "Connect a controller to see input values." = 42 chars
-//   "Left Stick   X: -1.000  Y: -1.000"        = 34 chars
-//   "  L [##########]  R [##########]"           = 32 chars
-//
-// Bevy's default font at a given size has approximately 0.6x character width,
-// so each character is roughly (FONT_SIZE * 0.6) pixels wide.
-const MAX_CONTENT_CHARS: f32 = 42.0;
-const ESTIMATED_CHAR_WIDTH: f32 = FONT_SIZE * 0.6;
-const ESTIMATED_COLUMN_WIDTH: f32 = MAX_CONTENT_CHARS * ESTIMATED_CHAR_WIDTH;
-const COLUMN_GAP: f32 = 40.0;
-const MARGIN: f32 = 20.0;
-
-const LEFT_COLUMN_X: f32 = MARGIN;
-const RIGHT_COLUMN_X: f32 = MARGIN + ESTIMATED_COLUMN_WIDTH + COLUMN_GAP;
-const COLUMN_TOP: f32 = 20.0;
+fn panel_node() -> Node {
+    Node {
+        border: UiRect::all(Val::Px(BORDER_WIDTH)),
+        padding: UiRect::all(Val::Px(PANEL_PADDING)),
+        ..default()
+    }
+}
 
 fn setup_ui(mut commands: Commands) {
     commands.spawn(Camera2d);
 
-    let column_positions = [LEFT_COLUMN_X, RIGHT_COLUMN_X];
+    let grid_root = commands
+        .spawn(Node {
+            display: Display::Grid,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            padding: UiRect::all(Val::Px(GRID_MARGIN)),
+            grid_template_columns: vec![GridTrack::flex(1.0); 4],
+            grid_template_rows: vec![GridTrack::flex(1.0)],
+            column_gap: Val::Px(GRID_GAP),
+            row_gap: Val::Px(GRID_GAP),
+            ..default()
+        })
+        .id();
 
-    for (index, &x_offset) in column_positions.iter().enumerate() {
+    for index in 0..GAMEPAD_COUNT {
         let gamepad_number = index + 1;
         let header = format!("Gamepad {gamepad_number}: No gamepad detected");
 
-        commands.spawn((
-            Text::new(header),
+        let panel = commands
+            .spawn((panel_node(), BorderColor::all(BORDER_COLOR)))
+            .id();
+        let text = commands
+            .spawn((
+                Text::new(header),
+                TextFont::from_font_size(FONT_SIZE),
+                TextColor::WHITE,
+                GamepadDisplayText { index },
+            ))
+            .id();
+        commands.entity(panel).add_child(text);
+        commands.entity(grid_root).add_child(panel);
+    }
+
+    let mouse_panel = commands
+        .spawn((panel_node(), BorderColor::all(BORDER_COLOR)))
+        .id();
+    let mouse_text = commands
+        .spawn((
+            Text::new("Mouse\n\nWaiting for input..."),
             TextFont::from_font_size(FONT_SIZE),
             TextColor::WHITE,
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(COLUMN_TOP),
-                left: Val::Px(x_offset),
-                ..default()
-            },
-            GamepadDisplayText { index },
-        ));
-    }
+            MouseDisplayText,
+        ))
+        .id();
+    commands.entity(mouse_panel).add_child(mouse_text);
+    commands.entity(grid_root).add_child(mouse_panel);
+
+    let window_panel = commands
+        .spawn((panel_node(), BorderColor::all(BORDER_COLOR)))
+        .id();
+    let window_text = commands
+        .spawn((
+            Text::new("Window\n\nLoading..."),
+            TextFont::from_font_size(FONT_SIZE),
+            TextColor::WHITE,
+            WindowDisplayText,
+        ))
+        .id();
+    commands.entity(window_panel).add_child(window_text);
+    commands.entity(grid_root).add_child(window_panel);
 }
 
 fn update_display(
@@ -273,6 +321,188 @@ fn trigger_bar(left: f32, right: f32) -> String {
 
     format!("  L {left_bar}  R {right_bar}")
 }
+
+// ---------------------------------------------------------------------------
+// Mouse input plugin: reads mouse state into a resource
+// ---------------------------------------------------------------------------
+
+struct MouseInputPlugin;
+
+impl Plugin for MouseInputPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<MouseInputState>()
+            .add_systems(Update, read_mouse_input);
+    }
+}
+
+#[derive(Resource, Default)]
+struct MouseInputState {
+    cursor_position: Option<Vec2>,
+    world_position: Option<Vec2>,
+    left_button: bool,
+    right_button: bool,
+    middle_button: bool,
+    scroll_delta: Vec2,
+}
+
+fn read_mouse_input(
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
+    mut scroll_events: MessageReader<MouseWheel>,
+    mut state: ResMut<MouseInputState>,
+) {
+    let cursor_pos = windows.single().ok().and_then(|w| w.cursor_position());
+    state.cursor_position = cursor_pos;
+
+    state.world_position = cursor_pos.and_then(|pos| {
+        let (cam, transform) = camera.single().ok()?;
+        cam.viewport_to_world_2d(transform, pos).ok()
+    });
+
+    state.left_button = buttons.pressed(MouseButton::Left);
+    state.right_button = buttons.pressed(MouseButton::Right);
+    state.middle_button = buttons.pressed(MouseButton::Middle);
+
+    let mut scroll = Vec2::ZERO;
+    for event in scroll_events.read() {
+        scroll.x += event.x;
+        scroll.y += event.y;
+    }
+    state.scroll_delta = scroll;
+}
+
+#[derive(Component)]
+struct MouseDisplayText;
+
+fn format_mouse_display(state: &MouseInputState) -> String {
+    let format_pos = |pos: Option<Vec2>| match pos {
+        Some(p) => format!("X: {:>7.1}  Y: {:>7.1}", p.x, p.y),
+        None => "X:     ---  Y:     ---".to_string(),
+    };
+
+    let cursor = format_pos(state.cursor_position);
+    let world = format_pos(state.world_position);
+
+    let btn = |name: &str, pressed: bool| -> String {
+        if pressed {
+            format!("[{name}]")
+        } else {
+            format!(" {name} ")
+        }
+    };
+
+    format!(
+        "Mouse\n\
+         \n\
+         Cursor   {cursor}\n\
+         World    {world}\n\
+         \n\
+         Buttons  {}  {}  {}\n\
+         \n\
+         Scroll   X: {:>6.2}  Y: {:>6.2}",
+        btn("Left", state.left_button),
+        btn("Mid", state.middle_button),
+        btn("Right", state.right_button),
+        state.scroll_delta.x,
+        state.scroll_delta.y,
+    )
+}
+
+fn update_mouse_display(
+    mouse_state: Res<MouseInputState>,
+    mut query: Query<&mut Text, With<MouseDisplayText>>,
+) {
+    for mut text in &mut query {
+        **text = format_mouse_display(&mouse_state);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Window info plugin: reads window properties into a resource
+// ---------------------------------------------------------------------------
+
+struct WindowInfoPlugin;
+
+impl Plugin for WindowInfoPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<WindowInfoState>()
+            .add_systems(Update, read_window_info);
+    }
+}
+
+#[derive(Resource, Default)]
+struct WindowInfoState {
+    logical_size: Vec2,
+    physical_width: u32,
+    physical_height: u32,
+    position: Option<IVec2>,
+    mode: String,
+    focused: bool,
+    scale_factor: f32,
+}
+
+fn read_window_info(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut state: ResMut<WindowInfoState>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+
+    state.logical_size = Vec2::new(window.width(), window.height());
+    state.physical_width = window.physical_width();
+    state.physical_height = window.physical_height();
+    state.position = match window.position {
+        WindowPosition::At(pos) => Some(pos),
+        _ => None,
+    };
+    state.mode = format!("{:?}", window.mode);
+    state.focused = window.focused;
+    state.scale_factor = window.scale_factor();
+}
+
+#[derive(Component)]
+struct WindowDisplayText;
+
+fn format_window_display(state: &WindowInfoState) -> String {
+    let position = match state.position {
+        Some(pos) => format!("X: {}  Y: {}", pos.x, pos.y),
+        None => "Automatic".to_string(),
+    };
+
+    format!(
+        "Window\n\
+         \n\
+         Logical   {:.0} x {:.0}\n\
+         Physical  {} x {}\n\
+         \n\
+         Position  {position}\n\
+         Mode      {}\n\
+         Focused   {}\n\
+         Scale     {:.2}",
+        state.logical_size.x,
+        state.logical_size.y,
+        state.physical_width,
+        state.physical_height,
+        state.mode,
+        state.focused,
+        state.scale_factor,
+    )
+}
+
+fn update_window_display(
+    window_state: Res<WindowInfoState>,
+    mut query: Query<&mut Text, With<WindowDisplayText>>,
+) {
+    for mut text in &mut query {
+        **text = format_window_display(&window_state);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gamepad display formatting helpers
+// ---------------------------------------------------------------------------
 
 fn format_buttons(buttons: &GamepadButtonStates) -> String {
     let btn = |name: &str, pressed: bool| -> String {
