@@ -1,9 +1,9 @@
-//! Displays detected gamepad input values from 2 controllers simultaneously.
+//! Displays live input and window state in a four-panel dashboard.
 //!
-//! Run with: `cargo run --example dual_input_display`
+//! Run with: `cargo run --example dashboard`
 //!
-//! Connect one or two gamepads to see live analog stick, trigger, and button
-//! values displayed side by side. Useful for diagnosing local multiplayer setups.
+//! Shows gamepad input (2 controllers), mouse state, and window info
+//! side by side. Useful for diagnosing input and display configuration.
 
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
