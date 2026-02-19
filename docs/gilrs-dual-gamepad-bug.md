@@ -106,19 +106,37 @@ This is a known issue tracked in Bevy: https://github.com/bevyengine/bevy/issues
 
 The WGI backend reports three events (connected, disconnected, connected) when a gamepad connects after startup. Pre-connected gamepads may not all be enumerated.
 
-## Possible Fixes
+## Possible Fixes Considered
 
 | Approach | Pros | Cons |
 |---|---|---|
-| Switch to XInput backend via Cargo feature | Reliable, proven, simple | Max 4 controllers, Xbox-only |
-| Debounce connection events in application code | No dependency changes | Adds complexity, introduces delay |
+| Switch to XInput backend via Cargo feature | Reliable, proven, simple | Bevy doesn't expose the feature; gilrs `wgi` and `xinput` are mutually exclusive and require patching gilrs locally |
+| Debounce connection events in application code | No dependency changes | Adds complexity, introduces delay, and doesn't fix the startup case (no event to debounce) |
 | Upgrade gilrs when a fix lands upstream | Proper fix at the right layer | Not available yet |
+| **Bypass gilrs entirely, call XInput directly via FFI** | Zero new dependencies, reliable, simple | Max 4 controllers, Xbox-only, Windows-only |
 
-## Current Mitigations in Dashboard
+### Why Debouncing Doesn't Work
 
-1. **UI messaging:** The disconnected panel now shows the total gamepad entity count seen by the engine and suggests unplugging/replugging
-2. **Diagnostic logging:** `log_gamepad_connections` and `log_gamepad_count` systems print connection events and entity count changes to the console
+Debouncing only helps when events arrive but in the wrong sequence. At startup, gilrs never fires a connection event for the second controller at all -- there is nothing to debounce. Debouncing would only help with the replug scenario, not the startup scenario.
 
-## Status
+### Why Cargo Feature Switching Is Hard
 
-Investigating. No fix applied yet -- deciding between XInput backend switch and application-level debouncing.
+- `bevy_gilrs` depends on `gilrs` with default features (which enables `wgi`)
+- `gilrs` features `wgi` and `xinput` are mutually exclusive (`compile_error!` if both enabled)
+- Cargo feature unification means adding `gilrs` with `xinput` alongside bevy's `wgi` causes a build failure
+- Would require patching `gilrs` locally via `[patch.crates-io]` just to change one default feature line
+
+## Resolution
+
+Bypassed gilrs entirely in `examples/dashboard.rs`. The gamepad section now loads `xinput1_4.dll` (falling back to `xinput9_1_0.dll`) at runtime via `LoadLibraryA`/`GetProcAddress` and polls XInput controller slots directly each frame.
+
+This approach:
+- Uses zero new crate dependencies
+- Loads the DLL at runtime (no Windows SDK lib files needed at link time)
+- Polls slots 0..N directly -- no event system, no device enumeration race conditions
+- Both controllers detected immediately at startup, confirmed working
+
+## Files
+
+- `examples/dashboard.rs` -- current version, uses raw XInput FFI
+- `examples/dashboard_gilrs_debug.rs` -- preserved copy with gilrs diagnostic logging (`log_gamepad_connections`, `log_gamepad_count`) for future gilrs debugging if needed
