@@ -623,7 +623,7 @@ fn key(label: &str, pressed: bool, width: usize) -> String {
         return " ".repeat(width);
     }
     let inner_width = width.saturating_sub(2);
-    let pad_total = inner_width.saturating_sub(label.len());
+    let pad_total = inner_width.saturating_sub(label.chars().count());
     let pad_left = pad_total / 2;
     let pad_right = pad_total - pad_left;
     if pressed {
@@ -648,7 +648,7 @@ fn key(label: &str, pressed: bool, width: usize) -> String {
 fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
     use KeyCode::*;
     vec![
-        // Function key row
+        // Function key row + PrtSc/ScrLk/Pause + numpad top
         vec![
             ("Esc", Escape, 5),
             ("", Escape, 2), // spacer
@@ -666,8 +666,12 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             ("F10", F10, 5),
             ("F11", F11, 5),
             ("F12", F12, 5),
+            ("", Escape, 2), // spacer
+            ("PrS", PrintScreen, 5),
+            ("SLk", ScrollLock, 5),
+            ("Pau", Pause, 5),
         ],
-        // Number row
+        // Number row + nav cluster + numpad row 1
         vec![
             ("`", Backquote, 4),
             ("1", Digit1, 4),
@@ -683,8 +687,17 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             ("-", Minus, 4),
             ("=", Equal, 4),
             ("Bksp", Backspace, 6),
+            ("", Escape, 2), // spacer
+            ("Ins", Insert, 5),
+            ("Hom", Home, 5),
+            ("PUp", PageUp, 5),
+            ("", Escape, 2), // spacer
+            ("NLk", NumLock, 4),
+            ("N/", NumpadDivide, 4),
+            ("N*", NumpadMultiply, 4),
+            ("N-", NumpadSubtract, 4),
         ],
-        // QWERTY row
+        // QWERTY row + nav cluster + numpad row 2
         vec![
             ("Tab", Tab, 5),
             ("Q", KeyQ, 4),
@@ -700,8 +713,17 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             ("[", BracketLeft, 4),
             ("]", BracketRight, 4),
             ("\\", Backslash, 5),
+            ("", Escape, 2), // spacer
+            ("Del", Delete, 5),
+            ("End", End, 5),
+            ("PDn", PageDown, 5),
+            ("", Escape, 2), // spacer
+            ("N7", Numpad7, 4),
+            ("N8", Numpad8, 4),
+            ("N9", Numpad9, 4),
+            ("N+", NumpadAdd, 4),
         ],
-        // Home row
+        // Home row + numpad row 3
         vec![
             ("Caps", CapsLock, 6),
             ("A", KeyA, 4),
@@ -716,8 +738,12 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             (";", Semicolon, 4),
             ("'", Quote, 4),
             ("Entr", Enter, 6),
+            ("", Escape, 21), // spacer past nav cluster (56 + 21 = 77)
+            ("N4", Numpad4, 4),
+            ("N5", Numpad5, 4),
+            ("N6", Numpad6, 4),
         ],
-        // Shift row
+        // Shift row + arrows + numpad row 4
         vec![
             ("Shft", ShiftLeft, 7),
             ("Z", KeyZ, 4),
@@ -731,8 +757,15 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             (".", Period, 4),
             ("/", Slash, 4),
             ("Shft", ShiftRight, 7),
+            ("", Escape, 10), // spacer (54 + 10 = 64, aligns Up above Down)
+            ("\u{2191}", ArrowUp, 4),
+            ("", Escape, 9), // spacer (68 + 9 = 77)
+            ("N1", Numpad1, 4),
+            ("N2", Numpad2, 4),
+            ("N3", Numpad3, 4),
+            ("NEn", NumpadEnter, 4),
         ],
-        // Bottom row
+        // Bottom row + arrows + numpad row 5
         vec![
             ("Ctrl", ControlLeft, 6),
             ("Sup", SuperLeft, 5),
@@ -742,24 +775,13 @@ fn keyboard_rows() -> Vec<Vec<(&'static str, KeyCode, u8)>> {
             ("Sup", SuperRight, 5),
             ("Menu", ContextMenu, 6),
             ("Ctrl", ControlRight, 6),
-        ],
-        // Navigation cluster row 1
-        vec![
-            ("Ins", Insert, 5),
-            ("Hom", Home, 5),
-            ("PUp", PageUp, 5),
-            ("", Escape, 9), // spacer
-            ("\u{2191}", ArrowUp, 4),
-        ],
-        // Navigation cluster row 2
-        vec![
-            ("Del", Delete, 5),
-            ("End", End, 5),
-            ("PDn", PageDown, 5),
-            ("", Escape, 4), // spacer
+            ("", Escape, 7), // spacer (53 + 7 = 60, aligns with nav cluster)
             ("\u{2190}", ArrowLeft, 4),
             ("\u{2193}", ArrowDown, 4),
             ("\u{2192}", ArrowRight, 4),
+            ("", Escape, 5), // spacer (72 + 5 = 77)
+            ("N0", Numpad0, 8),
+            ("N.", NumpadDecimal, 4),
         ],
     ]
 }
