@@ -246,20 +246,12 @@ fn format_gamepad_display(gamepad_number: usize, state: &SingleGamepadState) -> 
     let right = state.right_stick;
     let buttons = &state.buttons;
 
-    let left_stick_visual = stick_visual(left);
-    let right_stick_visual = stick_visual(right);
-
     format!(
         "Gamepad {gamepad_number}\n\
          \n\
          Left Stick   X: {:>6.3}  Y: {:>6.3}\n\
-         {left_stick_visual}\n\
-         \n\
          Right Stick  X: {:>6.3}  Y: {:>6.3}\n\
-         {right_stick_visual}\n\
-         \n\
          Triggers     L: {:>5.3}   R: {:>5.3}\n\
-         {}\n\
          \n\
          Buttons\n\
          {}",
@@ -269,56 +261,8 @@ fn format_gamepad_display(gamepad_number: usize, state: &SingleGamepadState) -> 
         right.y,
         state.left_trigger,
         state.right_trigger,
-        trigger_bar(state.left_trigger, state.right_trigger),
         format_buttons(buttons),
     )
-}
-
-fn stick_visual(stick: Vec2) -> String {
-    let grid_size = 9;
-    let center = grid_size / 2;
-    let col = ((stick.x + 1.0) / 2.0 * (grid_size - 1) as f32).round() as usize;
-    let row = ((-stick.y + 1.0) / 2.0 * (grid_size - 1) as f32).round() as usize;
-    let col = col.min(grid_size - 1);
-    let row = row.min(grid_size - 1);
-
-    let mut lines = Vec::with_capacity(grid_size);
-    for r in 0..grid_size {
-        let mut line = String::with_capacity(grid_size * 2 + 4);
-        line.push_str("  ");
-        for c in 0..grid_size {
-            if r == row && c == col {
-                line.push_str("@ ");
-            } else if r == center && c == center {
-                line.push_str("+ ");
-            } else if r == 0 || r == grid_size - 1 || c == 0 || c == grid_size - 1 {
-                line.push_str(". ");
-            } else {
-                line.push_str("  ");
-            }
-        }
-        lines.push(line);
-    }
-    lines.join("\n")
-}
-
-fn trigger_bar(left: f32, right: f32) -> String {
-    let bar_width = 10;
-    let left_filled = (left * bar_width as f32).round() as usize;
-    let right_filled = (right * bar_width as f32).round() as usize;
-
-    let left_bar = format!(
-        "[{}{}]",
-        "#".repeat(left_filled.min(bar_width)),
-        "-".repeat(bar_width - left_filled.min(bar_width)),
-    );
-    let right_bar = format!(
-        "[{}{}]",
-        "#".repeat(right_filled.min(bar_width)),
-        "-".repeat(bar_width - right_filled.min(bar_width)),
-    );
-
-    format!("  L {left_bar}  R {right_bar}")
 }
 
 // ---------------------------------------------------------------------------
