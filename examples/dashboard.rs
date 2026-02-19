@@ -143,8 +143,8 @@ struct GamepadDisplayText {
 }
 
 const FONT_SIZE: f32 = 20.0;
-const GRID_GAP: f32 = 10.0;
-const GRID_MARGIN: f32 = 10.0;
+const GAP: f32 = 10.0;
+const MARGIN: f32 = 10.0;
 const BORDER_WIDTH: f32 = 2.0;
 const PANEL_PADDING: f32 = 12.0;
 const BORDER_COLOR: Color = Color::srgb(0.4, 0.4, 0.4);
@@ -160,16 +160,15 @@ fn panel_node() -> Node {
 fn setup_ui(mut commands: Commands) {
     commands.spawn(Camera2d);
 
-    let grid_root = commands
+    let flex_root = commands
         .spawn(Node {
-            display: Display::Grid,
+            display: Display::Flex,
+            flex_wrap: FlexWrap::Wrap,
+            align_items: AlignItems::FlexStart,
             width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            padding: UiRect::all(Val::Px(GRID_MARGIN)),
-            grid_template_columns: vec![GridTrack::flex(1.0); 4],
-            grid_template_rows: vec![GridTrack::flex(1.0)],
-            column_gap: Val::Px(GRID_GAP),
-            row_gap: Val::Px(GRID_GAP),
+            padding: UiRect::all(Val::Px(MARGIN)),
+            column_gap: Val::Px(GAP),
+            row_gap: Val::Px(GAP),
             ..default()
         })
         .id();
@@ -190,7 +189,7 @@ fn setup_ui(mut commands: Commands) {
             ))
             .id();
         commands.entity(panel).add_child(text);
-        commands.entity(grid_root).add_child(panel);
+        commands.entity(flex_root).add_child(panel);
     }
 
     let mouse_panel = commands
@@ -205,7 +204,7 @@ fn setup_ui(mut commands: Commands) {
         ))
         .id();
     commands.entity(mouse_panel).add_child(mouse_text);
-    commands.entity(grid_root).add_child(mouse_panel);
+    commands.entity(flex_root).add_child(mouse_panel);
 
     let window_panel = commands
         .spawn((panel_node(), BorderColor::all(BORDER_COLOR)))
@@ -219,7 +218,7 @@ fn setup_ui(mut commands: Commands) {
         ))
         .id();
     commands.entity(window_panel).add_child(window_text);
-    commands.entity(grid_root).add_child(window_panel);
+    commands.entity(flex_root).add_child(window_panel);
 }
 
 fn update_display(
