@@ -1,0 +1,47 @@
+# Game Engine Anatomy
+
+- **Assets** (loaded from disk into memory, feeds all pipelines)
+  - Meshes, textures, shaders
+  - Sound files
+  - Fonts, UI layouts
+- **Simulation**
+  - Input
+    - Player input (keyboard, mouse, gamepad)
+    - Network input (remote player state, server corrections)
+    - UI input (menu selections, button clicks)
+  - World state (entity positions, velocities, health, scores)
+  - Game rules (physics, collision, scoring, AI)
+- **Visual pipeline**
+  - What's there
+    - Geometry (vertices, triangles, normals, UVs)
+    - Materials (color, texture, roughness, metallic)
+    - UI (HUD, menus, debug overlays)
+  - How we see it
+    - Camera (position, orientation, projection, viewport)
+    - Lights (type, position, color, intensity, shadows)
+  - GPU
+    - Vertex shader (transforms geometry to screen space)
+    - Fragment shader (computes pixel color from materials + lighting)
+    - Depth buffer (resolves which triangle is in front)
+  - Display
+    - Framebuffer (the final pixel grid)
+    - Presentation (swap chain, vsync, display output)
+- **Audio pipeline**
+  - What's there
+    - Sound effects (triggered by simulation events)
+    - Music (background, adaptive)
+  - How we hear it
+    - Listener position (typically follows camera)
+    - Spatial mixing (3D positioning, falloff)
+    - Effects (reverb, occlusion)
+  - Audio engine
+    - Mixing (combines all sources into a stream)
+    - Buffering (feeds samples to hardware asynchronously)
+  - Speakers
+    - Output device (stereo, surround, headphones)
+- **Network pipeline**
+  - Outbound (local state → serialized packets → network)
+  - Inbound (network → deserialized packets → simulation input)
+- **Haptics pipeline**
+  - Rumble events (triggered by simulation)
+  - Motor output (gamepad vibration)
