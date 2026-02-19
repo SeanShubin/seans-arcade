@@ -4,11 +4,8 @@
 //!
 //! Shows gamepad input (2 controllers), mouse state, and window info
 //! side by side. Useful for diagnosing input and display configuration.
-//!
-//! Gamepad input is read directly via XInput FFI, bypassing Bevy's
-//! gilrs-based gamepad system. See `docs/gilrs-dual-gamepad-bug.md`
-//! for why.
 
+use bevy::input::gamepad::{GamepadConnection, GamepadConnectionEvent};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -37,15 +34,17 @@ impl Plugin for DualInputDisplayPlugin {
 }
 
 // ---------------------------------------------------------------------------
-// Gamepad input plugin: polls XInput directly, bypassing gilrs
+// Gamepad input plugin: reads gamepad state into a resource
 // ---------------------------------------------------------------------------
 
 struct DualGamepadInputPlugin;
 
 impl Plugin for DualGamepadInputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<DualGamepadInputState>()
-            .add_systems(Update, read_gamepad_input);
+        app.init_resource::<DualGamepadInputState>().add_systems(
+            Update,
+            (read_gamepad_input, log_gamepad_connections, log_gamepad_count),
+        );
     }
 }
 
@@ -82,131 +81,71 @@ struct GamepadButtonStates {
     dpad_right: bool,
 }
 
-// -- XInput FFI --------------------------------------------------------------
-
-#[repr(C)]
-struct XInputGamepad {
-    buttons: u16,
-    left_trigger: u8,
-    right_trigger: u8,
-    thumb_lx: i16,
-    thumb_ly: i16,
-    thumb_rx: i16,
-    thumb_ry: i16,
-}
-
-#[repr(C)]
-struct XInputState {
-    packet_number: u32,
-    gamepad: XInputGamepad,
-}
-
-const XINPUT_GAMEPAD_DPAD_UP: u16 = 0x0001;
-const XINPUT_GAMEPAD_DPAD_DOWN: u16 = 0x0002;
-const XINPUT_GAMEPAD_DPAD_LEFT: u16 = 0x0004;
-const XINPUT_GAMEPAD_DPAD_RIGHT: u16 = 0x0008;
-const XINPUT_GAMEPAD_START: u16 = 0x0010;
-const XINPUT_GAMEPAD_BACK: u16 = 0x0020;
-const XINPUT_GAMEPAD_LEFT_SHOULDER: u16 = 0x0100;
-const XINPUT_GAMEPAD_RIGHT_SHOULDER: u16 = 0x0200;
-const XINPUT_GAMEPAD_A: u16 = 0x1000;
-const XINPUT_GAMEPAD_B: u16 = 0x2000;
-const XINPUT_GAMEPAD_X: u16 = 0x4000;
-const XINPUT_GAMEPAD_Y: u16 = 0x8000;
-
-const ERROR_SUCCESS: u32 = 0;
-
-type XInputGetStateFn = unsafe extern "system" fn(u32, *mut XInputState) -> u32;
-
-fn load_xinput() -> Option<XInputGetStateFn> {
-    use std::ffi::CString;
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn LoadLibraryA(name: *const u8) -> *mut std::ffi::c_void;
-        fn GetProcAddress(
-            module: *mut std::ffi::c_void,
-            name: *const u8,
-        ) -> *mut std::ffi::c_void;
-    }
-
-    for dll in &[b"xinput1_4.dll\0" as &[u8], b"xinput9_1_0.dll\0"] {
-        let module = unsafe { LoadLibraryA(dll.as_ptr()) };
-        if module.is_null() {
-            continue;
-        }
-        let proc_name = CString::new("XInputGetState").unwrap();
-        let proc = unsafe { GetProcAddress(module, proc_name.as_ptr() as *const u8) };
-        if !proc.is_null() {
-            return Some(unsafe { std::mem::transmute(proc) });
-        }
-    }
-    None
-}
-
-fn normalize_thumb(value: i16) -> f32 {
-    if value >= 0 {
-        value as f32 / 32767.0
-    } else {
-        value as f32 / 32768.0
-    }
-}
-
-// -- Bevy system -------------------------------------------------------------
-
 fn read_gamepad_input(
+    gamepads: Query<&Gamepad>,
     mut state: ResMut<DualGamepadInputState>,
-    mut xinput_fn: Local<Option<Option<XInputGetStateFn>>>,
 ) {
-    let get_state = match *xinput_fn {
-        Some(Some(f)) => f,
-        Some(None) => return, // already failed to load
-        None => {
-            let loaded = load_xinput();
-            if loaded.is_none() {
-                warn!("Failed to load XInput DLL — gamepad input unavailable");
-            }
-            *xinput_fn = Some(loaded);
-            match loaded {
-                Some(f) => f,
-                None => return,
-            }
-        }
-    };
+    let mut gamepad_iter = gamepads.iter();
 
-    for (index, slot) in state.gamepads.iter_mut().enumerate() {
-        let mut xinput_state = std::mem::MaybeUninit::<XInputState>::uninit();
-        let result = unsafe { get_state(index as u32, xinput_state.as_mut_ptr()) };
-
-        if result != ERROR_SUCCESS {
-            *slot = SingleGamepadState::default();
+    for slot in &mut state.gamepads {
+        let Some(gamepad) = gamepad_iter.next() else {
+            slot.connected = false;
+            slot.left_stick = Vec2::ZERO;
+            slot.right_stick = Vec2::ZERO;
+            slot.left_trigger = 0.0;
+            slot.right_trigger = 0.0;
+            slot.buttons = GamepadButtonStates::default();
             continue;
-        }
-
-        let xs = unsafe { xinput_state.assume_init() };
-        let gp = &xs.gamepad;
-        let btn = |mask: u16| gp.buttons & mask != 0;
+        };
 
         slot.connected = true;
-        slot.left_stick = Vec2::new(normalize_thumb(gp.thumb_lx), normalize_thumb(gp.thumb_ly));
-        slot.right_stick = Vec2::new(normalize_thumb(gp.thumb_rx), normalize_thumb(gp.thumb_ry));
-        slot.left_trigger = gp.left_trigger as f32 / 255.0;
-        slot.right_trigger = gp.right_trigger as f32 / 255.0;
+        slot.left_stick = gamepad.left_stick();
+        slot.right_stick = gamepad.right_stick();
+        slot.left_trigger = gamepad.get(GamepadButton::LeftTrigger2).unwrap_or(0.0);
+        slot.right_trigger = gamepad.get(GamepadButton::RightTrigger2).unwrap_or(0.0);
 
         slot.buttons = GamepadButtonStates {
-            south: btn(XINPUT_GAMEPAD_A),
-            east: btn(XINPUT_GAMEPAD_B),
-            north: btn(XINPUT_GAMEPAD_Y),
-            west: btn(XINPUT_GAMEPAD_X),
-            left_bumper: btn(XINPUT_GAMEPAD_LEFT_SHOULDER),
-            right_bumper: btn(XINPUT_GAMEPAD_RIGHT_SHOULDER),
-            start: btn(XINPUT_GAMEPAD_START),
-            select: btn(XINPUT_GAMEPAD_BACK),
-            dpad_up: btn(XINPUT_GAMEPAD_DPAD_UP),
-            dpad_down: btn(XINPUT_GAMEPAD_DPAD_DOWN),
-            dpad_left: btn(XINPUT_GAMEPAD_DPAD_LEFT),
-            dpad_right: btn(XINPUT_GAMEPAD_DPAD_RIGHT),
+            south: gamepad.pressed(GamepadButton::South),
+            east: gamepad.pressed(GamepadButton::East),
+            north: gamepad.pressed(GamepadButton::North),
+            west: gamepad.pressed(GamepadButton::West),
+            left_bumper: gamepad.pressed(GamepadButton::LeftTrigger),
+            right_bumper: gamepad.pressed(GamepadButton::RightTrigger),
+            start: gamepad.pressed(GamepadButton::Start),
+            select: gamepad.pressed(GamepadButton::Select),
+            dpad_up: gamepad.pressed(GamepadButton::DPadUp),
+            dpad_down: gamepad.pressed(GamepadButton::DPadDown),
+            dpad_left: gamepad.pressed(GamepadButton::DPadLeft),
+            dpad_right: gamepad.pressed(GamepadButton::DPadRight),
         };
+    }
+}
+
+fn log_gamepad_connections(mut events: MessageReader<GamepadConnectionEvent>) {
+    for event in events.read() {
+        match &event.connection {
+            GamepadConnection::Connected {
+                name,
+                vendor_id,
+                product_id,
+            } => {
+                info!(
+                    "Gamepad connected: entity={:?}, name={:?}, vendor={:?}, product={:?}",
+                    event.gamepad, name, vendor_id, product_id
+                );
+            }
+            GamepadConnection::Disconnected => {
+                info!("Gamepad disconnected: entity={:?}", event.gamepad);
+            }
+        }
+    }
+}
+
+fn log_gamepad_count(gamepads: Query<&Gamepad>, mut prev_count: Local<usize>) {
+    let count = gamepads.iter().count();
+    if count != *prev_count {
+        info!("Gamepad entity count changed: {} -> {}", *prev_count, count);
+        *prev_count = count;
     }
 }
 
@@ -345,15 +284,21 @@ fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn update_display(
     gamepad_state: Res<DualGamepadInputState>,
+    gamepads: Query<&Gamepad>,
     mut query: Query<(&mut Text, &GamepadDisplayText)>,
 ) {
+    let total = gamepads.iter().count();
+
     for (mut text, display_marker) in &mut query {
         let pad = &gamepad_state.gamepads[display_marker.index];
         let gamepad_number = display_marker.index + 1;
 
         if !pad.connected {
             **text = format!(
-                "Gamepad {gamepad_number}\n\nNo gamepad detected\n\nConnect a controller to see input values."
+                "Gamepad {gamepad_number}\n\n\
+                 No gamepad detected\n\n\
+                 {total} controller(s) seen by engine.\n\
+                 Try unplugging and replugging."
             );
             continue;
         }
