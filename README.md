@@ -6,7 +6,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### Product
 - The product is **Sean's Arcade**, hosted at **seanshubin.com** (owned, AWS)
-- Anyone can download the application from the website — no accounts, no login, no signup
+- The application is downloaded from the website
 - The application is built with **Bevy**, compiled to a single Rust binary, distributed as a direct download from S3
 - First application is a **drop-in/drop-out chat room**
 - Chat is the starting point because it exercises the full infrastructure without game complexity
