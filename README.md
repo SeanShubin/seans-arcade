@@ -35,8 +35,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### Chat (v1)
 - Messages are plain text with sender name and timestamp
-- No server-side chat history — joining peers see messages from the moment they connect forward
-- Each client keeps its own local scrollback
+- Chat history is **world state** — persisted, compacted, and restored via the same S3 save infrastructure as game state
+- Joining peers receive chat history as part of the S3 save download, same as player positions in a game
+- Bounding of chat history (last N messages, session-only, unlimited) is a **game mechanic**, not an infrastructure decision
 - Identity is a self-chosen display name, stored locally, no uniqueness enforcement
 
 ### Distribution
@@ -79,7 +80,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ## Decisions Needed
 
-- **Chat history** — should later versions offer opt-in history stored in S3
+(none)
 
 ## Documentation
 
