@@ -28,7 +28,7 @@ Think of a physical arcade — everyone can hear each other, and players wander 
 A simple window with:
 - A text area showing chat messages (sender name + message)
 - An input field at the bottom for typing
-- A status bar showing: connection state, your name, number of connected peers, whether you're the host
+- A status bar showing: connection state, your name, number of connected peers
 - A name picker on first launch (stored locally for next time)
 
 The entire application is built with Bevy, including v1 chat. Bevy's ECS and rendering pipeline are used from the start, so there's no framework migration when games are added later.

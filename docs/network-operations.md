@@ -318,7 +318,7 @@ The relay needs to be reachable by all clients. An always-on VM is the simplest 
 |---------|------|-------------|
 | Cloud VM | 512MB instance running the relay | ~$3.50 |
 | Data transfer | Chat messages, 0-10 users | $0.00 (included) |
-| S3 requests | Presence registry reads/writes | $0.00 (pennies) |
+| S3 requests | Save file sync | $0.00 (pennies) |
 
 **Total: ~$5/month.** The machine sits idle most of the time, but at ~$3.50/month the simplicity of "always ready, no cold starts" is worth more than the savings from on-demand startup.
 
@@ -328,7 +328,7 @@ The relay needs to be reachable by all clients. An always-on VM is the simplest 
 |---------|------|-------------|
 | API Gateway WebSocket | Connection relay | $0.04 |
 | Lambda | Message routing logic | $0.00 (free tier) |
-| S3 requests | Presence registry | $0.00 |
+| S3 requests | Save file sync | $0.00 |
 
 ~600 hours total connection time/month (36,000 connection-minutes), ~50,000 messages/month including broadcasts. **Total: ~$1.50/month.** Cheaper but more complex to implement — WebSocket API Gateway + Lambda is a different programming model than a plain TCP/UDP relay.
 
@@ -340,7 +340,7 @@ The relay needs to be reachable by all clients. An always-on VM is the simplest 
 | CloudFront | 1TB/month free tier (if added) |
 | Binary downloads | 10 users x 50MB = 500MB — free |
 | SSL certificate | Free via ACM |
-| Presence registry | A few hundred GET/PUT requests — fractions of a cent |
+| Save file sync | A few hundred GET/PUT requests — fractions of a cent |
 
 ### Recommendation
 
@@ -366,26 +366,25 @@ Always-on hosting pays for **compute** when what you actually need is **storage*
 
 In the lockstep relay model, every client runs the full simulation and holds the complete authoritative state at all times. The relay is stateless — it never has game state to persist. When a session ends, every client that was playing holds a complete, identical copy of the world.
 
-This is the Grounded model — one player hosts, the world lives on their machine, and when nobody's playing, nothing is running. No server costs. The world resumes when someone launches it.
+This is the Grounded model — the world lives on a player's machine, and when nobody's playing, nothing is running. No server costs. The world resumes when someone launches it.
 
 ### Where the Save File Lives
 
 Three options, from simplest to most flexible:
 
-**Option A: Host carries the save (Grounded model)**
+**Option A: Local save (Grounded model)**
 - One player is the save owner — the file lives on their machine
 - They start a session by launching the relay and loading the save
 - Other players join, receive state transfer, play
-- When the session ends, the host saves locally
-- Any client could also save locally as a backup (they have identical state)
+- When the session ends, any client can save locally (they all have identical state)
 - **Cost: $0**
 - **Limitation:** the save owner must be online to start a session
 
 **Option B: Cloud storage (S3 bucket)**
 - Save files stored in cheap object storage (AWS S3, Cloudflare R2, Backblaze B2)
-- When anyone wants to play, they download the latest save, start a relay, and host
+- When anyone wants to play, they download the latest save and connect to the relay
 - When the session ends, the save uploads back to storage
-- Any player can start a session, not just the original host
+- Any player can start a session
 - **Cost:** pennies/month for storage (a save file is KB to low MB), zero compute when idle
 
 **Option C: Every client keeps a copy + cloud sync**
@@ -490,7 +489,7 @@ Session starts
 | Model | Monthly cost (idle) | Monthly cost (active) | Who can start a session? |
 |-------|--------------------|-----------------------|--------------------------|
 | Traditional server-authoritative | $4-50/month (always on) | Same | Anyone (server always running) |
-| Host carries save (Option A) | $0 | $0 | Save owner only |
+| Local save (Option A) | $0 | $0 | Save owner only |
 | Cloud storage (Option B) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
 | Client copies + cloud sync (Option C) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone who has a copy |
 
@@ -511,12 +510,6 @@ A complete inventory of everything in persistent storage. Infrastructure artifac
 | Static website files | HTML/CSS for seanshubin.com | CI or manual | Browsers |
 
 These are version-unaware. The version file points to the commit hash; the binaries correspond to that hash. Overwritten on every release.
-
-### S3 — Presence Registry
-
-| Key | Contents | Written by | Read by |
-|-----|----------|-----------|---------|
-| Presence entry (structure TBD) | "Who is the current host?" | Host client via PUT | Peers via HEAD/GET polling |
 
 ### S3 — Per-Session Game Data
 

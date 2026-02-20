@@ -220,7 +220,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Fixed 30-second retry interval
 
-**Decision:** When any network operation fails (version check, relay connection, S3 sync, presence registry), the client retries on a fixed 30-second interval until it succeeds. No exponential backoff, no jitter, no adaptive timing.
+**Decision:** When any network operation fails (version check, relay connection, S3 sync), the client retries on a fixed 30-second interval until it succeeds. No exponential backoff, no jitter, no adaptive timing.
 
 **Over:** Exponential backoff (standard for distributed systems with shared servers) and adaptive intervals.
 

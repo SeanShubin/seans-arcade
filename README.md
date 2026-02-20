@@ -12,22 +12,12 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Chat is the starting point because it exercises the full infrastructure without game complexity
 - Evolution: Chat → Chat + Pong → Game library → Persistence ([plan](docs/project-overview.md))
 
-### Host Model
-- The first user to launch the application becomes the **host**
-- Every subsequent user connects as a peer
-- Peers are ordered by join time — this is the **succession order**
-- When the host leaves, the next peer in the succession list becomes the new host
-- The succession list is shared with all peers so everyone agrees on the order
-
 ### AWS (Global Coordination)
 - Global coordination is **minimized** — AWS handles only what individual peers cannot
 - AWS serves the **static website** (S3, optionally CloudFront)
-- AWS runs a **presence registry** — answers "who is the current host?"
 - AWS runs an always-on **relay** on a cheap cloud VM (e.g., AWS Lightsail, ~$3.50/month) for NAT traversal
-- All peers (including the host) make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
-- The host role is **logical** (succession, message ordering) even though packets flow through the AWS relay
+- All clients make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](docs/network-operations.md))
-- Presence registry uses **S3 polling** (HEAD/PUT/GET) — no dedicated API, no Lambda ([details](docs/architecture-decisions.md))
 - Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](docs/architecture-decisions.md))
 - Hello handshake carries **commit hash, shared secret, and display name** — one message, one round-trip; relay validates secret, groups by version, tracks identity ([decision](docs/architecture-decisions.md))
 - Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
@@ -44,7 +34,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Local config (display name, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](docs/architecture-decisions.md))
 
 ### Arcade Model (v2+)
-- The arcade is a **host application** — chat is the always-on social layer, games are sub-applications within it
+- The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it
 - Chat is **always visible** to everyone — playing or watching a game does not leave the chat
 - Games appear in a **game screen within the chat interface** — chat is the lobby
 - Any player can **start a game and invite others**; any player can **spectate** any game

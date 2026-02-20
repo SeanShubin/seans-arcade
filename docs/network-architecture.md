@@ -338,7 +338,7 @@ The rule: if it affects the simulation, hash it. If it only affects rendering, s
 **On mismatch:**
 1. **Detection** — "My checksum for tick 300 differs from yours"
 2. **Diagnosis** — Hash subsections separately (positions vs health vs inventory) to narrow it down
-3. **Recovery** — Diverged client receives a full state snapshot from the host and overwrites its local state
+3. **Recovery** — Diverged client receives a full state snapshot from any other client (all hold identical authoritative state) and overwrites its local state
 
 ### Hash Algorithm Choice
 
@@ -370,7 +370,7 @@ For Bevy games, the same approach:
 1. Define which components and resources are authoritative state
 2. Serialize and hash every 30-60 ticks
 3. Exchange hashes via the coordinator
-4. On mismatch — log what diverged, resync from host
+4. On mismatch — log what diverged, resync from any peer
 5. Treat every desync as a determinism bug to fix
 
 ## Who Coordinates Inputs in P2P?
