@@ -17,7 +17,7 @@ User types message
     → Each client displays the message
 ```
 
-Messages are plain text with a sender name and timestamp. No history is stored on the relay (stateless). A joining client sees messages from the moment they connect forward.
+Messages are plain text with a sender name and timestamp. No history is stored on the relay (stateless). Chat history is world state — joining peers receive it as part of the S3 save download, the same way they'd receive player positions in a game.
 
 ## What the Application Looks Like (v1 — Chat)
 

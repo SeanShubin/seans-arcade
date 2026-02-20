@@ -58,6 +58,14 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **See:** [distribution.md](distribution.md) — Version Isolation
 
+### Chat messages as game inputs
+
+**Decision:** Chat is an Input with a chat-typed payload. The relay never distinguishes chat from game inputs. Chat gets tick ordering, logging, replay, and persistence from the existing architecture with zero relay changes.
+
+**Over:** Separate `ClientMessage::Chat` variant — leaks game concepts into the relay protocol, requires relay changes for each new message type.
+
+**Rationale:** The relay treats all inputs as opaque bytes. A chat message is just a payload variant that the client interprets. Chat automatically inherits tick ordering, full message logging, deterministic replay, and S3 persistence without any relay modifications. Adding new message types is a client-only change.
+
 ---
 
 ## Determinism
@@ -198,6 +206,14 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **See:** [network-operations.md](network-operations.md) — Relay Access Control
 
+### Hello handshake carries commit hash, secret, and display name
+
+**Decision:** All three fields in a single Hello message. The relay validates the secret first (silently drops if wrong), groups by commit hash (version isolation), and tracks the display name. One round-trip, no multi-step handshake.
+
+**Over:** Multi-step handshake where secret validation, version check, and identity registration happen in separate exchanges.
+
+**Rationale:** A single message keeps the protocol simple and minimizes round-trips. The relay already needs all three pieces of information before it can assign a player slot. Bundling them means a connecting client is either fully accepted or silently rejected in one exchange.
+
 ---
 
 ## Connectivity
@@ -209,6 +225,18 @@ This document records decisions that have been made. It is not a wishlist or a p
 **Over:** Exponential backoff (standard for distributed systems with shared servers) and adaptive intervals.
 
 **Rationale:** Exponential backoff exists to protect shared servers from retry storms when many clients fail simultaneously. None of those conditions apply here: there is one client retrying, the targets are S3 (effectively infinite capacity) or a relay serving 0-10 users, and there is no thundering herd. A fixed interval gives the user a predictable countdown, and 30 seconds means connectivity is detected within half a minute of restoration. The cost of each retry is one small HTTP GET or UDP packet — negligible.
+
+---
+
+## Local Storage
+
+### Local config in platform app data directory
+
+**Decision:** Player display name and relay secret persist between launches in a TOML file at the platform-conventional location (`%APPDATA%\seans-arcade\config.toml` on Windows). Not alongside the binary, not in the registry.
+
+**Over:** Config file next to the binary (binary self-replaces on update, complicating the update dance or risking config loss) and Windows registry (not portable, harder to inspect, platform-specific API).
+
+**Rationale:** Platform app data directories survive application updates, are user-discoverable, and work the same conceptual way across platforms. TOML is human-readable and trivially editable. The file contains no secrets that need encryption — the relay secret is a shared passphrase, not a credential.
 
 ---
 

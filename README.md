@@ -29,16 +29,19 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](docs/network-operations.md))
 - Presence registry uses **S3 polling** (HEAD/PUT/GET) — no dedicated API, no Lambda ([details](docs/architecture-decisions.md))
 - Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](docs/architecture-decisions.md))
+- Hello handshake carries **commit hash, shared secret, and display name** — one message, one round-trip; relay validates secret, groups by version, tracks identity ([decision](docs/architecture-decisions.md))
 - Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
 - **Fixed 30-second retry** for all connectivity failures — version check, relay connection, S3 sync ([decision](docs/architecture-decisions.md))
 - Estimated total cost for 0-10 users: **~$5/month** ([cost details](docs/network-operations.md#cost-estimate-0-10-users))
 
 ### Chat (v1)
+- Chat messages are **game inputs** (opaque payload) — the relay never distinguishes chat from any other input type
 - Messages are plain text with sender name and timestamp
 - Chat history is **world state** — persisted, compacted, and restored via the same S3 save infrastructure as game state
 - Joining peers receive chat history as part of the S3 save download, same as player positions in a game
 - Bounding of chat history (last N messages, session-only, unlimited) is a **game mechanic**, not an infrastructure decision
 - Identity is a self-chosen display name, stored locally, no uniqueness enforcement
+- Local config (display name, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](docs/architecture-decisions.md))
 
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start

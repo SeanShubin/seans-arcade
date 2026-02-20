@@ -255,7 +255,7 @@ Client C ──outbound──→ AWS Relay ←──outbound── Client D
 When a user launches the application:
 1. Version check against `seanshubin.com/version` (auto-update if stale)
 2. Connect to the relay on AWS
-3. Hello handshake — send commit hash and shared secret
+3. Hello handshake — send commit hash, shared secret, and display name
 4. Relay validates the secret — match continues, mismatch silently drops the connection
 5. Relay assigns a player slot
 6. Begin sending/receiving inputs
@@ -546,8 +546,7 @@ The relay holds no persistent state. Everything in relay memory is either recons
 | Old binary (Windows only) | `seans-arcade-old.exe` from rename dance | Cleanup on next launch |
 | Local save copy | Authoritative state at current tick | Every client has this in memory during play; can persist to disk on exit |
 | Client-side message log | Full log of sent/received messages | Local debugging, independent of relay's log |
-| Chat scrollback | Chat messages from current session | Local only, no server history (v1) |
-| Display name | Self-chosen, stored locally | Identity across sessions |
+| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — display name and relay secret | Persists identity and access between launches ([decision](architecture-decisions.md)) |
 
 ### What Is NOT in Persistent Storage
 
