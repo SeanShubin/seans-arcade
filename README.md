@@ -26,6 +26,10 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - AWS runs an always-on **relay** on a cheap cloud VM (e.g., AWS Lightsail, ~$3.50/month) for NAT traversal
 - All peers (including the host) make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
 - The host role is **logical** (succession, message ordering) even though packets flow through the AWS relay
+- Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](docs/network-operations.md))
+- Presence registry uses **S3 polling** (HEAD/PUT/GET) — no dedicated API, no Lambda ([details](docs/architecture-decisions.md))
+- Relay access is **invite-only** — only people the operator is in contact with can obtain access; mechanism TBD
+- Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
 - Estimated total cost for 0-10 users: **~$5/month** ([cost details](docs/network-operations.md#cost-estimate-0-10-users))
 
 ### Chat (v1)
@@ -72,12 +76,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ## Decisions Needed
 
-- **Transport protocol** — TCP, UDP, or WebSocket between peers and the AWS relay
-- **Presence registry implementation** — S3 file with heartbeat vs. lightweight API (Lambda/API Gateway)
 - **Version check retry interval** — fixed interval, exponential backoff, or something else? What starting duration?
-- **macOS distribution format** — bare binary (simple, matches auto-update design) vs. `.app` bundle (conventional, required for App Store). Bare binary is the current plan; revisit when macOS is added
-- **Long-term identity** — is a self-chosen display name sufficient, or will some form of lightweight identity (e.g., locally generated keypair) be needed
-- **AWS relay cost model** — persistent cheap VM (e.g., Lightsail) vs. on-demand (e.g., Lambda + API Gateway WebSocket)
 - **Chat history** — should later versions offer opt-in history stored in S3
 
 ## Documentation
