@@ -12,7 +12,7 @@ Chat is the right starting point because it exercises the full infrastructure �
 
 ### What Runs on AWS
 
-All always-on infrastructure. Deliberately minimal.
+The goal is to get clients talking to each other. Clients never communicate directly — all traffic flows through a relay. The infrastructure below supports this.
 
 | Service | Purpose | Implementation |
 |---------|---------|----------------|
@@ -296,17 +296,19 @@ Assumes 0-10 users online randomly throughout the month, averaging ~2 hours/day 
 | S3 storage | Website + binaries (~100MB) | $0.003 |
 | Domain renewal | seanshubin.com (already owned) | ~$1 amortized ($10-12/year) |
 
-### Relay Options
+### Relay
 
-**Option A: Lightsail always-on relay (recommended for v1)**
+The relay needs to be reachable by all clients. An always-on VM is the simplest way to achieve this, but not the only way — on-demand startup, serverless WebSocket, or other approaches could also work. The requirement is that clients can connect to the relay, not that the relay is always running.
+
+**Option A: Lightsail VM (recommended for v1)**
 
 | Service | What | Monthly Cost |
 |---------|------|-------------|
-| Lightsail | 512MB instance running the relay 24/7 | $3.50 |
+| Lightsail | 512MB instance running the relay | $3.50 |
 | Data transfer | Chat messages, 0-10 users | $0.00 (included) |
 | S3 requests | Presence registry reads/writes | $0.00 (pennies) |
 
-**Total: ~$5/month.** You're paying $3.50 for a machine that sits idle 95%+ of the time. But it's simple — one Rust binary, always ready, no cold starts.
+**Total: ~$5/month.** The machine sits idle most of the time, but at $3.50/month the simplicity of "always ready, no cold starts" is worth more than the savings from on-demand startup.
 
 **Option B: Serverless relay (API Gateway WebSocket + Lambda)**
 

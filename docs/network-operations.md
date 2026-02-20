@@ -164,13 +164,13 @@ A player disconnects. The relay stops expecting inputs from that slot. Other cli
 
 ### Relay Restart
 
-The relay runs on AWS (Lightsail) and is managed by the platform's process manager. If it crashes, it restarts automatically. No player takes over as the relay — the relay is always on AWS.
+The relay runs on AWS. If it crashes, the hosting platform restarts it. No player takes over as the relay — the relay is infrastructure, not a player role.
 
 The relay is stateless — no game state is lost when it restarts. Every client already has the full authoritative simulation. The only thing lost is the relay's in-memory connection state (connected clients, input buffer, recent input history).
 
 **What happens:**
 1. Relay process crashes
-2. Lightsail restarts it
+2. Hosting platform restarts it (or it is restarted manually)
 3. Clients detect the disconnection (connection timeout)
 4. Clients reconnect to the relay
 5. Clients report their last confirmed tick number
@@ -216,7 +216,7 @@ Three previously separate features converge to make this work:
 | Scenario | Difficulty | Why |
 |----------|-----------|-----|
 | Player leave | Trivial | Stop expecting their inputs, continue simulation |
-| Relay restart | Simple | Relay is stateless; Lightsail restarts it, clients reconnect, agree on last confirmed tick |
+| Relay restart | Simple | Relay is stateless; hosting platform restarts it, clients reconnect, agree on last confirmed tick |
 | Player join mid-game (with S3) | Easy | Download from S3, catch up from input log |
 | Player join mid-game (without S3) | Moderate | Existing client must snapshot and send state through relay |
 
@@ -319,7 +319,7 @@ No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT 
 | Cloud storage (Option B) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
 | Client copies + cloud sync (Option C) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone who has a copy |
 
-The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap Lightsail VM at $3.50/month. The relay runs only during active sessions; between sessions, the only cost is S3 storage.
+The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap VM at ~$3.50/month. Between sessions, the only cost is S3 storage.
 
 ## Project Structure for Networked Examples
 
