@@ -68,6 +68,16 @@ Prediction depth too large → visual corrections feel jarring
 
 Checksums detect drift. Message logging and deterministic replay diagnose it. In the lockstep relay model, logging every message sent and received is not just feasible — it's practically free, and it gives you debugging tools that server-authoritative architectures can't match.
 
+### Logging Principles
+
+Three principles govern what goes into the log. For the formalized decisions and rationale, see [architecture-decisions.md](architecture-decisions.md) — Event Log Principles.
+
+**The canonical log is sufficient to deterministically recreate all game state.** Given the log and the correct simulation code, every game state at every tick can be recreated with zero ambiguity. The log is self-describing — it contains enough metadata to determine what wire protocol specification each event conforms to, without requiring external knowledge of what version was running at that time.
+
+**The log stores the minimum information needed for zero ambiguity.** Information that is constant across a connection (such as the spec hash) is logged once at the connection event, not repeated on every input from that connection. Log state changes, not state itself. If something can be derived from other logged events, it is not duplicated.
+
+**Indexes are not redundant information.** A derived index that enables a capability the canonical log cannot provide on its own (such as random access without sequential scan) is maintained alongside the log. Derivability does not imply redundancy when the derived structure serves a purpose the source cannot perform.
+
 ### Why Full Logging Is Cheap
 
 In lockstep relay, the **only** things on the wire are player inputs, confirmed input packages, and periodic checksums. There is no entity state replication, no position updates, no snapshot traffic.
@@ -98,6 +108,9 @@ On every message, both sides:
 | Message type | Input, confirmed package, checksum |
 | Payload | The actual input bytes or checksum value |
 
+On connection events (Hello/disconnect), additionally:
+- Spec hash — the hash of the connecting client's event type specifications, identifying the wire protocol format for all subsequent messages from this connection (see [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility)
+
 On the relay, additionally:
 - Time between receiving a player's input and broadcasting the confirmed package (relay processing latency)
 - Which players' inputs were present vs omitted for each tick (detects who's lagging)
@@ -126,27 +139,48 @@ This is exactly how Factorio debugs desyncs — replay the input log, checksum e
 
 **"Is this a determinism bug or a network bug?"** — replay the same input log on two separate instances offline (no network). If checksums diverge, it's a determinism bug. If they match, the original divergence was caused by a network issue (dropped or reordered packet, relay bug).
 
+### Version Index
+
+The canonical log records the spec hash on connection events only — not on every input message (see Logging Principles above). To determine the wire protocol specification for any event in the log, a sequential reader tracks a `slot → spec hash` mapping as it processes connection events. Each input inherits the spec hash of its slot's most recent connection.
+
+For random access — looking up the spec for an event at an arbitrary log position without reading from the beginning — the relay maintains a **version index** alongside the canonical log. The version index records one entry per version-change point per slot:
+
+```
+log_position 0:     slot 1 = 0xABCD1234
+log_position 0:     slot 2 = 0xABCD1234
+log_position 4200:  slot 1 = 0xEF567890
+log_position 4205:  slot 2 = 0xEF567890
+```
+
+To find the spec hash for any event: look up the slot, find the most recent index entry at or before that log position. The index is a handful of entries per session — typically one per connection event, a few hundred bytes total.
+
+The version index is **derived from** the canonical log. It can be deleted and rebuilt by replaying connection events. It adds no new information — it provides random access to information that already exists in the canonical log but would otherwise require sequential scan to reach.
+
 ## Connection Disruptions
 
 ### Player Leave: Trivial
 
 A player disconnects. The relay stops expecting inputs from that slot. Other clients stop receiving inputs for that player. The simulation continues — the departed player's entities either get despawned or become inert (game design decision). Nothing to sync, nothing to recover.
 
-### Relay Host Migration: Simple Protocol
+### Relay Restart
 
-The relay is stateless — no game state is lost when it dies. Every client already has the full authoritative simulation. The problem is purely coordination: who becomes the new relay, and where do we resume?
+The relay runs on AWS (Lightsail) and is managed by the platform's process manager. If it crashes, it restarts automatically. No player takes over as the relay — the relay is always on AWS.
 
-**Steps:**
-1. Clients detect the relay is gone (connection timeout)
-2. A deterministic rule selects the new relay — e.g., lowest player slot, or a pre-agreed priority list known to all clients at session start
-3. New relay starts listening, other clients connect to it
-4. Everyone agrees on the last confirmed tick
+The relay is stateless — no game state is lost when it restarts. Every client already has the full authoritative simulation. The only thing lost is the relay's in-memory connection state (connected clients, input buffer, recent input history).
 
-**The tick gap problem:** When the relay dies, some inputs may have been in-flight — sent to the old relay but never broadcast. Different clients may have received confirmed inputs through different ticks (client A got through tick 500, client B only through 498).
+**What happens:**
+1. Relay process crashes
+2. Lightsail restarts it
+3. Clients detect the disconnection (connection timeout)
+4. Clients reconnect to the relay
+5. Clients report their last confirmed tick number
+6. Relay takes the **minimum** confirmed tick and everyone resumes from there
 
-**Resolution:** The new relay asks all clients for their last confirmed tick number, takes the **minimum**, and everyone resumes from there. Clients who were a tick or two ahead discard those extra ticks. This is safe because the authoritative state only advances with confirmed inputs — rewinding to the minimum means replaying at most a few ticks. Unconfirmed inputs in each client's latency state get replayed through the new relay naturally.
+**The tick gap problem:** When the relay dies, some inputs may have been in-flight — sent to the old relay process but never broadcast. Different clients may have received confirmed inputs through different ticks (client A got through tick 500, client B only through 498).
 
-**More conservative alternative:** Do a full state sync during migration — one client sends a state snapshot through the new relay, same as a player join. More expensive, but eliminates any ambiguity about tick alignment.
+**Resolution:** The relay takes the minimum and everyone resumes from there. Clients who were a tick or two ahead discard those extra ticks. This is safe because the authoritative state only advances with confirmed inputs — rewinding to the minimum means replaying at most a few ticks. Unconfirmed inputs in each client's latency state get replayed through the relay naturally.
+
+**Input history recovery:** The relay's input history buffer (used for player joins) is lost on restart. The relay rebuilds it from the point of restart. Any player joining immediately after a relay restart would need to download the S3 save and catch up from the restart tick, which is the normal join flow anyway.
 
 ### Player Join Mid-Game
 
@@ -167,7 +201,7 @@ No existing client does anything. They don't even notice someone joined until in
 
 The relay needs to retain recent input history back to the latest S3 save tick, which it already does if message logging is enabled (see [Message Logging and Deterministic Replay](#message-logging-and-deterministic-replay)). The data is small enough to buffer in memory regardless.
 
-**Fallback (without S3 sync):** An existing client snapshots their authoritative state and sends it directly to the joining player. This works but puts load on the sending client and bottlenecks on their upload bandwidth. The S3 approach is strictly better when periodic sync is in place.
+**Fallback (without S3 sync):** An existing client snapshots their authoritative state and sends it directly to the joining player through the relay. This works but puts load on the sending client and bottlenecks on their upload bandwidth. The S3 approach is strictly better when periodic sync is in place.
 
 Three previously separate features converge to make this work:
 
@@ -182,9 +216,9 @@ Three previously separate features converge to make this work:
 | Scenario | Difficulty | Why |
 |----------|-----------|-----|
 | Player leave | Trivial | Stop expecting their inputs, continue simulation |
-| Relay host migration | Small protocol | Relay is stateless; agree on last confirmed tick, resume |
+| Relay restart | Simple | Relay is stateless; Lightsail restarts it, clients reconnect, agree on last confirmed tick |
 | Player join mid-game (with S3) | Easy | Download from S3, catch up from input log |
-| Player join mid-game (without S3) | Moderate | Existing client must snapshot and send state |
+| Player join mid-game (without S3) | Moderate | Existing client must snapshot and send state through relay |
 
 The stateless relay and full-simulation-on-every-client design means all three scenarios are simpler than in server-authoritative architectures, where the server holds all game state and losing it means losing the game.
 
@@ -285,7 +319,7 @@ No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT 
 | Cloud storage (Option B) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
 | Client copies + cloud sync (Option C) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone who has a copy |
 
-The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap VM at $4-6/month if dedicated, or $0 if a player hosts it locally (listen server model). The point is that this cost only exists **during play**, not 24/7.
+The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap Lightsail VM at $3.50/month. The relay runs only during active sessions; between sessions, the only cost is S3 storage.
 
 ## Project Structure for Networked Examples
 
@@ -300,6 +334,9 @@ bevy-prototyping/
 │   ├── neon_pong.rs
 │   └── ...
 ├── crates/                 # multi-crate workspace members
+│   ├── spec_hash/          # SpecHash trait + derive macro + primitive impls
+│   │   ├── Cargo.toml      # proc-macro = true
+│   │   └── src/lib.rs
 │   ├── relay/              # relay server (game-agnostic input coordinator)
 │   │   ├── Cargo.toml
 │   │   └── src/

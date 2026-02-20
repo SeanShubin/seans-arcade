@@ -38,6 +38,54 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **See:** [network-architecture.md](network-architecture.md) — Stalls vs. Dropping
 
+### Specification hash for wire protocol compatibility
+
+**Decision:** Wire protocol compatibility is determined by a hash of the event type specifications (their structure, field types, and ordering), not by the application version integer. The spec hash is a compiled-in constant, computed from the event type definitions. The Hello handshake includes the spec hash. The application version (`VERSION: u32`) and the wire protocol spec hash are independent — a gameplay-only change does not change the spec hash, and a wire format change is detected automatically without anyone remembering to bump a number.
+
+**Over:** Using the application version integer for wire compatibility (conflates application changes with protocol changes — a gameplay hotfix forces unnecessary incompatibility, and a forgotten version bump silently allows incompatible clients).
+
+**Rationale:** Separation of concerns. The application version tracks releases. The spec hash tracks what the bytes on the wire mean. Two builds with different gameplay but identical event schemas produce the same spec hash and are wire-compatible. A build that adds a field to an input event produces a different spec hash automatically. This eliminates both false incompatibility (unnecessary rejection) and false compatibility (silent corruption).
+
+**See:** [seans-arcade-plan.md](seans-arcade-plan.md) — Version Check, [network-operations.md](network-operations.md) — Version Index
+
+### Global spec hash, not per-game-mode
+
+**Decision:** The application has a single global spec hash derived from a root input type (e.g., `GameInput`) that encompasses all game modes. If any input type in the tree changes — chat, pong, or any future game — the spec hash changes.
+
+**Over:** Per-game-mode spec hashes (each game mode tracks its own wire compatibility independently).
+
+**Rationale:** Simplicity. One hash, one compatibility check, one value in the Hello handshake. The relay doesn't need to know which game mode a session is running — it just compares spec hashes. Per-game-mode hashing would require the relay to understand game modes, track which hash applies to which session, and add routing complexity for a problem that doesn't exist at this scale. All clients run the same binary with the same input type tree. If any part of that tree changes, the binary is different and compatibility should be rechecked.
+
+### Derive macro for spec hash computation
+
+**Decision:** The spec hash is computed at compile time by a proc macro (`#[derive(SpecHash)]`) that walks the type's AST. A `SpecHash` trait provides a single associated const:
+
+```rust
+trait SpecHash {
+    const HASH: u64;
+}
+```
+
+The derive macro on a type produces a const hash from the type's structure — variant names, field names, field types, and ordering. For types that contain other types (e.g., `GameInput` containing `ChatInput`), the generated impl references the child type's `SpecHash::HASH` const, so the compiler resolves the full type tree at compile time. Primitive types (`String`, `u8`, `Vec<T>`, etc.) have blanket impls provided by the `spec_hash` crate. The application's global spec hash is `<GameInput as SpecHash>::HASH`.
+
+**Over:** Schema-first (maintaining a separate schema file like protobuf and generating Rust types from it) and explicit const (manually maintaining a string representation of the type structure).
+
+**Rationale:** The derive macro operates directly on the Rust type definitions — the types *are* the specification, not a separate schema that must be kept in sync. The hash changes automatically when the type changes, without anyone remembering to update anything. Schema-first adds a maintenance burden (two representations of the same types) and a build step. Explicit const is simpler but relies on a human to update a string when the type changes — the same class of error the spec hash is designed to eliminate. The proc macro inspects the AST deterministically, so the same type definition always produces the same hash on every compilation and platform.
+
+**Crate structure:** Rust requires proc macros in a separate crate. The `spec_hash` crate provides the trait, the derive macro, and blanket impls for primitive types.
+
+**See:** [seans-arcade-plan.md](seans-arcade-plan.md) — Version Check
+
+### Version-aware connection routing during grace period
+
+**Decision:** During the grace period when the relay accepts both version N and N+1 connections, the relay does not mix them into the same input broadcast. A v(N+1) client connecting during the grace period either waits in a lobby or joins a separate v(N+1) input pool. The relay uses the spec hash from the Hello handshake to enforce this — one comparison at connection time, zero per-message cost.
+
+**Over:** No separation (let mixed-version sessions drain naturally) and per-message version tagging (version byte on every message envelope).
+
+**Rationale:** The relay treats payloads as opaque bytes. Once inputs are in the history buffer, there is no way to distinguish one format from another. Without version-aware routing, a fast-updating client that reconnects with a new spec hash gets merged into the same input pool as remaining clients with the old spec hash. The confirmed input packages then contain a mix of incompatible payload formats that no client can correctly interpret. Checksums detect the divergence but the recovery path (state snapshot from host) cannot fix a code mismatch — the problem is that clients are running different binaries, not that state drifted. Separating by spec hash at connection time prevents the problem at its source.
+
+**See:** [seans-arcade-plan.md](seans-arcade-plan.md) — Live Update Orchestration
+
 ---
 
 ## Determinism
@@ -129,3 +177,35 @@ This document records decisions that have been made. It is not a wishlist or a p
 **Rationale:** The relay handles ~19 KB/sec of input data for 4 players. This is far too little traffic to justify infrastructure designed for millions of messages per second. Kafka itself requires always-on servers, reintroducing the cost the architecture is designed to avoid. A periodic S3 PUT every few minutes is the entire persistence solution.
 
 **See:** [network-operations.md](network-operations.md) — Mid-Session Durability
+
+---
+
+## Event Log Principles
+
+### The canonical log is sufficient to deterministically recreate all game state
+
+**Decision:** The canonical event log is the sole source of truth for what happened in a session. Given the log and the correct version of the simulation code, every game state at every tick can be recreated with zero ambiguity. The log contains every input, in order, with enough metadata to fully interpret each event — including which wire protocol specification each event conforms to.
+
+**Over:** Logs that require external context (out-of-band knowledge of what version was running, manual annotations) or logs that record derived state (entity positions, scores) instead of inputs.
+
+**Rationale:** Deterministic simulation means inputs are the complete description of a session. Logging inputs is sufficient; logging derived state is redundant. But inputs alone are not sufficient if you cannot tell what format they're in — a bag of opaque bytes with no specification context is uninterpretable. The log must be self-describing: a reader with access to the event type specifications (keyed by spec hash) can interpret any event in the log without external knowledge of what version was running at that time.
+
+**See:** [network-operations.md](network-operations.md) — Message Logging and Deterministic Replay
+
+### The log stores the minimum information needed for zero ambiguity
+
+**Decision:** Information that can be derived from other logged events is not duplicated on every log entry. State that is constant across a connection (such as the spec hash) is logged once at the connection event, not repeated on every input from that connection.
+
+**Over:** Per-event annotation (stamping every log entry with the spec hash or other connection-level metadata).
+
+**Rationale:** The spec hash is identical for every message from a given connection — it cannot change without disconnecting and reconnecting, which produces a new connection event. Repeating it on every log entry adds bytes that carry zero additional information. The connection event already establishes the mapping from slot to spec hash; every subsequent input from that slot inherits it until the next connection event. Minimum information means: log state changes, not state itself.
+
+**See:** [network-operations.md](network-operations.md) — Version Index
+
+### Indexes are not redundant information
+
+**Decision:** Derived index structures that enable capabilities the canonical log cannot provide on its own are maintained alongside the log. The version index — a small structure mapping (log position, slot) to spec hash at version-change points — is maintained because it enables random access to spec hash context without sequential scan of the canonical log.
+
+**Over:** Treating all derived structures as redundant and requiring sequential log scan for every query.
+
+**Rationale:** An index serves a specific purpose that cannot be achieved otherwise. The canonical log is sequential — to determine the spec hash for an event at log position N, you must scan backwards to find the most recent connection event for that slot. The version index eliminates this scan with a direct lookup. The index is derived from the canonical log (it can be rebuilt by replaying connection events) and adds no new information, but it provides a capability — random access — that the sequential log cannot. Derivability does not imply redundancy when the derived structure enables a function the source cannot perform.

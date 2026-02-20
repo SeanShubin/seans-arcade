@@ -1,90 +1,72 @@
 # Sean's Arcade
 
-A website at **seanshubin.com** where anyone can download the Sean's Arcade application. The application is a self-organizing peer network — the first person to launch it becomes the host, and everyone else connects through them. If the host leaves, the next person in line takes over. Global coordination is minimized; when necessary, it runs through AWS behind seanshubin.com.
+A website at **seanshubin.com** where anyone can download the Sean's Arcade application. The application connects to a lightweight relay server on AWS that coordinates all communication. Clients never talk to each other directly — everyone makes outbound connections to the relay. Global coordination is minimal: AWS hosts the relay, a version file, and binary downloads.
 
 ## Starting Point: Chat
 
 The first application is a drop-in/drop-out chat room. No accounts, no login, no signup. Download, launch, talk.
 
-Chat is the right starting point because it exercises the full infrastructure — host election, peer discovery, host migration, message relay — without the complexity of deterministic simulation, tick synchronization, or latency hiding. Once chat works end-to-end, games are an incremental addition on top of the same foundation.
+Chat is the right starting point because it exercises the full infrastructure — relay connection, peer discovery, message forwarding — without the complexity of deterministic simulation, tick synchronization, or latency hiding. Once chat works end-to-end, games are an incremental addition on top of the same foundation.
 
 ## Architecture
 
-### What Runs on AWS (Global Coordination)
+### What Runs on AWS
 
-The only always-on infrastructure. Deliberately minimal.
+All always-on infrastructure. Deliberately minimal.
 
 | Service | Purpose | Implementation |
 |---------|---------|----------------|
 | **Static website** | Serves seanshubin.com — download links, info page | S3 + CloudFront (or just S3 static hosting) |
-| **Presence registry** | Answers: "who is the current host?" | A single small file in S3, or a lightweight API |
+| **Relay server** | Forwards inputs between clients, assigns player slots, manages connections | Single Rust binary on Lightsail ($3.50/month) |
+| **Version file** | Source of truth for current application version | Single file in S3 containing one integer |
+| **Binary downloads** | Platform-specific executables for auto-update | S3 |
+| **Save files** | Persistent game state between sessions | S3 |
 
-The presence registry is the key coordination point. When a user launches the application:
-1. Check the registry — is anyone hosting?
-2. If no → become the host, register yourself in the registry
-3. If yes → connect to the registered host as a peer
+### What Runs on the User's Machine
 
-The registry stores minimal data: the host's public address (IP or relay endpoint) and a heartbeat timestamp. If the heartbeat is stale, the host is considered gone.
+The downloaded application is a **client only**. It never accepts incoming connections and never acts as a relay. Every client makes an outbound connection to the AWS relay.
 
-### What Runs on the User's Machine (Everything Else)
+| Responsibility | Details |
+|---------------|---------|
+| **Full game simulation** | Every client runs the complete deterministic simulation independently |
+| **Local input capture** | Captures player input and sends it to the relay |
+| **Rendering** | Displays the latency state (authoritative + unconfirmed local inputs) |
+| **Auto-update** | Checks version, downloads new binary when needed |
 
-The downloaded application handles all of these roles:
+### How Clients Connect
 
-| Role | When |
-|------|------|
-| **Host (relay)** | First user to launch, or next in succession |
-| **Client** | Every user, including the host |
-| **Successor candidate** | Every non-host client, ordered by join time |
+All communication flows through the AWS relay. Clients never talk to each other directly. NAT traversal is a non-issue because every client makes only outbound connections.
 
-The host runs a lightweight relay — the same stateless input coordinator described in the existing [network-architecture.md](network-architecture.md). For chat, the relay receives messages from all clients and broadcasts them to everyone. No chat history is stored on the relay (stateless). Each client keeps their own local scrollback.
+```
+Client A ──outbound──→ AWS Relay ←──outbound── Client B
+Client C ──outbound──→ AWS Relay ←──outbound── Client D
+```
 
-### Host Succession
+When a user launches the application:
+1. Version check against `seanshubin.com/version` (auto-update if stale)
+2. Connect to the relay on AWS
+3. Hello handshake — send application version and spec hash
+4. Relay assigns a player slot
+5. Begin sending/receiving inputs
 
-The host maintains an ordered list of connected peers (by join time). This list is shared with all peers so everyone agrees on the succession order.
+### Connection Disruptions
 
-**When the host leaves gracefully:**
-1. Host announces departure to all peers
-2. Next peer in the succession list becomes the new host
-3. New host starts listening for connections
-4. New host registers itself in the AWS presence registry
-5. All other peers connect to the new host
+**Player leaves:** The relay removes their slot and stops including their inputs in confirmed packages. Other clients see the player's inputs stop arriving. No coordination needed — the relay handles it.
 
-**When the host disappears (crash, network loss):**
-1. Peers detect the host is gone (connection timeout)
-2. The deterministic succession rule selects the new host (first in the list)
-3. New host starts listening, registers in the presence registry
-4. Other peers attempt to connect to the new host
-5. If the new host is also unreachable, try the next in line
+**Relay restarts:** All clients lose their connections. Lightsail's process manager restarts the relay binary. Clients detect the disconnection, reconnect, and resume. Each client already has the full game state, so no state is lost. Clients agree on the last confirmed tick and continue from there.
 
-**When everyone updates simultaneously (live update):**
-The host updating is a graceful departure — it announces exit before restarting, triggering host succession. Since all clients are updating around the same time (different download speeds), host succession may cascade briefly as each new host also restarts. Within seconds, all clients are offline. As clients restart with the new version, they reconnect to the relay — the first to reconnect becomes the new host. This is equivalent to everyone's internet blipping for a few seconds; the system handles it via the same crash recovery path (all clients preserved full game state, resume from last confirmed tick).
-
-This mirrors the relay host migration protocol from [network-operations.md](network-operations.md), adapted for the case where the relay runs on a player's machine rather than a cloud VM.
-
-### NAT Traversal
-
-The existing architecture assumes peers make outbound connections to a relay with a public IP. When the host is a home user behind a NAT router, incoming connections are blocked by default.
-
-Options (in order of preference):
-
-1. **Relay through AWS** — The host doesn't accept direct connections. Instead, all peers (including the host) make outbound connections to a lightweight relay endpoint on AWS. The host role is logical (succession, coordination) but the actual packet forwarding happens on the always-on relay. This keeps NAT out of the picture entirely but adds a small AWS cost during active sessions.
-
-2. **STUN/TURN** — Use standard NAT traversal protocols. STUN handles the common case (peers behind simple NATs can often establish direct connections after a handshake). TURN is the fallback relay for restrictive NATs. AWS can host the TURN server.
-
-3. **UPnP / port forwarding** — The host application automatically opens a port on the router (UPnP), or the user manually configures port forwarding. Simplest conceptually but least reliable — many routers disable UPnP, and manual configuration is a barrier.
-
-**Recommended approach for v1:** Option 1 (relay through AWS). It's the simplest to implement, works for everyone regardless of network configuration, and the relay is trivially cheap for chat traffic. The relay can run as a small always-on process on the cheapest AWS instance, or as a serverless WebSocket endpoint. The host succession model still works — the "host" is the peer responsible for coordination (ordering messages, managing the peer list), even though packets flow through the AWS relay.
+**Live update:** All clients are updating around the same time. Each client disconnects, replaces the binary, and reconnects. The relay stays running throughout (it's on AWS, not on a player's machine). The grace period handles different update speeds — clients reconnect as they finish updating.
 
 ### Message Flow (Chat)
 
 ```
 User types message
-    → Client sends to relay (AWS or host)
-    → Relay broadcasts to all connected peers
-    → Each peer's client displays the message
+    → Client sends to relay (AWS)
+    → Relay broadcasts to all connected clients
+    → Each client displays the message
 ```
 
-Messages are plain text with a sender name and timestamp. No history is stored server-side. A joining peer sees messages from the moment they connect forward.
+Messages are plain text with a sender name and timestamp. No history is stored on the relay (stateless). A joining client sees messages from the moment they connect forward.
 
 ## Distribution
 
@@ -100,11 +82,40 @@ https://seanshubin.com/version
 
 Contains one integer, e.g., `7`. Nothing else.
 
-The application has a compiled-in version constant:
+The application has a compiled-in version constant and a compile-time-derived spec hash:
 
 ```rust
 const VERSION: u32 = 7;
+
+// Input types — the wire protocol specification
+#[derive(Serialize, Deserialize, SpecHash)]
+enum GameInput {
+    Chat(ChatInput),
+    Pong(PongInput),
+}
+
+#[derive(Serialize, Deserialize, SpecHash)]
+enum ChatInput {
+    SendMessage(String),
+    SetName(String),
+}
+
+#[derive(Serialize, Deserialize, SpecHash)]
+enum PongInput {
+    Idle,
+    MoveUp,
+    MoveDown,
+}
+
+// Global spec hash — derived from the entire GameInput type tree at compile time
+const SPEC_HASH: u64 = <GameInput as SpecHash>::HASH;
 ```
+
+The **application version** (`VERSION`) tracks releases and is used for the S3 version check and auto-update flow. The **spec hash** (`SPEC_HASH`) determines wire protocol compatibility. It is computed automatically by the `SpecHash` derive macro, which walks each type's structure (variant names, field names, field types, ordering) and hashes it at compile time. If any input type in the tree changes — adding a variant to `PongInput`, changing a field type in `ChatInput`, or adding a new game mode to `GameInput` — the spec hash changes automatically without anyone remembering to bump a number.
+
+These are independent concerns — a gameplay-only change (e.g., making the paddle faster) does not change the spec hash because the input types are unchanged. A wire format change (e.g., adding `PongInput::LaunchBall`) produces a different spec hash automatically.
+
+See [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility, Global spec hash, Derive macro for spec hash computation.
 
 On startup, before doing anything else:
 1. HTTP GET `https://seanshubin.com/version`
@@ -154,9 +165,9 @@ The binary knows its own platform at compile time and fetches the correct artifa
 
 ### Relay Version Enforcement (Backstop)
 
-The relay on AWS also knows the current version. When a client connects, it sends its version in the Hello message. If the relay sees a version mismatch, it rejects the connection with a message telling the client to update.
+The relay on AWS also knows the current version. When a client connects, it sends both its application version and its spec hash in the Hello message. The relay checks the application version and rejects connections with a stale version, telling the client to update. This catches edge cases where the startup version check was skipped (offline launch, network blip during check, etc.). The client can then trigger the auto-update flow.
 
-This catches edge cases where the startup version check was skipped (offline launch, network blip during check, etc.). The client can then trigger the auto-update flow.
+The spec hash in the Hello serves a separate purpose: wire protocol compatibility. The relay uses it for version-aware connection routing during the grace period (see below) and logs it to the canonical event log for deterministic replay. See [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility.
 
 ### Release Workflow (Developer Side)
 
@@ -210,6 +221,14 @@ The relay polls `https://seanshubin.com/version` every ~30 seconds. When it sees
 **Grace period:**
 After notifying clients, the relay begins a **grace period** (~5 minutes) during which it accepts connections from both the old version (N) and the new version (N+1). This accommodates different download speeds — fast connections update in seconds, slow ones may take a minute or two. After the grace period expires, the relay hard-rejects any remaining version N connections.
 
+**Version-aware routing during the grace period:**
+The relay does not mix clients with different spec hashes into the same input broadcast. The relay knows each client's spec hash from the Hello handshake. During the grace period, a reconnecting client with a new spec hash either waits in a lobby or joins a separate input pool — it is never merged into the active pool of clients with the old spec hash. This prevents confirmed input packages from containing a mix of incompatible payload formats. Without this separation, the relay's opaque-payload forwarding would deliver incompatible inputs to clients that cannot interpret them, causing simulation corruption that checksums can detect but cannot recover from (the problem is a code mismatch, not state drift). One comparison at connection time; zero per-message cost. Note: if a new application version does not change event types, the spec hash is unchanged and clients are wire-compatible — no separation needed, no false incompatibility.
+
+The relay logs each client's spec hash on the connection event in the canonical log, and records version-change points in a separate version index for random access. See [network-operations.md](network-operations.md) — Version Index.
+
+**Envelope vs. payload — why most updates skip the relay:**
+The relay understands the **protocol envelope** — message type, tick number, player slot, version in Hello — but treats input **payloads as opaque bytes**. Game logic changes (new input types, new features, balance tweaks) only change the payload; the relay forwards them without knowing or caring. Only changes to the envelope itself (new message types, framing format, handshake changes) require a relay update. This is why "client code changed, relay protocol unchanged" is the common case in the table below.
+
 **Relay protocol changes vs. client-only changes:**
 
 | Scenario | What happens |
@@ -258,7 +277,7 @@ The entire application is built with Bevy, including v1 chat. Bevy's ECS and ren
 
 | Phase | What's added | What it exercises |
 |-------|-------------|-------------------|
-| **v1: Chat** | Drop-in text chat | Host election, peer discovery, host migration, message relay, AWS coordination |
+| **v1: Chat** | Drop-in text chat | Relay connection, peer discovery, message forwarding, AWS coordination |
 | **v2: Chat + Pong** | Side-by-side chat and game lobby. Two peers can launch a pong match from within the app. | Deterministic lockstep, latency hiding, game state alongside chat |
 | **v3: Game library** | Multiple game options in the lobby. Chat persists across games. | Game-agnostic relay, modular game loading |
 | **v4: Persistence** | Game state saved to S3 between sessions | Cloud storage, tick-based sync protocol |

@@ -11,7 +11,7 @@ The networking pattern we prefer (see design philosophy #11) is **deterministic 
 | **Deterministic lockstep** | All clients run identical simulation from shared inputs. Same inputs on tick N → same state on every machine. |
 | **Relay server** (thin server) | Lightweight server that forwards inputs without simulating. No game state, no game logic — just a mailbox. |
 | **Input authority** (sequencer) | The role of ordering inputs into a canonical per-tick sequence. The relay server fills this role. |
-| **State-free server** | Server holds no game state. If it crashes, any client can become the new relay. |
+| **State-free server** | Server holds no game state. If it crashes, it restarts and clients reconnect — no game state is lost. |
 
 Other terms you'll encounter in networking discussions:
 
@@ -85,7 +85,7 @@ This is the foundation. Without a shared logical clock, you can't even talk abou
 
 The relay server solves one specific problem: **input ordering**. If player A presses "up" and player B presses "left" during tick 50, every client needs to process those inputs in the same order. The relay collects inputs from all clients, stamps them with a tick number, and broadcasts the canonical package.
 
-The relay has no game state. It doesn't know what "up" means. It's a mailbox that ensures everyone reads the same letters in the same order. If it crashes, any client could become the new relay because the relay holds nothing. See [Who Coordinates Inputs in P2P?](#who-coordinates-inputs-in-p2p) for coordination topology options.
+The relay has no game state. It doesn't know what "up" means. It's a mailbox that ensures everyone reads the same letters in the same order. If it crashes, it restarts and clients reconnect — no game state is lost because every client holds the full simulation. See [Who Coordinates Inputs in P2P?](#who-coordinates-inputs-in-p2p) for coordination topology options.
 
 ### Determinism: Same Inputs, Same State
 
@@ -427,7 +427,9 @@ The signaling server is like a matchmaking lobby — it introduces players but d
 |----------|---------------|-----------|------------|
 | Full mesh P2P | Only signaling for discovery | 2-8 players | Low |
 | Host-as-relay | No server, one player relays | 2-16 players | Medium (host migration) |
-| Dedicated relay | Lightweight, no simulation | Many players | Low (but requires infrastructure) |
+| **Dedicated relay** | **Lightweight, no simulation** | **Many players** | **Low (but requires infrastructure)** |
+
+**Our choice: Dedicated relay on AWS (Option A).** A single Rust binary on a Lightsail instance ($3.50/month). All clients make outbound connections to the relay — no client ever accepts incoming connections, no player hosts the relay, and NAT traversal is a non-issue. See [seans-arcade-plan.md](seans-arcade-plan.md) — How Clients Connect.
 
 ## Case Studies: Factorio and Minecraft
 
@@ -519,34 +521,26 @@ Factorio validates the "trust everyone, coordinate inputs" model. Key takeaways:
 4. **Latency hiding** makes round-trip delay acceptable for non-twitch gameplay
 5. The right architecture depends on what dominates your bandwidth: if entity count >> input rate, lockstep wins
 
-## Listen Server: Is the Host Doing Double Duty?
+## Why the Relay Is Cheap
 
-In the Factorio-style model where one player hosts, the host runs both the input coordinator and their own game client. In practice, this is not meaningful extra work.
+The relay (on AWS, not on a player's machine) does trivially little work compared to what each client does:
 
-### What the Coordinator Does (Cheap)
+### What the Relay Does
 - Receive a few hundred bytes per player per tick
 - Merge into one ordered package
 - Broadcast to all clients
 - No game logic, no simulation, no state — just packet forwarding
 
-### What Every Client Does (Expensive, Same for Everyone)
+### What Every Client Does
 - Run the full game simulation
 - Render the game
 - Process local input
 
-The coordinator adds maybe 1-2% overhead on top of what the host is already doing as a client. It's not meaningfully "double duty."
+The relay's work is negligible — packet forwarding at ~19 KB/sec for 4 players. The cheapest VM handles this with resources to spare. See [seans-arcade-plan.md](seans-arcade-plan.md) for cost estimates.
 
-### Hosting Options
+All clients have equal latency — everyone's inputs travel the same outbound path to the AWS relay and back. No player has a latency advantage.
 
-| Model | Description | Latency fairness | Infrastructure |
-|-------|-------------|-----------------|----------------|
-| **Listen server** | One player hosts coordinator + their client | Host has slight advantage (no round-trip for own inputs) | None |
-| **Dedicated server** | Coordinator on separate machine | Equal for all players | Cheap — minimal CPU/RAM needed |
-| **Hybrid** | Start as listen server, migrate if needed | Varies | Optional |
-
-For cooperative, non-adversarial games, the host's latency advantage is imperceptible. In competitive PvP it could matter — but if trust between players is assumed (see design philosophy), this is a non-issue.
-
-For connection disruptions (player leave, host migration, player join mid-game), deployment, persistent state, diagnostics, and debugging, see [network-operations.md](network-operations.md).
+For connection disruptions (player leave, relay restart, player join mid-game), deployment, persistent state, diagnostics, and debugging, see [network-operations.md](network-operations.md).
 
 ## Quick Recommendation
 

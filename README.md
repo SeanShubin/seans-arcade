@@ -55,6 +55,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Live update for running clients** — relay polls the version file (~30s), notifies all connected clients when a new version appears
 - Clients download the new binary **in the background** while the game continues — downtime is sub-second (restart only)
 - **Grace period** (~5 minutes) after a new version — relay accepts both old and new version connections, then hard-rejects the old version
+- The relay treats game inputs as **opaque bytes** — only protocol-level changes (message framing, handshake) require relay redeployment; game logic changes are relay-transparent
 - ([mechanism details](docs/seans-arcade-plan.md#distribution))
 
 ### Networking (Games, v2+)
