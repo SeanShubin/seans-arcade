@@ -31,14 +31,16 @@ Recurring themes across these inspirations that inform design priorities for Sea
 
 **Emergent systems over scripted content.** The best moments come from interacting systems, not hand-authored sequences. Fire spreads, classes interact with the world differently, AI reacts to player improvisation (Metal Gear Solid V), crafting tiers unlock new possibilities. Small rule sets that produce large interaction spaces.
 
-**Exploration as the reward.** These games drop you into a world and let curiosity drive progress. New areas, new mechanics, and new understanding are the payoff — not cutscenes or XP bars. Sometimes exploration is literal (Cyberpunk 2077's dense city), sometimes it's mechanical (Tunic's hidden rules).
+**Exploration as the reward.** These games drop you into a world and let curiosity drive progress. New areas, new mechanics, and new understanding are the payoff — not cutscenes or XP bars. Sometimes exploration is literal (Cyberpunk 2077's dense city), sometimes mechanical (Tunic's hidden rules).
 
-**Progression that unlocks new ways to play.** Ability-gating (Metroid, Castlevania), crafting tiers (Necesse, Grounded), race design (Master of Orion, Stars!), class selection (Streets of Rogue) — progression expands *how* you play, not just *how strong* you are.
+**Progression that unlocks new ways to play.** Ability-gating (Metroid, Castlevania), crafting tiers (Necesse, Grounded), race design (Master of Orion, Stars!), class selection (Streets of Rogue), gadget unlocks (Batman Arkham) — progression expands *how* you play, not just *how strong* you are.
 
-**Deep systems, modest presentation.** Mechanical depth over visual fidelity. The complexity lives in the rules and their interactions, not in the graphics.
+**Depth matters more than fidelity.** The complexity lives in rules and their interactions. Some of these games are visually modest (Factorio, Stars!, Necesse), others are lavish (Cyberpunk 2077, Doom Eternal, Batman Arkham) — but all prioritize mechanical depth over spectacle. When fidelity serves the systems, great. When it doesn't, the systems carry the game alone.
 
 **Multiplayer as a system multiplier.** Co-op and competitive multiplayer amplify emergent systems. When multiple humans interact with the same rule set, the possibility space expands beyond what any single player experiences.
 
-**Teach through design, not tutorials.** Portal introduces one mechanic per chamber, tests it, then combines it with previous concepts. Tunic hides its rules in an in-game manual that rewards observation. The best teaching feels like discovery, not instruction.
+**Teach through design, not tutorials.** Zelda dropped the player in with no instructions and let curiosity teach. Portal introduces one mechanic per chamber, tests it, then combines it with previous concepts. Portal 2 extends this into co-op, where two players must teach *each other*. Tunic hides its rules in an in-game manual that rewards observation. The best teaching feels like discovery, not instruction.
 
-**Game feel as a design pillar.** The moment-to-moment sensation of playing matters as much as the systems around it. Doom Eternal's aggressive resource loop forces constant forward momentum. Batman Arkham's freeflow combat makes every input feel powerful and connected. When the core loop feels right, players stay engaged through mechanical pleasure alone.
+**Game feel as a design pillar.** The moment-to-moment sensation of playing matters as much as the systems around it. Doom (1993) established visceral FPS feel that Doom Eternal refined into an aggressive resource loop forcing constant forward momentum. Batman Arkham's freeflow combat makes every input feel powerful and connected. When the core loop feels right, players stay engaged through mechanical pleasure alone.
+
+**Deepen the core, don't reinvent it.** Three franchise pairs on this list — Doom/Doom Eternal, Portal/Portal 2, Metal Gear Solid/MGSV — show sequels that preserved what made the original work and expanded the possibility space around it. The best iteration adds new dimensions to a proven foundation rather than starting over.
