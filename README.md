@@ -28,7 +28,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - The host role is **logical** (succession, message ordering) even though packets flow through the AWS relay
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](docs/network-operations.md))
 - Presence registry uses **S3 polling** (HEAD/PUT/GET) — no dedicated API, no Lambda ([details](docs/architecture-decisions.md))
-- Relay access is **invite-only** — only people the operator is in contact with can obtain access; mechanism TBD
+- Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](docs/architecture-decisions.md))
 - Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
 - Estimated total cost for 0-10 users: **~$5/month** ([cost details](docs/network-operations.md#cost-estimate-0-10-users))
 

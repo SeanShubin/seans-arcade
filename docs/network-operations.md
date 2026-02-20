@@ -255,9 +255,30 @@ Client C ──outbound──→ AWS Relay ←──outbound── Client D
 When a user launches the application:
 1. Version check against `seanshubin.com/version` (auto-update if stale)
 2. Connect to the relay on AWS
-3. Hello handshake — send commit hash
-4. Relay assigns a player slot
-5. Begin sending/receiving inputs
+3. Hello handshake — send commit hash and shared secret
+4. Relay validates the secret — match continues, mismatch silently drops the connection
+5. Relay assigns a player slot
+6. Begin sending/receiving inputs
+
+### Relay Access Control
+
+The relay is protected by a shared passphrase. For the decision and rationale, see [architecture-decisions.md](architecture-decisions.md) — Shared secret in the Hello handshake.
+
+**Where the secret lives:**
+
+| Location | Form | Details |
+|----------|------|---------|
+| Relay | Environment variable or config file | The accepted secret. Not in source control. |
+| Client (local disk) | Stored after first entry | Client prompts on first launch, remembers for subsequent launches. |
+| S3 | Nowhere | The secret is never in cloud storage. |
+
+**Relay behavior on invalid secret:** No response. The relay silently drops the packet. From the outside, the relay looks like a closed port — no information is leaked about whether the relay exists, whether the secret was wrong, or what protocol is in use.
+
+**Client behavior on no response:** The client treats it the same as a connection timeout. The UI shows a connection failure, not a distinct "wrong secret" error — this avoids leaking information if someone is probing.
+
+**Secret rotation:** The operator changes the environment variable or config file on the relay and restarts (or the relay hot-reloads, if supported). The operator tells all players the new secret through the same out-of-band channel. At 0-10 people this takes seconds. Connected clients are unaffected until they reconnect — the secret is only checked during the Hello handshake.
+
+**Plaintext transmission:** The secret is sent in plaintext over UDP. This is consistent with the rest of the protocol — all session traffic (inputs, confirmed packages, checksums) is also plaintext UDP. The secret's purpose is to stop unsolicited connections from strangers, not to resist an attacker who can read packets in transit. See the note on who can observe UDP traffic below.
 
 ## Connecting Over the Internet
 

@@ -186,6 +186,20 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Access Control
+
+### Shared secret in the Hello handshake
+
+**Decision:** The relay is protected by a shared passphrase. The operator sets the secret on the relay (environment variable or config file) and distributes it to invited players through an out-of-band channel (text message, Discord, phone call). The client includes the secret in the Hello handshake alongside the commit hash. The relay silently drops connections with an incorrect or missing secret — no error response, no acknowledgment. The secret is sent in plaintext over UDP.
+
+**Over:** Per-user tokens with a revocation list (more infrastructure for a problem that doesn't exist at 0-10 trusted users), client certificates or key pairs (overengineered, contradicts "no cryptographic identity"), IP allowlists (fragile — residential IPs change, people play from different networks), and encrypted handshake (DTLS — all session traffic is already plaintext UDP; encrypting only the handshake solves nothing).
+
+**Rationale:** The threat model is random strangers on the internet discovering the relay's IP and connecting — not malicious insiders or targeted surveillance. A shared secret stops port scanners, bots, and accidental connections. The group is small (0-10) and trusted, so the social cost of sharing one passphrase is near zero. Rotation is trivial — the operator changes it on the relay and tells everyone the new one. The secret is not stored in S3 or any cloud service; it exists only on the relay and on each client's local disk.
+
+**See:** [network-operations.md](network-operations.md) — Relay Access Control
+
+---
+
 ## Event Log Principles
 
 ### The canonical log is sufficient to deterministically recreate all game state
