@@ -18,7 +18,7 @@ The goal is to get clients talking to each other. Clients never communicate dire
 |---------|---------|----------------|
 | **Static website** | Serves seanshubin.com — download links, info page | S3 + CloudFront (or just S3 static hosting) |
 | **Relay server** | Forwards inputs between clients, assigns player slots, manages connections | Single Rust binary on Lightsail ($3.50/month) |
-| **Version file** | Source of truth for current application version | Single file in S3 containing one integer |
+| **Version file** | Source of truth for current application version | Single file in S3 containing the commit hash |
 | **Binary downloads** | Platform-specific executables for auto-update | S3 |
 | **Save files** | Persistent game state between sessions | S3 |
 
@@ -45,7 +45,7 @@ Client C ──outbound──→ AWS Relay ←──outbound── Client D
 When a user launches the application:
 1. Version check against `seanshubin.com/version` (auto-update if stale)
 2. Connect to the relay on AWS
-3. Hello handshake — send application version and spec hash
+3. Hello handshake — send commit hash
 4. Relay assigns a player slot
 5. Begin sending/receiving inputs
 
@@ -80,47 +80,22 @@ A single file on S3 serves as the source of truth:
 https://seanshubin.com/version
 ```
 
-Contains one integer, e.g., `7`. Nothing else.
+Contains a git commit hash, e.g., `abc123def456`. Nothing else.
 
-The application has a compiled-in version constant and a compile-time-derived spec hash:
+The application has a compiled-in commit hash, embedded at build time by a build script that reads `git rev-parse HEAD`:
 
 ```rust
-const VERSION: u32 = 7;
-
-// Input types — the wire protocol specification
-#[derive(Serialize, Deserialize, SpecHash)]
-enum GameInput {
-    Chat(ChatInput),
-    Pong(PongInput),
-}
-
-#[derive(Serialize, Deserialize, SpecHash)]
-enum ChatInput {
-    SendMessage(String),
-    SetName(String),
-}
-
-#[derive(Serialize, Deserialize, SpecHash)]
-enum PongInput {
-    Idle,
-    MoveUp,
-    MoveDown,
-}
-
-// Global spec hash — derived from the entire GameInput type tree at compile time
-const SPEC_HASH: u64 = <GameInput as SpecHash>::HASH;
+const COMMIT_HASH: &str = env!("GIT_COMMIT_HASH");
 ```
 
-The **application version** (`VERSION`) tracks releases and is used for the S3 version check and auto-update flow. The **spec hash** (`SPEC_HASH`) determines wire protocol compatibility. It is computed automatically by the `SpecHash` derive macro, which walks each type's structure (variant names, field names, field types, ordering) and hashes it at compile time. If any input type in the tree changes — adding a variant to `PongInput`, changing a field type in `ChatInput`, or adding a new game mode to `GameInput` — the spec hash changes automatically without anyone remembering to bump a number.
+The commit hash is the single identifier for "this exact code." It changes automatically on every commit — no manual version bumping. Any code change — wire format, gameplay logic, constants, physics — produces a different commit hash. This matters because in deterministic lockstep, any code change produces different simulation results from the same inputs.
 
-These are independent concerns — a gameplay-only change (e.g., making the paddle faster) does not change the spec hash because the input types are unchanged. A wire format change (e.g., adding `PongInput::LaunchBall`) produces a different spec hash automatically.
-
-See [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility, Global spec hash, Derive macro for spec hash computation.
+See [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier.
 
 On startup, before doing anything else:
 1. HTTP GET `https://seanshubin.com/version`
-2. Parse the integer
-3. If it matches the compiled-in version → proceed to the app
+2. Parse the commit hash
+3. If it matches the compiled-in commit hash → proceed to the app
 4. If it doesn't → auto-update (see below)
 5. If the request fails (no internet, S3 down) → launch with current version in **offline mode**
 
@@ -147,7 +122,7 @@ When a newer version is detected:
 3. Spawn the new binary as a new process
 4. Exit the old process
 
-**What the user sees:** "Updating to v8..." with a progress bar for the download (a few seconds on broadband for a ~50MB binary), then the app starts normally. From their perspective, the app just took a moment longer to launch.
+**What the user sees:** "Updating..." with a progress bar for the download (a few seconds on broadband for a ~50MB binary), then the app starts normally. From their perspective, the app just took a moment longer to launch.
 
 The binary knows its own platform at compile time and fetches the correct artifact:
 
@@ -165,20 +140,21 @@ The binary knows its own platform at compile time and fetches the correct artifa
 
 ### Relay Version Enforcement (Backstop)
 
-The relay on AWS also knows the current version. When a client connects, it sends both its application version and its spec hash in the Hello message. The relay checks the application version and rejects connections with a stale version, telling the client to update. This catches edge cases where the startup version check was skipped (offline launch, network blip during check, etc.). The client can then trigger the auto-update flow.
+The relay on AWS also knows the current commit hash (from the same S3 version file it polls). When a client connects, it sends its commit hash in the Hello message. The relay compares it against the current commit hash and rejects connections that don't match, telling the client to update. This catches edge cases where the startup version check was skipped (offline launch, network blip during check, etc.). The client can then trigger the auto-update flow.
 
-The spec hash in the Hello serves a separate purpose: wire protocol compatibility. The relay uses it for version-aware connection routing during the grace period (see below) and logs it to the canonical event log for deterministic replay. See [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility.
+The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier.
 
 ### Release Workflow (Developer Side)
 
 When publishing a new version:
-1. Bump the `VERSION` constant in the client code
-2. Push to GitHub — CI builds per-platform binaries on native runners (cannot cross-compile to macOS)
-3. CI uploads all platform binaries to S3
-4. CI uploads the version file to S3 (`version` containing the new integer)
-5. If the relay protocol changed, deploy the new relay binary to Lightsail
+1. Push to GitHub — CI builds per-platform binaries on native runners (cannot cross-compile to macOS)
+2. CI uploads all platform binaries to S3
+3. CI uploads the version file to S3 (`version` containing `$GITHUB_SHA`)
+4. If the relay protocol changed, deploy the new relay binary
 
-**Ordering matters:** All platform binaries must be uploaded (step 3) before the version file (step 4), so no client downloads a stale binary for a new version number. All platforms share the same version number — a release is not published until all platform binaries are ready.
+No manual version bumping — the commit hash is the version. CI writes `$GITHUB_SHA` to the version file automatically.
+
+**Ordering matters:** All platform binaries must be uploaded (step 2) before the version file (step 3), so no client downloads a stale binary for a new commit hash. All platforms share the same commit hash — a release is not published until all platform binaries are ready.
 
 **Why CI, not local builds:** macOS binaries must be built on macOS (the SDK and linker are not freely redistributable). GitHub Actions provides native macOS, Windows, and Linux runners. Bevy has an [official CI template](https://github.com/bevyengine/bevy_github_ci_template) for this.
 
@@ -198,10 +174,10 @@ The Release Workflow above describes the logical steps. This section describes t
 **Deploy job** (depends on all three build jobs succeeding):
 1. Download all platform artifacts
 2. Upload all platform binaries to S3
-3. Read the `VERSION` constant from the code, write that value to the S3 version file
-4. If relay code changed: deploy new relay binary to Lightsail
+3. Write `$GITHUB_SHA` to the S3 version file
+4. If relay code changed: deploy new relay binary
 
-The version number is bumped manually in the source code before pushing. CI reads it from the code so the S3 version file always matches. No auto-incrementing.
+No manual version bumping. The commit hash is available automatically in CI.
 
 **Version file timing safety:** CI uploads platform binaries BEFORE updating the version file. The version file update is the atomic "go" signal — it only changes after all binaries are in place. This prevents clients from seeing a new version before the binary is available for download.
 
@@ -210,31 +186,31 @@ The version number is bumped manually in the source code before pushing. CI read
 The startup auto-update flow (above) handles clients that launch after a new version is published. This section covers what happens to clients that are **already running** when a new version is pushed.
 
 **Relay polling:**
-The relay polls `https://seanshubin.com/version` every ~30 seconds. When it sees a version newer than the one it expects, it sends an "update required" message to all connected clients.
+The relay polls `https://seanshubin.com/version` every ~30 seconds. When it sees a commit hash different from the one it expects, it sends an "update required" message to all connected clients.
 
 **Client background download:**
-1. Client receives "update required: version N+1" from the relay
+1. Client receives "update required" from the relay
 2. Client begins downloading its platform-specific binary **in the background** — the game continues running
 3. When the download completes: client finishes the current tick, replaces the binary, spawns the new process, exits
-4. New process starts, version check passes (already have N+1), connects to relay
+4. New process starts, version check passes (commit hash matches), connects to relay
 
 **Grace period:**
-After notifying clients, the relay begins a **grace period** (~5 minutes) during which it accepts connections from both the old version (N) and the new version (N+1). This accommodates different download speeds — fast connections update in seconds, slow ones may take a minute or two. After the grace period expires, the relay hard-rejects any remaining version N connections.
+After notifying clients, the relay begins a **grace period** (~5 minutes) during which it accepts connections from both the old and new commit hashes. This accommodates different download speeds — fast connections update in seconds, slow ones may take a minute or two. After the grace period expires, the relay hard-rejects any remaining old-commit connections.
 
 **Version-aware routing during the grace period:**
-The relay does not mix clients with different spec hashes into the same input broadcast. The relay knows each client's spec hash from the Hello handshake. During the grace period, a reconnecting client with a new spec hash either waits in a lobby or joins a separate input pool — it is never merged into the active pool of clients with the old spec hash. This prevents confirmed input packages from containing a mix of incompatible payload formats. Without this separation, the relay's opaque-payload forwarding would deliver incompatible inputs to clients that cannot interpret them, causing simulation corruption that checksums can detect but cannot recover from (the problem is a code mismatch, not state drift). One comparison at connection time; zero per-message cost. Note: if a new application version does not change event types, the spec hash is unchanged and clients are wire-compatible — no separation needed, no false incompatibility.
+The relay does not mix clients with different commit hashes into the same input broadcast. The relay knows each client's commit hash from the Hello handshake. During the grace period, a reconnecting client with the new commit hash either waits in a lobby or joins a separate input pool — it is never merged into the active pool of clients with the old commit hash. This prevents simulation corruption: even if the wire format hasn't changed, different code produces different simulation results from the same inputs. Checksums can detect the divergence but can't recover from a code mismatch. One comparison at connection time; zero per-message cost.
 
-The relay logs each client's spec hash on the connection event in the canonical log, and records version-change points in a separate version index for random access. See [network-operations.md](network-operations.md) — Version Index.
+The relay logs each client's commit hash on the connection event in the canonical log, and records version-change points in a separate version index for random access. See [network-operations.md](network-operations.md) — Version Index.
 
 **Envelope vs. payload — why most updates skip the relay:**
-The relay understands the **protocol envelope** — message type, tick number, player slot, version in Hello — but treats input **payloads as opaque bytes**. Game logic changes (new input types, new features, balance tweaks) only change the payload; the relay forwards them without knowing or caring. Only changes to the envelope itself (new message types, framing format, handshake changes) require a relay update. This is why "client code changed, relay protocol unchanged" is the common case in the table below.
+The relay understands the **protocol envelope** — message type, tick number, player slot, commit hash in Hello — but treats input **payloads as opaque bytes**. Game logic changes (new input types, new features, balance tweaks) only change the payload; the relay forwards them without knowing or caring. Only changes to the envelope itself (new message types, framing format, handshake changes) require a relay update. This is why "client code changed, relay protocol unchanged" is the common case in the table below.
 
 **Relay protocol changes vs. client-only changes:**
 
 | Scenario | What happens |
 |----------|-------------|
-| **Client code changed, relay protocol unchanged** | Relay stays running, discovers new version via polling, notifies clients. Clients update and reconnect. No relay downtime. |
-| **Relay protocol changed** | CI deploys new relay binary to Lightsail. Relay restart disconnects all clients. Clients try to reconnect, get version mismatch rejection, auto-update via the startup flow, then reconnect with the correct version. |
+| **Client code changed, relay protocol unchanged** | Relay stays running, discovers new commit hash via polling, notifies clients. Clients update and reconnect. No relay downtime. |
+| **Relay protocol changed** | CI deploys new relay binary. Relay restart disconnects all clients. Clients try to reconnect, get commit hash mismatch rejection, auto-update via the startup flow, then reconnect with the correct version. |
 
 ### Cross-Platform Considerations (Bevy)
 

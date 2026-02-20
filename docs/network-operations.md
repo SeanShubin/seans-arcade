@@ -72,9 +72,9 @@ Checksums detect drift. Message logging and deterministic replay diagnose it. In
 
 Three principles govern what goes into the log. For the formalized decisions and rationale, see [architecture-decisions.md](architecture-decisions.md) — Event Log Principles.
 
-**The canonical log is sufficient to deterministically recreate all game state.** Given the log and the correct simulation code, every game state at every tick can be recreated with zero ambiguity. The log is self-describing — it contains enough metadata to determine what wire protocol specification each event conforms to, without requiring external knowledge of what version was running at that time.
+**The canonical log is sufficient to deterministically recreate all game state.** Given the log and the correct simulation code, every game state at every tick can be recreated with zero ambiguity. The log is self-describing — connection events record the git commit hash, which identifies exactly which code to check out and build for replay.
 
-**The log stores the minimum information needed for zero ambiguity.** Information that is constant across a connection (such as the spec hash) is logged once at the connection event, not repeated on every input from that connection. Log state changes, not state itself. If something can be derived from other logged events, it is not duplicated.
+**The log stores the minimum information needed for zero ambiguity.** Information that is constant across a connection (such as the commit hash) is logged once at the connection event, not repeated on every input from that connection. Log state changes, not state itself. If something can be derived from other logged events, it is not duplicated.
 
 **Indexes are not redundant information.** A derived index that enables a capability the canonical log cannot provide on its own (such as random access without sequential scan) is maintained alongside the log. Derivability does not imply redundancy when the derived structure serves a purpose the source cannot perform.
 
@@ -109,7 +109,7 @@ On every message, both sides:
 | Payload | The actual input bytes or checksum value |
 
 On connection events (Hello/disconnect), additionally:
-- Spec hash — the hash of the connecting client's event type specifications, identifying the wire protocol format for all subsequent messages from this connection (see [architecture-decisions.md](architecture-decisions.md) — Specification hash for wire protocol compatibility)
+- Commit hash — the git commit hash of the connecting client's build, identifying the exact code version for all subsequent messages from this connection (see [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier)
 
 On the relay, additionally:
 - Time between receiving a player's input and broadcasting the confirmed package (relay processing latency)
@@ -141,18 +141,18 @@ This is exactly how Factorio debugs desyncs — replay the input log, checksum e
 
 ### Version Index
 
-The canonical log records the spec hash on connection events only — not on every input message (see Logging Principles above). To determine the wire protocol specification for any event in the log, a sequential reader tracks a `slot → spec hash` mapping as it processes connection events. Each input inherits the spec hash of its slot's most recent connection.
+The canonical log records the commit hash on connection events only — not on every input message (see Logging Principles above). To determine the code version for any event in the log, a sequential reader tracks a `slot → commit hash` mapping as it processes connection events. Each input inherits the commit hash of its slot's most recent connection.
 
-For random access — looking up the spec for an event at an arbitrary log position without reading from the beginning — the relay maintains a **version index** alongside the canonical log. The version index records one entry per version-change point per slot:
+For random access — looking up the code version for an event at an arbitrary log position without reading from the beginning — the relay maintains a **version index** alongside the canonical log. The version index records one entry per version-change point per slot:
 
 ```
-log_position 0:     slot 1 = 0xABCD1234
-log_position 0:     slot 2 = 0xABCD1234
-log_position 4200:  slot 1 = 0xEF567890
-log_position 4205:  slot 2 = 0xEF567890
+log_position 0:     slot 1 = abc123
+log_position 0:     slot 2 = abc123
+log_position 4200:  slot 1 = def456
+log_position 4205:  slot 2 = def456
 ```
 
-To find the spec hash for any event: look up the slot, find the most recent index entry at or before that log position. The index is a handful of entries per session — typically one per connection event, a few hundred bytes total.
+To find the commit hash for any event: look up the slot, find the most recent index entry at or before that log position. The index is a handful of entries per session — typically one per connection event, a few hundred bytes total.
 
 The version index is **derived from** the canonical log. It can be deleted and rebuilt by replaying connection events. It adds no new information — it provides random access to information that already exists in the canonical log but would otherwise require sequential scan to reach.
 
@@ -334,9 +334,6 @@ bevy-prototyping/
 │   ├── neon_pong.rs
 │   └── ...
 ├── crates/                 # multi-crate workspace members
-│   ├── spec_hash/          # SpecHash trait + derive macro + primitive impls
-│   │   ├── Cargo.toml      # proc-macro = true
-│   │   └── src/lib.rs
 │   ├── relay/              # relay server (game-agnostic input coordinator)
 │   │   ├── Cargo.toml
 │   │   └── src/
