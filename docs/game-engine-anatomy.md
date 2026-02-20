@@ -4,6 +4,10 @@
   - Meshes, textures, shaders
   - Sound files
   - Fonts, UI layouts
+  - Animation clips, skeletal rigs
+- **Persistence**
+  - Save (simulation state → serialized → disk)
+  - Load (disk → deserialized → simulation state)
 - **Simulation**
   - Input
     - Player input (keyboard, mouse, gamepad)
@@ -11,6 +15,11 @@
     - UI input (menu selections, button clicks)
   - World state (entity positions, velocities, health, scores)
   - Game rules (physics, collision, scoring, AI)
+- **Animation** (transforms simulation state before rendering)
+  - Skeletal (bone transforms, IK, blend trees)
+  - Procedural (springs, ragdoll, look-at)
+  - Sprite (frame sequences, flip books)
+  - Particles/VFX (spawn, update, kill short-lived visual elements)
 - **Visual pipeline**
   - What's there
     - Geometry (vertices, triangles, normals, UVs)
