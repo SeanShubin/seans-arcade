@@ -43,6 +43,15 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Identity is a self-chosen display name, stored locally, no uniqueness enforcement
 - Local config (display name, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](docs/architecture-decisions.md))
 
+### Arcade Model (v2+)
+- The arcade is a **host application** — chat is the always-on social layer, games are sub-applications within it
+- Chat is **always visible** to everyone — playing or watching a game does not leave the chat
+- Games appear in a **game screen within the chat interface** — chat is the lobby
+- Any player can **start a game and invite others**; any player can **spectate** any game
+- **Multiple games run simultaneously** with different player subsets
+- Each game is its own **lockstep session** with its own tick stream and player group
+- The relay **multiplexes** one connection per client across chat and concurrent game sessions
+
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
 - Single binary per platform, **self-replacing auto-update** — no separate launcher, no installer
