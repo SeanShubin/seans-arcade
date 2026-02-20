@@ -13,9 +13,11 @@ Games that inspire the design of Sean's Arcade.
 - **Castlevania: Symphony of the Night** (Konami, 1997) — Fused Castlevania's action with Metroid's exploration structure. The other half of "metroidvania."
 - **Metal Gear Solid** (Konami, 1998) — Cinematic stealth action that proved games could deliver complex narrative alongside systemic gameplay.
 - **Portal** (Valve, 2007) — Perfect pacing as a teaching tool: each chamber introduces one idea, tests it, then combines it with previous concepts.
+- **Sins of a Solar Empire** (Ironclad Games, 2008) — Real-time 4X that merged grand strategy empire management with real-time fleet combat across connected star systems.
 - **Batman: Arkham Asylum** (Rocksteady, 2009) — Fluid freeflow combat system with metroidvania-style world unlocks and predator stealth encounters. Launched a genre-defining series.
 - **Portal 2** (Valve, 2011) — Expanded Portal's design-as-teaching with co-op puzzles, new mechanics like gels and light bridges, and masterful comedic pacing.
 - **Metal Gear Solid V: The Phantom Pain** (Konami, 2015) — Open-world stealth where emergent AI reactions and systemic tools let the player improvise tactics moment to moment.
+- **The Outer Worlds** (Obsidian, 2019) — First-person RPG with player-driven dialogue, faction reputation systems, and companion builds that shape how encounters play out.
 - **Streets of Rogue** (Matt Dabrowski, 2019) — Roguelite with immersive sim DNA where every class interacts with systems differently, producing emergent solutions.
 - **Cyberpunk 2077** (CD Projekt Red, 2020) — Dense open-world RPG with layered quest design and a lived-in city that rewards exploration.
 - **Doom Eternal** (id Software, 2020) — Aggressive resource loop that forces constant forward momentum — every encounter is a puzzle solved through violence and movement.
