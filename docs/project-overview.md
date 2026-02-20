@@ -21,7 +21,7 @@ Messages are plain text with a sender name and timestamp. No history is stored o
 
 ## Arcade Model
 
-Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. Each game is its own lockstep session with its own tick stream, while the relay multiplexes a single connection per client across chat and all concurrent game sessions. See the [README](../README.md#arcade-model-v2) for the full decision list.
+Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. Each game is its own lockstep session with its own tick stream, while the relay multiplexes a single connection per client across chat and all concurrent game sessions. See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
 
 ## What the Application Looks Like (v1 — Chat)
 
@@ -46,38 +46,41 @@ Each phase builds on the previous infrastructure. Chat is the always-on social l
 
 ## Open Questions
 
-See [Decisions Needed](../README.md#decisions-needed) in the README (canonical list of pending decisions).
+See [Decisions Needed](decisions.md#decisions-needed) in the decision register (canonical list of pending decisions).
 
 ## Document Index
 
-### Architecture & Infrastructure
+### Decisions
+- [decisions.md](decisions.md) — Decision register (terse bullets, links to rationale)
 - [architecture-decisions.md](architecture-decisions.md) — Formalized technical decisions with rationale
-- [network-architecture.md](network-architecture.md) — Lockstep relay networking model: architecture and concepts
-- [network-operations.md](network-operations.md) — Running, debugging, and maintaining networked games; AWS infrastructure and cost estimates
-- [distribution.md](distribution.md) — Distribution, versioning, CI pipeline, and auto-update
-- [game-engine-anatomy.md](game-engine-anatomy.md) — How a game engine is structured
 
-### Game Design
-- [design-philosophy.md](design-philosophy.md) — Core game design principles
-- [avatar-control-and-game-feel.md](avatar-control-and-game-feel.md) — Making controls feel responsive
-- [pain-before-relief.md](pain-before-relief.md) — Pacing solutions after the player feels the problem
-- [discovered-contract.md](discovered-contract.md) — Rules as discovery content
-- [emergent-gameplay-and-progression.md](emergent-gameplay-and-progression.md) — Multiple progression axes and emergent interactions
-- [meaningful-choice-analysis.md](meaningful-choice-analysis.md) — What makes choices feel meaningful (BG3 vs Cyberpunk)
-- [progression-and-difficulty-design.md](progression-and-difficulty-design.md) — Progression gating and player-directed difficulty
-- [procedural-vs-authored-design.md](procedural-vs-authored-design.md) — Tradeoffs between procedural and hand-crafted content
-- [reference-games.md](reference-games.md) — Games studied for design lessons
-- [classic-game-candidates.md](classic-game-candidates.md) — Candidate classic games for the arcade
-- [zelda-case-study.md](zelda-case-study.md) — Zelda design analysis
-- [design-topics-to-explore.md](design-topics-to-explore.md) — Design topics for future research
+### Architecture
+- [network-architecture.md](architecture/network-architecture.md) — Lockstep relay networking model: architecture and concepts
+- [network-operations.md](architecture/network-operations.md) — Running, debugging, and maintaining networked games; AWS infrastructure and cost estimates
+- [distribution.md](architecture/distribution.md) — Distribution, versioning, CI pipeline, and auto-update
+- [game-engine-anatomy.md](architecture/game-engine-anatomy.md) — How a game engine is structured
 
-### Development & Tooling
-- [project-setup.md](project-setup.md) — Project setup and configuration
-- [learning-plan.md](learning-plan.md) — Learning roadmap
-- [pong-step-by-step.md](pong-step-by-step.md) — Step-by-step pong implementation
-- [architectural-rules-in-ecs.md](architectural-rules-in-ecs.md) — Architectural rules for ECS codebases
-- [static-analysis-for-rust.md](static-analysis-for-rust.md) — Static analysis tooling for Rust
-- [rust-implicit-conventions.md](rust-implicit-conventions.md) — Rust implicit conventions
-- [keeping-dependencies-updated.md](keeping-dependencies-updated.md) — Dependency management
-- [gilrs-dual-gamepad-bug.md](gilrs-dual-gamepad-bug.md) — Gilrs dual gamepad bug investigation
-- [non-programming-skills.md](non-programming-skills.md) — Non-programming skills for game development
+### Research — Game Design
+- [design-philosophy.md](research/design-philosophy.md) — Core game design principles
+- [avatar-control-and-game-feel.md](research/avatar-control-and-game-feel.md) — Making controls feel responsive
+- [pain-before-relief.md](research/pain-before-relief.md) — Pacing solutions after the player feels the problem
+- [discovered-contract.md](research/discovered-contract.md) — Rules as discovery content
+- [emergent-gameplay-and-progression.md](research/emergent-gameplay-and-progression.md) — Multiple progression axes and emergent interactions
+- [meaningful-choice-analysis.md](research/meaningful-choice-analysis.md) — What makes choices feel meaningful (BG3 vs Cyberpunk)
+- [progression-and-difficulty-design.md](research/progression-and-difficulty-design.md) — Progression gating and player-directed difficulty
+- [procedural-vs-authored-design.md](research/procedural-vs-authored-design.md) — Tradeoffs between procedural and hand-crafted content
+- [reference-games.md](research/reference-games.md) — Games studied for design lessons
+- [classic-game-candidates.md](research/classic-game-candidates.md) — Candidate classic games for the arcade
+- [zelda-case-study.md](research/zelda-case-study.md) — Zelda design analysis
+- [design-topics-to-explore.md](research/design-topics-to-explore.md) — Design topics for future research
+
+### Research — Technical & Learning
+- [architectural-rules-in-ecs.md](research/architectural-rules-in-ecs.md) — Architectural rules for ECS codebases
+- [static-analysis-for-rust.md](research/static-analysis-for-rust.md) — Static analysis tooling for Rust
+- [rust-implicit-conventions.md](research/rust-implicit-conventions.md) — Rust implicit conventions
+- [keeping-dependencies-updated.md](research/keeping-dependencies-updated.md) — Dependency management
+- [gilrs-dual-gamepad-bug.md](research/gilrs-dual-gamepad-bug.md) — Gilrs dual gamepad bug investigation
+- [non-programming-skills.md](research/non-programming-skills.md) — Non-programming skills for game development
+- [learning-plan.md](research/learning-plan.md) — Learning roadmap
+- [project-setup.md](research/project-setup.md) — Project setup and configuration
+- [pong-step-by-step.md](research/pong-step-by-step.md) — Step-by-step pong implementation

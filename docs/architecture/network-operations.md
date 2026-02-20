@@ -1,6 +1,6 @@
 # Network Operations: Running, Debugging & Maintaining
 
-Companion to [network-architecture.md](network-architecture.md), which covers architecture and concepts. For the key decisions and their rationale, see [architecture-decisions.md](architecture-decisions.md). This document covers the operational side: how to monitor, debug, deploy, and maintain networked games using the lockstep relay model.
+Companion to [network-architecture.md](network-architecture.md), which covers architecture and concepts. For the key decisions and their rationale, see [architecture-decisions.md](../architecture-decisions.md). This document covers the operational side: how to monitor, debug, deploy, and maintain networked games using the lockstep relay model.
 
 ## Network Diagnostics
 
@@ -70,7 +70,7 @@ Checksums detect drift. Message logging and deterministic replay diagnose it. In
 
 ### Logging Principles
 
-Three principles govern what goes into the log. For the formalized decisions and rationale, see [architecture-decisions.md](architecture-decisions.md) — Event Log Principles.
+Three principles govern what goes into the log. For the formalized decisions and rationale, see [architecture-decisions.md](../architecture-decisions.md) — Event Log Principles.
 
 **The canonical log is sufficient to deterministically recreate all game state.** Given the log and the correct simulation code, every game state at every tick can be recreated with zero ambiguity. The log is self-describing — connection events record the git commit hash, which identifies exactly which code to check out and build for replay.
 
@@ -109,7 +109,7 @@ On every message, both sides:
 | Payload | The actual input bytes or checksum value |
 
 On connection events (Hello/disconnect), additionally:
-- Commit hash — the git commit hash of the connecting client's build, identifying the exact code version for all subsequent messages from this connection (see [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier)
+- Commit hash — the git commit hash of the connecting client's build, identifying the exact code version for all subsequent messages from this connection (see [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier)
 
 On the relay, additionally:
 - Time between receiving a player's input and broadcasting the confirmed package (relay processing latency)
@@ -262,7 +262,7 @@ When a user launches the application:
 
 ### Relay Access Control
 
-The relay is protected by a shared passphrase. For the decision and rationale, see [architecture-decisions.md](architecture-decisions.md) — Shared secret in the Hello handshake.
+The relay is protected by a shared passphrase. For the decision and rationale, see [architecture-decisions.md](../architecture-decisions.md) — Shared secret in the Hello handshake.
 
 **Where the secret lives:**
 
@@ -398,7 +398,7 @@ No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT 
 
 ### Log Compaction
 
-The input log grows continuously during a session. Compaction materializes the log into a world state snapshot, advances the hot/cold boundary, and keeps the relay's memory bounded. For the decisions and rationale, see [architecture-decisions.md](architecture-decisions.md) — Log Compaction.
+The input log grows continuously during a session. Compaction materializes the log into a world state snapshot, advances the hot/cold boundary, and keeps the relay's memory bounded. For the decisions and rationale, see [architecture-decisions.md](../architecture-decisions.md) — Log Compaction.
 
 **Two tiers:**
 
@@ -516,7 +516,7 @@ The relay holds no persistent state. Everything in relay memory is either recons
 | Old binary (Windows only) | `seans-arcade-old.exe` from rename dance | Cleanup on next launch |
 | Local save copy | Authoritative state at current tick | Every client has this in memory during play; can persist to disk on exit |
 | Client-side message log | Full log of sent/received messages | Local debugging, independent of relay's log |
-| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — display name and relay secret | Persists identity and access between launches ([decision](architecture-decisions.md)) |
+| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — display name and relay secret | Persists identity and access between launches ([decision](../architecture-decisions.md)) |
 
 ### What Is NOT in Persistent Storage
 

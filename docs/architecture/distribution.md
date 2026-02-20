@@ -1,6 +1,6 @@
 # Distribution, Versioning & Auto-Update
 
-How Sean's Arcade is built, versioned, distributed, and updated. For the commit hash decision and version-aware routing decision, see [architecture-decisions.md](architecture-decisions.md).
+How Sean's Arcade is built, versioned, distributed, and updated. For the commit hash decision and version-aware routing decision, see [architecture-decisions.md](../architecture-decisions.md).
 
 The Sean's Arcade application is a single compiled Rust binary (Windows `.exe` for v1). It is downloaded from seanshubin.com. All clients *in a session* must run the same version — this is critical for deterministic lockstep (identical code = identical simulation). The application handles its own updates automatically.
 
@@ -22,7 +22,7 @@ const COMMIT_HASH: &str = env!("GIT_COMMIT_HASH");
 
 The commit hash is the single identifier for "this exact code." It changes automatically on every commit — no manual version bumping. Any code change — wire format, gameplay logic, constants, physics — produces a different commit hash. This matters because in deterministic lockstep, any code change produces different simulation results from the same inputs.
 
-See [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier.
+See [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier.
 
 On startup, before doing anything else:
 1. HTTP GET `https://seanshubin.com/version`
@@ -41,7 +41,7 @@ The app keeps retrying the version check periodically until it reaches the serve
 - If the version matches → clear the offline indicator, connect normally
 - If the version is stale → trigger auto-update
 
-The retry interval is a **fixed 30 seconds** — the same interval used for all connectivity retries in the application ([decision](architecture-decisions.md)).
+The retry interval is a **fixed 30 seconds** — the same interval used for all connectivity retries in the application ([decision](../architecture-decisions.md)).
 
 The relay also isolates clients by version (see below), so a stale client that comes back online either joins its version's group or finds no peers.
 
@@ -74,7 +74,7 @@ The binary knows its own platform at compile time and fetches the correct artifa
 
 The relay reads the commit hash from each client's Hello handshake and groups clients by version. Clients with different commit hashes cannot interact — each version group operates independently. There is no rejection; a client running an old version simply won't see clients running a newer version (and vice versa). This naturally handles any number of concurrent versions.
 
-The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier.
+The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier.
 
 ## Release Workflow (Developer Side)
 

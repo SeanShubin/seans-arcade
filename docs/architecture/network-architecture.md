@@ -1,6 +1,6 @@
 # Network Multiplayer in Bevy
 
-Architecture and concepts for the lockstep relay networking model. For the key decisions and their rationale, see [architecture-decisions.md](architecture-decisions.md). For operations (diagnostics, debugging, deployment, persistence, connection handling), see [network-operations.md](network-operations.md).
+Architecture and concepts for the lockstep relay networking model. For the key decisions and their rationale, see [architecture-decisions.md](../architecture-decisions.md). For operations (diagnostics, debugging, deployment, persistence, connection handling), see [network-operations.md](network-operations.md).
 
 ## Terminology
 

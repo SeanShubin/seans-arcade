@@ -190,7 +190,7 @@ Games may have adversarial mechanics (competition, PvP, territory control), but 
 - Anti-cheat is not a design consideration
 - If competitive integrity matters, it's solved socially (playing with friends, community norms), not technically
 
-**Technical implementation:** The specific architectural decisions that follow from this principle — lockstep relay, latency hiding, cloud storage over always-on servers, and others — are documented in [architecture-decisions.md](architecture-decisions.md). The networking model is detailed in [network-architecture.md](network-architecture.md) and [network-operations.md](network-operations.md).
+**Technical implementation:** The specific architectural decisions that follow from this principle — lockstep relay, latency hiding, cloud storage over always-on servers, and others — are documented in [architecture-decisions.md](../architecture-decisions.md). The networking model is detailed in [network-architecture.md](../architecture/network-architecture.md) and [network-operations.md](../architecture/network-operations.md).
 
 ---
 
