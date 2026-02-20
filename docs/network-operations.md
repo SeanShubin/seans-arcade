@@ -358,7 +358,7 @@ The fundamental issue: traditional server-authoritative architectures **conflate
 |---------|----------------------|-------------------|----------------|
 | Simulation compute | CPU during play | Server runs 24/7 | Clients compute; relay is near-free |
 | Authoritative state | One source of truth during play | Server holds it | Every client holds it |
-| Persistent storage | Save file between sessions | Server's disk (must stay on) | Any client's disk or cloud storage |
+| Persistent storage | Save file between sessions | Server's disk (must stay on) | S3 |
 
 Always-on hosting pays for **compute** when what you actually need is **storage**. Storage costs essentially nothing.
 
@@ -366,32 +366,11 @@ Always-on hosting pays for **compute** when what you actually need is **storage*
 
 In the lockstep relay model, every client runs the full simulation and holds the complete authoritative state at all times. The relay is stateless — it never has game state to persist. When a session ends, every client that was playing holds a complete, identical copy of the world.
 
-This is the Grounded model — the world lives on a player's machine, and when nobody's playing, nothing is running. No server costs. The world resumes when someone launches it.
+During play, the world lives transiently on every client. Between sessions, the world lives persistently in S3. When nobody's playing, nothing is running. No server costs. The world resumes when someone connects to the relay.
 
 ### Where the Save File Lives
 
-Three options, from simplest to most flexible:
-
-**Option A: Local save (Grounded model)**
-- One player is the save owner — the file lives on their machine
-- They start a session by launching the relay and loading the save
-- Other players join, receive state transfer, play
-- When the session ends, any client can save locally (they all have identical state)
-- **Cost: $0**
-- **Limitation:** the save owner must be online to start a session
-
-**Option B: Cloud storage (S3 bucket)**
-- Save files stored in cheap object storage (AWS S3, Cloudflare R2, Backblaze B2)
-- When anyone wants to play, they download the latest save and connect to the relay
-- When the session ends, the save uploads back to storage
-- Any player can start a session
-- **Cost:** pennies/month for storage (a save file is KB to low MB), zero compute when idle
-
-**Option C: Every client keeps a copy + cloud sync**
-- Every client that was in the session already has the complete authoritative state (natural consequence of lockstep)
-- Between sessions, each player has a valid save file locally
-- Cloud storage is a sync point, not a requirement — upload after sessions so that a player who wasn't in the last session can grab the latest
-- **Cost:** pennies/month if you add cloud sync, $0 if you don't
+Save files are stored in **S3** (cheap object storage). When anyone wants to play, they download the latest save and connect to the relay. When the session ends, the save uploads back to storage. Any player can start a session. Cost is pennies/month for storage (a save file is KB to low MB), zero compute when idle.
 
 ### Sync Protocol
 
@@ -489,9 +468,7 @@ Session starts
 | Model | Monthly cost (idle) | Monthly cost (active) | Who can start a session? |
 |-------|--------------------|-----------------------|--------------------------|
 | Traditional server-authoritative | $4-50/month (always on) | Same | Anyone (server always running) |
-| Local save (Option A) | $0 | $0 | Save owner only |
-| Cloud storage (Option B) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
-| Client copies + cloud sync (Option C) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone who has a copy |
+| S3 save (lockstep relay) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
 
 The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap VM at ~$3.50/month. Between sessions, the only cost is S3 storage.
 
