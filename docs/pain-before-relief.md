@@ -1,5 +1,7 @@
 # Pain Before Relief
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principle #4: Pain Before Relief.
+
 The player must feel a problem viscerally before receiving the solution. The solution's value is proportional to how much the problem hurt.
 
 ## The Cycle (Factorio as Primary Example)

@@ -1,5 +1,7 @@
 # Emergent Gameplay and Satisfying Progression
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principles #1: The Player Is In Control, #5: Systems Have Rules Not Scripts, and #6: The Fairness Contract.
+
 Maximizing player agency through multiple progression systems that allow the player to have whatever experience they choose, while always feeling they got what they deserved.
 
 ## The Core Principle: Effort Must Equal Reward, But Effort Takes Many Forms

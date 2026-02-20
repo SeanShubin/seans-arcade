@@ -46,7 +46,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Rationale:** In deterministic lockstep, any code change — wire format, gameplay logic, constants, physics — produces different simulation results from the same inputs. The commit hash captures all of these because it identifies the exact source code. It changes automatically on every commit without anyone remembering to bump anything. For replay, the commit hash tells you exactly which code to check out and build. For session compatibility, same commit hash = same code = same simulation. The CI pipeline writes `$GITHUB_SHA` to the S3 version file, eliminating the manual version bump step entirely.
 
-**See:** [seans-arcade-plan.md](seans-arcade-plan.md) — Version Check, [network-operations.md](network-operations.md) — Version Index
+**See:** [distribution.md](distribution.md) — Version Check, [network-operations.md](network-operations.md) — Version Index
 
 ### Version-aware connection routing during grace period
 
@@ -56,7 +56,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Rationale:** The relay treats payloads as opaque bytes. Without version-aware routing, a fast-updating client gets merged into the same input pool as remaining clients running old code. Even if the wire format hasn't changed, different code produces different simulation results from the same inputs — checksums detect the divergence but can't recover from a code mismatch. Separating by commit hash at connection time prevents the problem at its source.
 
-**See:** [seans-arcade-plan.md](seans-arcade-plan.md) — Live Update Orchestration
+**See:** [distribution.md](distribution.md) — Live Update Orchestration
 
 ---
 

@@ -429,7 +429,7 @@ The signaling server is like a matchmaking lobby — it introduces players but d
 | Host-as-relay | No server, one player relays | 2-16 players | Medium (host migration) |
 | **Dedicated relay** | **Lightweight, no simulation** | **Many players** | **Low (but requires infrastructure)** |
 
-**Our choice: Dedicated relay on AWS (Option A).** A single Rust binary on a Lightsail instance ($3.50/month). All clients make outbound connections to the relay — no client ever accepts incoming connections, no player hosts the relay, and NAT traversal is a non-issue. See [seans-arcade-plan.md](seans-arcade-plan.md) — How Clients Connect.
+**Our choice: Dedicated relay on AWS (Option A).** A single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month). All clients make outbound connections to the relay — no client ever accepts incoming connections, no player hosts the relay, and NAT traversal is a non-issue. See [network-operations.md](network-operations.md) — How Clients Connect.
 
 ## Case Studies: Factorio and Minecraft
 
@@ -536,7 +536,7 @@ The relay (on AWS, not on a player's machine) does trivially little work compare
 - Render the game
 - Process local input
 
-The relay's work is negligible — packet forwarding at ~19 KB/sec for 4 players. The cheapest VM handles this with resources to spare. See [seans-arcade-plan.md](seans-arcade-plan.md) for cost estimates.
+The relay's work is negligible — packet forwarding at ~19 KB/sec for 4 players. The cheapest VM handles this with resources to spare. See [network-operations.md](network-operations.md) — Cost Estimate.
 
 All clients have equal latency — everyone's inputs travel the same outbound path to the AWS relay and back. No player has a latency advantage.
 

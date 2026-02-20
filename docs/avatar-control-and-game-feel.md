@@ -1,5 +1,7 @@
 # Avatar Control and Game Feel
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principle #2: The Avatar Does What You Meant.
+
 The best-controlling games lie to you constantly, and the worst-controlling games are often the most honest.
 
 ## The Fundamental Tension

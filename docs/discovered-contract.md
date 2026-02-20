@@ -1,5 +1,7 @@
 # The Discovered Contract
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principle #3: Discovery Feels Like the Player's Achievement, and principle #6: The Fairness Contract.
+
 The game's rules are themselves a reward to be earned through play. The fairness contract isn't fixed from the start — it expands as the player discovers more of the system. Early actions are exploratory gambles with bounded downside. Late actions are informed decisions with full reasoning.
 
 ## The Pattern (Vantage as Primary Example)
@@ -46,7 +48,7 @@ The contract tightens as the stakes rise. Early, when the player can't reason fu
 
 ## Difficulty as Error Budget
 
-Traditional difficulty settings ask "how hard do you want the game to be?" — which requires understanding the game. Vantage's difficulty asks "how much do you want not knowing the rules to cost you?" — which requires understanding only one thing: that you don't know the rules.
+Traditional difficulty settings ask "how hard do you want the game to be?" — which requires understanding the game. Vantage's difficulty asks "how much do you want not knowing the rules to cost you?" — which requires understanding only one thing: that you don't know the rules. See also [progression-and-difficulty-design.md](progression-and-difficulty-design.md) — Difficulty as Error Budget, which places this concept in the broader spectrum of difficulty approaches.
 
 "Cautious" and "daring" describe the player's relationship to uncertainty, not the game's challenge level:
 

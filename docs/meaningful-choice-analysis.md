@@ -1,5 +1,7 @@
 # Meaningful Choice: BG3 vs Cyberpunk 2077
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principle #9: Choices Must Be Felt.
+
 Why Baldur's Gate 3's choices feel meaningful despite unpredictable outcomes, while Cyberpunk 2077's choices feel hollow despite offering many of them.
 
 ## Why BG3's Choices Feel Meaningful

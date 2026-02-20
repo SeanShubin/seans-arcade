@@ -164,6 +164,13 @@ A player disconnects. The relay stops expecting inputs from that slot. Other cli
 
 ### Relay Restart
 
+There are two distinct scenarios that cause clients to lose their relay connection:
+
+- **Process crash** — the relay process dies unexpectedly. The hosting platform restarts it automatically. Clients reconnect and resume. Covered in detail below.
+- **Protocol change** — CI deploys a new relay binary with an updated wire protocol. The relay restart disconnects all clients. Clients reconnect, receive a commit hash mismatch rejection, and auto-update via the startup flow. See [distribution.md](distribution.md) — Live Update Orchestration.
+
+**Process crash recovery:**
+
 The relay runs on AWS. If it crashes, the hosting platform restarts it. No player takes over as the relay — the relay is infrastructure, not a player role.
 
 The relay is stateless — no game state is lost when it restarts. Every client already has the full authoritative simulation. The only thing lost is the relay's in-memory connection state (connected clients, input buffer, recent input history).
@@ -222,6 +229,47 @@ Three previously separate features converge to make this work:
 
 The stateless relay and full-simulation-on-every-client design means all three scenarios are simpler than in server-authoritative architectures, where the server holds all game state and losing it means losing the game.
 
+## AWS Infrastructure
+
+### What Runs on AWS
+
+The goal is to get clients talking to each other. Clients never communicate directly — all traffic flows through a relay. The infrastructure below supports this.
+
+| Service | Purpose | Implementation |
+|---------|---------|----------------|
+| **Static website** | Serves seanshubin.com — download links, info page | S3 + CloudFront (or just S3 static hosting) |
+| **Relay server** | Forwards inputs between clients, assigns player slots, manages connections | Single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month) |
+| **Version file** | Source of truth for current application version | Single file in S3 containing the commit hash |
+| **Binary downloads** | Platform-specific executables for auto-update | S3 |
+| **Save files** | Persistent game state between sessions | S3 |
+
+### What Runs on the User's Machine
+
+The downloaded application is a **client only**. It never accepts incoming connections and never acts as a relay. Every client makes an outbound connection to the AWS relay.
+
+| Responsibility | Details |
+|---------------|---------|
+| **Full game simulation** | Every client runs the complete deterministic simulation independently |
+| **Local input capture** | Captures player input and sends it to the relay |
+| **Rendering** | Displays the latency state (authoritative + unconfirmed local inputs) |
+| **Auto-update** | Checks version, downloads new binary when needed |
+
+### How Clients Connect
+
+All communication flows through the AWS relay. Clients never talk to each other directly. NAT traversal is a non-issue because every client makes only outbound connections.
+
+```
+Client A ──outbound──→ AWS Relay ←──outbound── Client B
+Client C ──outbound──→ AWS Relay ←──outbound── Client D
+```
+
+When a user launches the application:
+1. Version check against `seanshubin.com/version` (auto-update if stale)
+2. Connect to the relay on AWS
+3. Hello handshake — send commit hash
+4. Relay assigns a player slot
+5. Begin sending/receiving inputs
+
 ## Connecting Over the Internet
 
 With the relay lockstep model, NAT (routers blocking incoming connections) is a non-issue. Both clients make **outbound** connections to the relay server, and NAT routers allow outbound connections freely. The problem NAT creates — unsolicited incoming packets getting dropped — never applies because nobody connects directly to another player.
@@ -237,6 +285,56 @@ For pong, total network traffic is ~540 bytes/second. The relay uses a negligibl
 **Hosting options:** Any cheap VM works. AWS Lightsail (~$3.50/month), DigitalOcean/Vultr (~$4-6/month), or Fly.io (free tier may suffice). Lambda/serverless does NOT work — the relay needs a persistent UDP socket, not per-request invocations.
 
 **Packaging:** A single compiled Rust binary with no dependencies. Can deploy as a bare binary or in a Docker container. Container adds auto-restart (`--restart=always`) and repeatable deployment for minimal extra effort. Required if using Fly.io. Either approach works on a plain VM.
+
+## Cost Estimate (0-10 Users)
+
+Assumes 0-10 users online randomly throughout the month, averaging ~2 hours/day of activity, not all at once.
+
+### Fixed Costs (Always Running)
+
+| Service | What | Monthly Cost |
+|---------|------|-------------|
+| Route 53 hosted zone | DNS for seanshubin.com | $0.50 |
+| S3 storage | Website + binaries (~100MB) | $0.003 |
+| Domain renewal | seanshubin.com (already owned) | ~$1 amortized ($10-12/year) |
+
+### Relay
+
+The relay needs to be reachable by all clients. An always-on VM is the simplest way to achieve this, but not the only way — on-demand startup, serverless WebSocket, or other approaches could also work. The requirement is that clients can connect to the relay, not that the relay is always running.
+
+**Option A: Cheap cloud VM (e.g., AWS Lightsail — recommended for v1)**
+
+| Service | What | Monthly Cost |
+|---------|------|-------------|
+| Cloud VM | 512MB instance running the relay | ~$3.50 |
+| Data transfer | Chat messages, 0-10 users | $0.00 (included) |
+| S3 requests | Presence registry reads/writes | $0.00 (pennies) |
+
+**Total: ~$5/month.** The machine sits idle most of the time, but at ~$3.50/month the simplicity of "always ready, no cold starts" is worth more than the savings from on-demand startup.
+
+**Option B: Serverless relay (API Gateway WebSocket + Lambda)**
+
+| Service | What | Monthly Cost |
+|---------|------|-------------|
+| API Gateway WebSocket | Connection relay | $0.04 |
+| Lambda | Message routing logic | $0.00 (free tier) |
+| S3 requests | Presence registry | $0.00 |
+
+~600 hours total connection time/month (36,000 connection-minutes), ~50,000 messages/month including broadcasts. **Total: ~$1.50/month.** Cheaper but more complex to implement — WebSocket API Gateway + Lambda is a different programming model than a plain TCP/UDP relay.
+
+### What's Effectively Free at This Scale
+
+| Thing | Why |
+|-------|-----|
+| S3 data transfer | Under 100GB/month free tier |
+| CloudFront | 1TB/month free tier (if added) |
+| Binary downloads | 10 users x 50MB = 500MB — free |
+| SSL certificate | Free via ACM |
+| Presence registry | A few hundred GET/PUT requests — fractions of a cent |
+
+### Recommendation
+
+At 0-10 users the difference between the cheapest and most expensive option is negligible. A cheap cloud VM at ~$3.50/month buys simplicity: deploy one Rust binary and forget about it. Optimize to serverless later only if you want to, not because you need to.
 
 ## Persistent State Between Sessions
 

@@ -29,7 +29,7 @@ No axis invalidates the others. The grinder and the shortcut-finder both earned 
 
 ## 2. The Avatar Does What You Meant
 
-Translate player **intention** into action, not raw **input**. Human inputs are imprecise. The game silently corrects. Responsive, not realistic.
+Translate player **intention** into action, not raw **input**. Human inputs are imprecise. The game silently corrects. Responsive, not realistic. See also [avatar-control-and-game-feel.md](avatar-control-and-game-feel.md).
 
 **Implementation priorities:**
 
@@ -50,7 +50,7 @@ Translate player **intention** into action, not raw **input**. Human inputs are 
 
 ## 3. Discovery Feels Like the Player's Achievement
 
-The player should feel clever, observant, or creative - genuinely, not as a manufactured moment.
+The player should feel clever, observant, or creative - genuinely, not as a manufactured moment. See also [discovered-contract.md](discovered-contract.md).
 
 **Foreshadowing.** Place rewards before the player knows they need them. The connection is discovered by the player, never announced by the game. "You'll need this later" is a checklist. Realizing it yourself is an insight.
 
@@ -66,7 +66,7 @@ The player should feel clever, observant, or creative - genuinely, not as a manu
 
 ## 4. Pain Before Relief
 
-The player must feel a problem before receiving the solution. The solution's value is proportional to how much the problem hurt.
+The player must feel a problem before receiving the solution. The solution's value is proportional to how much the problem hurt. See also [pain-before-relief.md](pain-before-relief.md).
 
 **The cycle:**
 1. The player builds/achieves something that works
@@ -101,7 +101,7 @@ Build systems that follow consistent rules. Emergent interactions arise as conse
 
 ## 6. The Fairness Contract
 
-The player maintains an internal ledger of effort vs reward. When it balances, they trust the game. When it doesn't, trust breaks and may not recover.
+The player maintains an internal ledger of effort vs reward. When it balances, they trust the game. When it doesn't, trust breaks and may not recover. See also [discovered-contract.md](discovered-contract.md) for how the contract can evolve through discovery.
 
 **Proportional rewards.** Hard effort yields powerful rewards. Easy finds yield modest ones. If the player did something hard and got something weak, the contract is broken.
 

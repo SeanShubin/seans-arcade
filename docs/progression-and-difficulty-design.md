@@ -1,5 +1,7 @@
 # Progression and Difficulty Design
 
+Elaborates on [design-philosophy.md](design-philosophy.md) principle #7: The World Reacts.
+
 Player agency over difficulty and progression is a family of related design concepts. They range from designer-controlled linear paths to fully player-authored challenge runs.
 
 ## 1. Key-Lock Graphs (Formal Progression Structure)
@@ -93,7 +95,7 @@ They form a spectrum of how much the designer controls the experience vs how muc
 
 ## 6. Difficulty as Error Budget (Discovery-Phase Difficulty)
 
-A distinct approach from all of the above: difficulty controls how much the learning process hurts, not how hard the game is once learned.
+A distinct approach from all of the above: difficulty controls how much the learning process hurts, not how hard the game is once learned. See also [discovered-contract.md](discovered-contract.md) — Difficulty as Error Budget, which explores this concept in depth through the Vantage example.
 
 When a game hides its rules and the player discovers them through play (see [discovered-contract.md](discovered-contract.md)), every early action is an uninformed decision with unknown cost. Difficulty doesn't adjust enemy stats, puzzle complexity, or resource scarcity. It adjusts how many costly uninformed decisions the player can survive before they've learned enough to make informed ones.
 
