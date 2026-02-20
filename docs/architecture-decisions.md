@@ -200,6 +200,18 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Connectivity
+
+### Fixed 30-second retry interval
+
+**Decision:** When any network operation fails (version check, relay connection, S3 sync, presence registry), the client retries on a fixed 30-second interval until it succeeds. No exponential backoff, no jitter, no adaptive timing.
+
+**Over:** Exponential backoff (standard for distributed systems with shared servers) and adaptive intervals.
+
+**Rationale:** Exponential backoff exists to protect shared servers from retry storms when many clients fail simultaneously. None of those conditions apply here: there is one client retrying, the targets are S3 (effectively infinite capacity) or a relay serving 0-10 users, and there is no thundering herd. A fixed interval gives the user a predictable countdown, and 30 seconds means connectivity is detected within half a minute of restoration. The cost of each retry is one small HTTP GET or UDP packet — negligible.
+
+---
+
 ## Event Log Principles
 
 ### The canonical log is sufficient to deterministically recreate all game state

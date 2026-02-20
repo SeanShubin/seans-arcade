@@ -30,6 +30,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Presence registry uses **S3 polling** (HEAD/PUT/GET) — no dedicated API, no Lambda ([details](docs/architecture-decisions.md))
 - Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](docs/architecture-decisions.md))
 - Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
+- **Fixed 30-second retry** for all connectivity failures — version check, relay connection, S3 sync ([decision](docs/architecture-decisions.md))
 - Estimated total cost for 0-10 users: **~$5/month** ([cost details](docs/network-operations.md#cost-estimate-0-10-users))
 
 ### Chat (v1)
@@ -78,7 +79,6 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ## Decisions Needed
 
-- **Version check retry interval** — fixed interval, exponential backoff, or something else? What starting duration?
 - **Chat history** — should later versions offer opt-in history stored in S3
 
 ## Documentation

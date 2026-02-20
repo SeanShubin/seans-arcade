@@ -41,7 +41,7 @@ The app keeps retrying the version check periodically until it reaches the serve
 - If the version matches → clear the offline indicator, connect normally
 - If the version is stale → trigger auto-update
 
-The retry interval strategy (fixed interval, exponential backoff, exact timing) is an open decision.
+The retry interval is a **fixed 30 seconds** — the same interval used for all connectivity retries in the application ([decision](architecture-decisions.md)).
 
 The relay also isolates clients by version (see below), so a stale client that comes back online either joins its version's group or finds no peers.
 
