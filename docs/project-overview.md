@@ -69,6 +69,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [meaningful-choice-analysis.md](research/meaningful-choice-analysis.md) — What makes choices feel meaningful (BG3 vs Cyberpunk)
 - [progression-and-difficulty-design.md](research/progression-and-difficulty-design.md) — Progression gating and player-directed difficulty
 - [procedural-vs-authored-design.md](research/procedural-vs-authored-design.md) — Tradeoffs between procedural and hand-crafted content
+- [game-design-inspirations.md](research/game-design-inspirations.md) — Games that inspire the design of Sean's Arcade
 - [reference-games.md](research/reference-games.md) — Games studied for design lessons
 - [classic-game-candidates.md](research/classic-game-candidates.md) — Candidate classic games for the arcade
 - [zelda-case-study.md](research/zelda-case-study.md) — Zelda design analysis
