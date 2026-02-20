@@ -141,20 +141,9 @@ This is exactly how Factorio debugs desyncs — replay the input log, checksum e
 
 ### Version Index
 
-The canonical log records the commit hash on connection events only — not on every input message (see Logging Principles above). To determine the code version for any event in the log, a sequential reader tracks a `slot → commit hash` mapping as it processes connection events. Each input inherits the commit hash of its slot's most recent connection.
+With version isolation, logs are split by version — every entry in a given log shares the same commit hash. The commit hash is recorded once per log. A separate version index tracking version-change points within a log is no longer needed.
 
-For random access — looking up the code version for an event at an arbitrary log position without reading from the beginning — the relay maintains a **version index** alongside the canonical log. The version index records one entry per version-change point per slot:
-
-```
-log_position 0:     slot 1 = abc123
-log_position 0:     slot 2 = abc123
-log_position 4200:  slot 1 = def456
-log_position 4205:  slot 2 = def456
-```
-
-To find the commit hash for any event: look up the slot, find the most recent index entry at or before that log position. The index is a handful of entries per session — typically one per connection event, a few hundred bytes total.
-
-The version index is **derived from** the canonical log. It can be deleted and rebuilt by replaying connection events. It adds no new information — it provides random access to information that already exists in the canonical log but would otherwise require sequential scan to reach.
+To replay a log, check out the commit corresponding to its recorded hash and build from that source. The log plus the commit hash fully identifies the code and inputs needed for deterministic replay.
 
 ## Connection Disruptions
 
@@ -167,7 +156,7 @@ A player disconnects. The relay stops expecting inputs from that slot. Other cli
 There are two distinct scenarios that cause clients to lose their relay connection:
 
 - **Process crash** — the relay process dies unexpectedly. The hosting platform restarts it automatically. Clients reconnect and resume. Covered in detail below.
-- **Protocol change** — CI deploys a new relay binary with an updated wire protocol. The relay restart disconnects all clients. Clients reconnect, receive a commit hash mismatch rejection, and auto-update via the startup flow. See [distribution.md](distribution.md) — Live Update Orchestration.
+- **Protocol change** — CI deploys a new relay binary with an updated wire protocol. The relay restart disconnects all clients. Clients auto-update on next launch via the startup flow. See [distribution.md](distribution.md) — Version Isolation.
 
 **Process crash recovery:**
 
@@ -408,6 +397,73 @@ If every client crashes simultaneously mid-session, any unsaved progress since t
 
 No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT every few minutes is sufficient. The relay handles ~19 KB/sec of input data for 4 players — this is far too little traffic to justify a message broker designed for millions of messages per second.
 
+### Log Compaction
+
+The input log grows continuously during a session. Compaction materializes the log into a world state snapshot, advances the hot/cold boundary, and keeps the relay's memory bounded. For the decisions and rationale, see [architecture-decisions.md](architecture-decisions.md) — Log Compaction.
+
+**Two tiers:**
+
+| Tier | Location | Contents | Purpose |
+|------|----------|----------|---------|
+| **Hot** | Relay memory | Input entries from the latest snapshot tick to the current tick | Player join catch-up, jitter absorption |
+| **Cold** | S3 | Full input history from tick 0 through the latest compaction point | Session replay, desync debugging |
+
+**Three artifacts per session:**
+
+| Artifact | S3 key pattern | Contents | Written |
+|----------|---------------|----------|---------|
+| **Save** (snapshot) | `sessions/{commit}/{session-id}/save` | Serialized authoritative world state. Tick number in S3 object metadata. | Overwritten at each compaction — only the latest matters for operations. |
+| **Log** (cold tier) | `sessions/{commit}/{session-id}/log` | All input entries, checksums, and snapshot markers from session start. | Grows at each compaction — appended through session end. |
+| **Snapshot marker** | (inside the log) | `{type: "snapshot", tick: T, s3_key: "..."}` — correlates a log position with a snapshot. | One entry per compaction point. |
+
+The save and the log are separate S3 objects. The save is the materialized world state for operations (join, resume, crash recovery). The log is the sequential input history for replay and debugging. Snapshot markers in the log are the glue — they tell a replay reader "you can start from this snapshot instead of tick 0."
+
+**Compaction procedure (at tick T):**
+
+1. A client serializes its authoritative state at tick T
+2. Uploads to S3 with tick T in object metadata (the existing sync protocol — HEAD, compare, conditional PUT)
+3. The relay learns the new snapshot tick (notification from the uploading client, or periodic S3 HEAD)
+4. The relay flushes input log entries before tick T to cold storage in S3
+5. The relay writes a snapshot marker into the log at tick T
+6. The hot buffer now starts at tick T
+
+**Compaction triggers:**
+
+| Trigger | When | Why |
+|---------|------|-----|
+| **Periodic** | Every 2–5 minutes of session time | Steady-state compaction — bounds hot buffer size and data-loss window |
+| **Session end** | Last client disconnects gracefully | Captures the final state — the S3 save reflects the complete session |
+| **Player join** | New player requests to join and the hot log has grown large since the last compaction (e.g., >30 seconds) | Reduces catch-up window for the joining player |
+| **Size threshold** | Hot buffer exceeds a tick-count ceiling (e.g., 20,000 ticks) | Safety valve — guards against timer drift or failure |
+
+**When compaction should NOT happen:**
+
+- During the first few seconds of a session (let state settle after join handshake)
+- If no ticks have advanced since the last compaction
+- While a client is mid-catch-up (fast-forwarding to sync)
+
+**Session lifecycle in S3:**
+
+```
+Session starts
+  │
+  ├─ Compaction at tick 7,200 (2 min)
+  │    ├─ save written: world state at tick 7,200
+  │    └─ cold log written: ticks 0–7,200
+  │
+  ├─ Compaction at tick 14,400 (4 min)
+  │    ├─ save overwritten: world state at tick 14,400
+  │    └─ cold log updated: ticks 0–14,400
+  │
+  ├─ ... more compaction points ...
+  │
+  └─ Session ends at tick 50,000
+       ├─ save overwritten: world state at tick 50,000 (final)
+       └─ cold log finalized: ticks 0–50,000 (complete session)
+```
+
+**Cold log retention:** Cold logs are cheap (20–35 MB/hour compressed). Retain the last 5–10 sessions via S3 lifecycle rules. At this data volume, keeping everything indefinitely is also viable.
+
 ### Cost Comparison
 
 | Model | Monthly cost (idle) | Monthly cost (active) | Who can start a session? |
@@ -418,6 +474,65 @@ No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT 
 | Client copies + cloud sync (Option C) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone who has a copy |
 
 The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap VM at ~$3.50/month. Between sessions, the only cost is S3 storage.
+
+## Persistent Storage Layout
+
+A complete inventory of everything in persistent storage. Infrastructure artifacts exist independent of game sessions. Session artifacts are created during play.
+
+### S3 — Application Infrastructure
+
+| Key | Contents | Written by | Read by |
+|-----|----------|-----------|---------|
+| `version` | Git commit hash (plain text) | CI deploy job | Every client on startup |
+| `seans-arcade-windows.exe` | Windows binary | CI deploy job | Clients during auto-update |
+| `seans-arcade-macos` | macOS universal binary | CI deploy job | Clients during auto-update |
+| `seans-arcade-linux` | Linux binary | CI deploy job | Clients during auto-update |
+| Static website files | HTML/CSS for seanshubin.com | CI or manual | Browsers |
+
+These are version-unaware. The version file points to the commit hash; the binaries correspond to that hash. Overwritten on every release.
+
+### S3 — Presence Registry
+
+| Key | Contents | Written by | Read by |
+|-----|----------|-----------|---------|
+| Presence entry (structure TBD) | "Who is the current host?" | Host client via PUT | Peers via HEAD/GET polling |
+
+### S3 — Per-Session Game Data
+
+Organized by commit hash (version isolation) and session ID.
+
+| Key pattern | Contents | Written by | When |
+|-------------|----------|-----------|------|
+| `sessions/{commit}/{session-id}/save` | Serialized authoritative world state at tick T. Tick number in S3 object metadata. | Any client (whoever is furthest ahead) | Each compaction point, session end |
+| `sessions/{commit}/{session-id}/log` | Cold input log — all input entries, checksums, and snapshot markers from session start | Relay (or a client on relay's behalf) | Each compaction point (grows through session) |
+
+The save and the log are separate objects, correlated by tick number. See [Log Compaction](#log-compaction) for the procedure and lifecycle.
+
+### Relay Memory (Ephemeral)
+
+| Data | Contents | Lifetime |
+|------|----------|----------|
+| Hot input buffer | Input entries from latest compaction tick to current tick | Lost on relay crash; rebuilt from restart point |
+| Connection state | Connected clients, player slots, commit hashes | Lost on relay crash; clients reconnect and re-handshake |
+
+The relay holds no persistent state. Everything in relay memory is either reconstructible (clients reconnect) or backed by S3.
+
+### Local Client Disk
+
+| Data | Contents | Purpose |
+|------|----------|---------|
+| Application binary | `seans-arcade.exe` (or platform equivalent) | The application |
+| Old binary (Windows only) | `seans-arcade-old.exe` from rename dance | Cleanup on next launch |
+| Local save copy | Authoritative state at current tick | Every client has this in memory during play; can persist to disk on exit |
+| Client-side message log | Full log of sent/received messages | Local debugging, independent of relay's log |
+| Chat scrollback | Chat messages from current session | Local only, no server history (v1) |
+| Display name | Self-chosen, stored locally | Identity across sessions |
+
+### What Is NOT in Persistent Storage
+
+- **Latency state** — disposable, rebuilt every tick, never persisted
+- **Checksums** — transmitted live for drift detection, logged in the input log, not stored as separate artifacts
+- **Game state at every tick** — derivable from the log, never stored independently
 
 ## Project Structure for Networked Examples
 

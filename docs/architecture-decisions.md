@@ -48,15 +48,15 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **See:** [distribution.md](distribution.md) — Version Check, [network-operations.md](network-operations.md) — Version Index
 
-### Version-aware connection routing during grace period
+### Version isolation (no mid-session updates)
 
-**Decision:** During the grace period when the relay accepts connections from clients updating to a new version, the relay does not mix clients with different commit hashes into the same input broadcast. A client connecting with a new commit hash either waits in a lobby or joins a separate input pool. The relay uses the commit hash from the Hello handshake to enforce this — one comparison at connection time, zero per-message cost.
+**Decision:** Running clients continue on their current version until relaunch. The relay groups clients by commit hash — different versions coexist independently with no interaction. No mid-session update notification, no background download, no grace period.
 
-**Over:** No separation (let mixed-version sessions drain naturally) and per-message version tagging (version byte on every message envelope).
+**Over:** Live update orchestration (relay polls version file, notifies clients, background download, grace period with version-aware routing).
 
-**Rationale:** The relay treats payloads as opaque bytes. Without version-aware routing, a fast-updating client gets merged into the same input pool as remaining clients running old code. Even if the wire format hasn't changed, different code produces different simulation results from the same inputs — checksums detect the divergence but can't recover from a code mismatch. Separating by commit hash at connection time prevents the problem at its source.
+**Rationale:** For a small invite-only group, coordinating a relaunch is trivial. The live update machinery adds substantial complexity for minimal benefit. Version isolation is simpler to implement and reason about, and naturally handles any number of concurrent versions.
 
-**See:** [distribution.md](distribution.md) — Live Update Orchestration
+**See:** [distribution.md](distribution.md) — Version Isolation
 
 ---
 
@@ -105,6 +105,40 @@ This document records decisions that have been made. It is not a wishlist or a p
 **Rationale:** Determinism guarantees that identical inputs produce identical state. The input log is tiny (KB/sec). State recording would be orders of magnitude larger and still less useful for debugging. Replay enables tick-by-tick inspection, desync diagnosis (replay on two instances and compare checksums), and distinguishing determinism bugs from network bugs.
 
 **See:** [network-operations.md](network-operations.md) — Deterministic Replay
+
+---
+
+## Log Compaction
+
+### Two-tier log model
+
+**Decision:** The input log is split into two tiers. The hot tier lives in relay memory — input entries from the latest snapshot tick to the current tick. The cold tier is archived to S3 — the full session history from tick 0. Compaction advances the boundary by writing a world state snapshot to S3 and flushing older entries from the hot buffer to cold storage.
+
+**Over:** Single-tier log where everything lives in relay memory or everything streams directly to S3 with no operational split.
+
+**Rationale:** The relay needs fast access to recent inputs for player join catch-up and jitter absorption, but doesn't need the full session history in memory. Separating hot from cold keeps relay memory bounded while preserving the complete log for replay and debugging. The hot buffer size is determined by the compaction interval — at 2–5 minutes and 60 ticks/sec, this is 7,200–18,000 entries, well within memory.
+
+**See:** [network-operations.md](network-operations.md) — Log Compaction
+
+### Snapshots stored separately from the input log
+
+**Decision:** World state snapshots are stored as separate S3 objects, not embedded in the input log. The log contains a snapshot marker event at each compaction tick, recording the tick number and S3 key of the corresponding snapshot.
+
+**Over:** Embedding serialized world state inline in the input log.
+
+**Rationale:** Input entries are small and uniform (~20 bytes each). World state snapshots can be KB to MB. Embedding snapshots inline would bloat the log and complicate sequential reads. Separate storage lets each artifact be read independently — operations (join, crash recovery) read only the snapshot; replay reads only the log. The marker event keeps the log self-describing without carrying the snapshot payload.
+
+**See:** [network-operations.md](network-operations.md) — Log Compaction
+
+### Compaction triggers
+
+**Decision:** Compaction is triggered by four conditions: periodic interval during play (every 2–5 minutes), session end, player join when the hot log has grown large since the last compaction, and a safety-valve size threshold on the hot buffer.
+
+**Over:** A single trigger (e.g., only periodic or only on session end).
+
+**Rationale:** Multiple triggers ensure bounded hot buffer size under all conditions. Periodic compaction handles the steady state. Session-end compaction captures the final state. Join-triggered compaction reduces catch-up time for arriving players. The size threshold guards against edge cases where periodic timers drift or fail. At this data volume, the cost of extra S3 PUTs is negligible.
+
+**See:** [network-operations.md](network-operations.md) — Log Compaction
 
 ---
 
@@ -170,14 +204,6 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Over:** Per-event annotation (stamping every log entry with the commit hash or other connection-level metadata).
 
-**Rationale:** The commit hash is identical for every message from a given connection — it cannot change without disconnecting and reconnecting, which produces a new connection event. Repeating it on every log entry adds bytes that carry zero additional information. The connection event already establishes the mapping from slot to commit hash; every subsequent input from that slot inherits it until the next connection event. Minimum information means: log state changes, not state itself.
+**Rationale:** The commit hash is identical for every message from a given connection — it cannot change without disconnecting and reconnecting, which produces a new connection event. Repeating it on every log entry adds bytes that carry zero additional information. With version isolation, logs are split by version, so every entry in a given log shares the same commit hash — recorded once per log. Minimum information means: log state changes, not state itself.
 
 **See:** [network-operations.md](network-operations.md) — Version Index
-
-### Indexes are not redundant information
-
-**Decision:** Derived index structures that enable capabilities the canonical log cannot provide on its own are maintained alongside the log. The version index — a small structure mapping (log position, slot) to commit hash at version-change points — is maintained because it enables random access to version context without sequential scan of the canonical log.
-
-**Over:** Treating all derived structures as redundant and requiring sequential log scan for every query.
-
-**Rationale:** An index serves a specific purpose that cannot be achieved otherwise. The canonical log is sequential — to determine the commit hash for an event at log position N, you must scan backwards to find the most recent connection event for that slot. The version index eliminates this scan with a direct lookup. The index is derived from the canonical log (it can be rebuilt by replaying connection events) and adds no new information, but it provides a capability — random access — that the sequential log cannot. Derivability does not imply redundancy when the derived structure enables a function the source cannot perform.

@@ -46,7 +46,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - If versions match → proceed normally
 - If versions differ → **auto-update**: download the platform-specific binary, replace self, restart
 - If version check fails (no internet) → **offline mode**: launch with current version, show offline indicator, retry periodically until reachable
-- The **relay enforces version as a backstop** — rejects clients with mismatched versions on connect
+- The **relay isolates clients by version** — clients with different commit hashes cannot interact
 - **Download URL is platform-specific** — the binary knows its own target at compile time (e.g., `seans-arcade-windows.exe`, `seans-arcade-macos`, `seans-arcade-linux`)
 - **Self-replacement varies by platform** — Windows requires a rename dance (can't delete running exe); macOS/Linux can overwrite directly
 - **Builds via GitHub Actions CI** — push to `main` triggers parallel native builds (Windows, macOS universal, Linux); deploy job uploads all binaries to S3, then updates the version file as the atomic "go" signal
@@ -56,9 +56,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - No differential/patch updates — full binary download every time
 - No rollback — publish a new version with a higher number
 - No code signing for v1 (required for macOS when that platform is added)
-- **Live update for running clients** — relay polls the version file (~30s), notifies all connected clients when a new version appears
-- Clients download the new binary **in the background** while the game continues — downtime is sub-second (restart only)
-- **Grace period** (~5 minutes) after a new version — relay accepts both old and new version connections, then hard-rejects the old version
+- Running clients **continue on their current version** until relaunch — no mid-session updates, no background downloads
+- The relay groups clients by commit hash — **multiple versions coexist** independently; each version group operates in isolation
 - The relay treats game inputs as **opaque bytes** — only protocol-level changes (message framing, handshake) require relay redeployment; game logic changes are relay-transparent
 - ([mechanism details](docs/distribution.md))
 
@@ -73,6 +72,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Persistence via **S3**, not always-on servers ([decision](docs/architecture-decisions.md))
 - **Tick-based sync** protocol, no streaming infrastructure ([decision](docs/architecture-decisions.md))
 - Player join via **S3 save + input log buffer** ([decision](docs/architecture-decisions.md))
+- **Two-tier log model** — hot buffer on relay, cold archive in S3 ([decision](docs/architecture-decisions.md))
+- **Log compaction** via periodic world state snapshots, stored separately from the input log with marker events ([decision](docs/architecture-decisions.md))
+- **Persistent storage layout** organized by commit hash and session ([details](docs/network-operations.md))
 
 ## Decisions Needed
 

@@ -2,7 +2,7 @@
 
 How Sean's Arcade is built, versioned, distributed, and updated. For the commit hash decision and version-aware routing decision, see [architecture-decisions.md](architecture-decisions.md).
 
-The Sean's Arcade application is a single compiled Rust binary (Windows `.exe` for v1). Anyone can download it from seanshubin.com. All clients must run the same version — this is critical for deterministic lockstep (identical code = identical simulation). The application handles its own updates automatically.
+The Sean's Arcade application is a single compiled Rust binary (Windows `.exe` for v1). Anyone can download it from seanshubin.com. All clients *in a session* must run the same version — this is critical for deterministic lockstep (identical code = identical simulation). The application handles its own updates automatically.
 
 ## Version Check
 
@@ -43,7 +43,7 @@ The app keeps retrying the version check periodically until it reaches the serve
 
 The retry interval strategy (fixed interval, exponential backoff, exact timing) is an open decision.
 
-The relay also enforces version as a backstop (see below), so a stale client that comes back online can't silently connect with wrong code.
+The relay also isolates clients by version (see below), so a stale client that comes back online either joins its version's group or finds no peers.
 
 ## Auto-Update
 
@@ -70,9 +70,9 @@ The binary knows its own platform at compile time and fetches the correct artifa
 
 **macOS / Linux:** Unix allows overwriting or unlinking a running binary (the OS keeps the inode alive until the process exits). Download to a temp file, overwrite the original, then restart. No rename dance or cleanup step needed.
 
-## Relay Version Enforcement (Backstop)
+## Relay Version Isolation
 
-The relay on AWS also knows the current commit hash (from the same S3 version file it polls). When a client connects, it sends its commit hash in the Hello message. The relay compares it against the current commit hash and rejects connections that don't match, telling the client to update. This catches edge cases where the startup version check was skipped (offline launch, network blip during check, etc.). The client can then trigger the auto-update flow.
+The relay reads the commit hash from each client's Hello handshake and groups clients by version. Clients with different commit hashes cannot interact — each version group operates independently. There is no rejection; a client running an old version simply won't see clients running a newer version (and vice versa). This naturally handles any number of concurrent versions.
 
 The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](architecture-decisions.md) — Commit hash as the single code identifier.
 
@@ -113,26 +113,13 @@ No manual version bumping. The commit hash is available automatically in CI.
 
 **Version file timing safety:** CI uploads platform binaries BEFORE updating the version file. The version file update is the atomic "go" signal — it only changes after all binaries are in place. This prevents clients from seeing a new version before the binary is available for download.
 
-## Live Update Orchestration
+## Version Isolation
 
-The startup auto-update flow (above) handles clients that launch after a new version is published. This section covers what happens to clients that are **already running** when a new version is pushed.
+Running clients continue on their current version until the user relaunches. There are no mid-session updates, no background downloads, and no grace period. The startup auto-update flow (above) ensures that every new launch gets the latest version.
 
-**Relay polling:**
-The relay polls `https://seanshubin.com/version` every ~30 seconds. When it sees a commit hash different from the one it expects, it sends an "update required" message to all connected clients.
+The relay groups clients by commit hash. Clients with different commit hashes cannot interact — each version group operates independently. Multiple versions can coexist simultaneously. For a small invite-only group, coordinating a relaunch is trivial; the complexity of live update machinery is not justified.
 
-**Client background download:**
-1. Client receives "update required" from the relay
-2. Client begins downloading its platform-specific binary **in the background** — the game continues running
-3. When the download completes: client finishes the current tick, replaces the binary, spawns the new process, exits
-4. New process starts, version check passes (commit hash matches), connects to relay
-
-**Grace period:**
-After notifying clients, the relay begins a **grace period** (~5 minutes) during which it accepts connections from both the old and new commit hashes. This accommodates different download speeds — fast connections update in seconds, slow ones may take a minute or two. After the grace period expires, the relay hard-rejects any remaining old-commit connections.
-
-**Version-aware routing during the grace period:**
-The relay does not mix clients with different commit hashes into the same input broadcast. The relay knows each client's commit hash from the Hello handshake. During the grace period, a reconnecting client with the new commit hash either waits in a lobby or joins a separate input pool — it is never merged into the active pool of clients with the old commit hash. This prevents simulation corruption: even if the wire format hasn't changed, different code produces different simulation results from the same inputs. Checksums can detect the divergence but can't recover from a code mismatch. One comparison at connection time; zero per-message cost.
-
-The relay logs each client's commit hash on the connection event in the canonical log, and records version-change points in a separate version index for random access. See [network-operations.md](network-operations.md) — Version Index.
+Logs are split by version — every entry in a given log shares the same commit hash. The commit hash is recorded once per log, and replaying requires checking out the corresponding commit.
 
 **Envelope vs. payload — why most updates skip the relay:**
 The relay understands the **protocol envelope** — message type, tick number, player slot, commit hash in Hello — but treats input **payloads as opaque bytes**. Game logic changes (new input types, new features, balance tweaks) only change the payload; the relay forwards them without knowing or caring. Only changes to the envelope itself (new message types, framing format, handshake changes) require a relay update. This is why "client code changed, relay protocol unchanged" is the common case in the table below.
@@ -141,8 +128,8 @@ The relay understands the **protocol envelope** — message type, tick number, p
 
 | Scenario | What happens |
 |----------|-------------|
-| **Client code changed, relay protocol unchanged** | Relay stays running, discovers new commit hash via polling, notifies clients. Clients update and reconnect. No relay downtime. |
-| **Relay protocol changed** | CI deploys new relay binary. Relay restart disconnects all clients. Clients try to reconnect, get commit hash mismatch rejection, auto-update via the startup flow, then reconnect with the correct version. |
+| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash and form a new version group. Old-version clients continue undisturbed. No relay downtime. |
+| **Relay protocol changed** | CI deploys new relay binary. Relay restart disconnects all clients. Clients auto-update on next launch via the startup flow, then reconnect with the correct version. |
 
 ## Cross-Platform Considerations (Bevy)
 
