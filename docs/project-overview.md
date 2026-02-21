@@ -21,7 +21,7 @@ Messages are plain text with a sender name and timestamp. No history is stored o
 
 ## Arcade Model
 
-Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. The session architecture for concurrent games is an open question — see [session-architecture.md](architecture/session-architecture.md). See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
+Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. The entire arcade is one unified simulation — all games share one tick stream, and the relay is unchanged from v1 ([rationale](architecture/session-architecture.md)). See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
 
 ## Project Binaries
 
@@ -49,7 +49,7 @@ The game client is built with Bevy from the start, including v1 chat. Bevy's ECS
 |-------|-------------|-------------------|
 | **v1: Chat** | Drop-in text chat | Relay connection, peer discovery, message forwarding, AWS coordination |
 | **v2: Chat + Pong** | Pong playable within the chat interface. Two peers can start a match while others watch or chat. | Game sub-session within the arcade, spectating, deterministic lockstep, latency hiding |
-| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups. | Session architecture ([open decision](architecture/session-architecture.md)), concurrent games, modular game loading |
+| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups. | Unified world state (all games in one simulation), concurrent games, modular game loading |
 | **v4: Persistence** | Game state saved to S3 between sessions | Cloud storage, tick-based sync protocol |
 
 Each phase builds on the previous infrastructure. Chat is the always-on social layer — it doesn't persist "across" games so much as games exist within it. The chat is the arcade; games are what you do there.
@@ -82,11 +82,9 @@ Each phase builds on the previous infrastructure. Chat is the always-on social l
 
 **What ships:** Additional games, game selection/creation/joining UI, modular game loading.
 
-**Infrastructure beyond v2:** Session architecture — either multiplexed sessions or unified world state.
+**Infrastructure beyond v2:** Unified world state — all games share one tick stream, relay unchanged from v1 ([rationale](architecture/session-architecture.md)).
 
-**Open decision:** See [session-architecture.md](architecture/session-architecture.md).
-
-**Decisions:** Session architecture is open; all others decided.
+**Decisions:** All decided.
 
 ### v4: Persistence
 
@@ -96,7 +94,7 @@ Each phase builds on the previous infrastructure. Chat is the always-on social l
 
 **Infrastructure beyond v3:** S3 persistence, two-tier log model, compaction triggers.
 
-**Decisions:** Persistence mechanism is decided; exact storage layout depends on v3 session architecture decision.
+**Decisions:** All decided.
 
 ## Open Questions
 
@@ -113,7 +111,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [network-operations.md](architecture/network-operations.md) — Running, debugging, and maintaining networked games; AWS infrastructure and cost estimates
 - [distribution.md](architecture/distribution.md) — Distribution, versioning, CI pipeline, and auto-update
 - [game-engine-anatomy.md](architecture/game-engine-anatomy.md) — How a game engine is structured
-- [session-architecture.md](architecture/session-architecture.md) — Session architecture analysis: multiplexed sessions vs. unified world state (open v3 decision)
+- [session-architecture.md](architecture/session-architecture.md) — Session architecture decision: unified world state, not multiplexed sessions
 
 ### Research — Game Design
 - [design-philosophy.md](research/design-philosophy.md) — Core game design principles
