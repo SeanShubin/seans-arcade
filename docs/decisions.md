@@ -46,6 +46,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Any player can **start a game and invite others**; any player can **spectate** any game
 - **Multiple games run simultaneously** with different player subsets
 - **Unified world state** — the entire arcade is one simulation with one tick stream; no multiplexed sessions ([rationale](architecture/session-architecture.md))
+- **Game isolation (Matryoshka principle)** — each game receives its runtime environment (identity, input, output surfaces, lifecycle) through an explicit contract and never reaches outside it; the game is the invariant, the container is the variable ([decision](architecture-decisions.md))
 
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start

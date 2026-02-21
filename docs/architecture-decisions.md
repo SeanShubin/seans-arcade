@@ -80,6 +80,39 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Game Isolation (Matryoshka Principle)
+
+### Each game is a self-contained unit that cannot tell if it's running standalone or embedded
+
+**Decision:** Every game in the arcade is a self-contained unit that receives its runtime environment through an explicit interface and never reaches outside it. The game is the invariant; the container is the variable. A game cannot detect or depend on whether it's running standalone, embedded in the chat lobby, or nested inside another game.
+
+The boundary is defined by a **runtime contract** between the game and its container:
+
+The container provides:
+- **Identity** — who the players are (display names, player slots)
+- **Input** — abstract game actions, not raw devices (the game never touches keyboards or gamepads directly)
+- **Output surfaces** — render target, audio channel, output event sink
+- **Lifecycle signals** — start, pause, teardown
+
+The game provides:
+- **Systems** — its simulation logic
+- **Entity hierarchy** — its world state, rooted under a single entity
+- **Output events** — typed events emitted to the container (game over, score, etc.)
+
+The game declares what it needs; the container satisfies those declarations. The game never reaches outward.
+
+**Over:** Games that import lobby systems, games that call into their container, games that directly communicate with sibling games, or games that assume a specific hosting context.
+
+**Rationale:** The constraint forces real abstraction boundaries. If a game can run standalone, it has no hidden dependencies on the lobby — no ambient state, no implicit services, no backdoor coupling. This enables standalone testing (run any game without lobby infrastructure), faster development iteration (build and test Pong without booting chat), and trivially correct spectating and replay (a game is just an input stream and an entity hierarchy).
+
+The litmus test: the chat lobby is itself a game, and the architecture should permit running it as a game inside another chat lobby. This recursive property doesn't need to ship in production, but if the architecture can't support it, the boundaries are leaky.
+
+The runtime contract is the same regardless of what the container is — the chat lobby (production), a standalone test harness (development), another lobby (Matryoshka), or a hypothetical web port, mobile shell, or replay viewer. Porting to a different environment means implementing the runtime contract in that environment, not modifying the game. This separation between "the game" and "setting up the game" is already natural; the Matryoshka constraint makes it load-bearing.
+
+Cross-game interaction flows through the container, never directly between games. A game emits output events (game over, score); the container decides what to do with them (post to chat, update a scoreboard, offer a rematch). The game has no concept of chat, scoreboards, or rematches.
+
+---
+
 ## Determinism
 
 ### Constrained f32 with software transcendentals
