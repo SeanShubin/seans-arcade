@@ -28,27 +28,6 @@ Other terms you'll encounter in networking discussions:
 
 Networking is handled entirely by community crates, consistent with Bevy's modular plugin philosophy.
 
-## Three Main Architectures
-
-### Server-Authoritative (most common)
-One Bevy app is the authoritative server. Clients send inputs, server simulates, server replicates state back. Can be a dedicated server or a listen server (one player also hosts).
-
-### Peer-to-Peer Rollback
-All peers run the full simulation and only exchange inputs. When a late input arrives that contradicts a prediction, the peer rolls back, inserts the correct input, and re-simulates forward. Used for fast-paced games (fighting, action).
-
-### Lockstep
-All peers exchange inputs each tick; simulation only advances when all inputs arrive. Common in RTS games. Artificial input delay is added to give slow peers time before stalling.
-
-## Main Crates
-
-| Crate | Architecture | Notes |
-|-------|-------------|-------|
-| **lightyear** | Server-authoritative | Most feature-complete. Built-in prediction, rollback, interpolation, lag compensation. UDP/WebTransport/Steam transports. |
-| **bevy_replicon** | Server-authoritative | Simpler, modular. Automatic component replication via Bevy's change detection. Bring-your-own transport (renet, quinnet). |
-| **bevy_ggrs** + **matchbox** | P2P rollback | GGRS is a Rust GGPO reimagination. Matchbox provides WebRTC transport (works in browsers). |
-
-**Transport layers** (used standalone or under replicon): **renet** (UDP), **bevy_quinnet** (QUIC).
-
 ## ECS Integration
 
 All crates provide Bevy plugins that register systems into schedules:
@@ -58,14 +37,6 @@ All crates provide Bevy plugins that register systems into schedules:
 - Inputs are buffered as resources and sent to the server through system parameters
 - System ordering is managed via provided SystemSet values that slot into PreUpdate/FixedUpdate/Update
 - Connected clients are represented as entities on the server
-
-## General Flow (Server-Authoritative)
-
-**Server each frame:** receive client inputs → simulate in FixedUpdate → detect component changes → send state updates to clients
-
-**Client each frame:** capture local input → send to server → apply local prediction (immediate feel) → receive server state → reconcile (if prediction was wrong, roll back and re-simulate) → interpolate remote entities (other players shown slightly behind, smoothed between snapshots)
-
-**P2P each frame:** exchange inputs with peers → simulate locally → if late input contradicts prediction, roll back and re-simulate forward
 
 ## How Lockstep Relay Works
 
@@ -79,7 +50,7 @@ Two players on different machines need to see the same game. Data takes time to 
 
 The simulation doesn't advance in real-world time — it advances in **ticks**. Tick 150 means "the game state after 150 simulation steps." Every client agrees on what tick 150 means in terms of game state, but they don't process tick 150 at the same wall-clock moment.
 
-This is the foundation. Without a shared logical clock, you can't even talk about whether two machines agree. See [Logical Clocks and Frame Agreement](#logical-clocks-and-frame-agreement) for how different architectures handle tick synchronization.
+This is the foundation. Without a shared logical clock, you can't even talk about whether two machines agree. See [Logical Clocks by Architecture](#logical-clocks-by-architecture) for how different architectures handle tick synchronization.
 
 ### The Relay Server: Ordering, Not Simulating
 
@@ -171,42 +142,6 @@ These are relevant to other networking architectures but not to lockstep relay:
 - **State replication** — sending entity data (positions, health, etc.) over the wire. Only inputs travel over the network; each client computes entity state locally.
 - **Interpolation of remote entities** — smoothing other players' positions between state snapshots. Every client runs the full simulation, so remote entities are already at their correct positions.
 
-## Logical Clocks and Frame Agreement
-
-Clients don't need to be on the same frame at the same time. Each architecture handles this differently.
-
-### Server-Authoritative
-- Server owns the canonical tick counter (e.g., tick 100, 101, 102...)
-- At connection, client and server negotiate a time offset using RTT (round-trip time) measurement
-- Client runs slightly ahead of the server — far enough that inputs arrive "just in time"
-- Server stamps every state update with its tick number so the client knows where it sits
-- If a client lags: server can repeat last known input, buffer inputs to absorb jitter, or the client catches up by processing multiple ticks in one frame
-
-### P2P Rollback (GGRS)
-- All peers agree on tick rate at session start
-- Each peer advances its own simulation and sends inputs stamped with tick numbers
-- If remote inputs for tick N haven't arrived yet, predict (repeat last known input) and simulate anyway
-- When real input arrives late, roll back to tick N, replace prediction, re-simulate forward
-- Input delay is dynamically adjusted to give slow peers more time before predictions are needed
-
-### Lockstep
-- No peer simulates tick N until all inputs for tick N are received
-- If one peer is slow, everyone waits
-- Artificial input delay (4-6 frames) gives all peers a window
-
-### Key Concepts
-
-| Concept | Purpose |
-|---------|---------|
-| **Tick numbering** | Shared frame identity — everyone agrees tick 150 means the same game state |
-| **RTT measurement** | Clients know how far ahead to run so inputs arrive on time |
-| **Input buffering** | Absorbs jitter — send inputs a few ticks early, server buffers them |
-| **Input delay** | Buys time for slow connections |
-| **Prediction + rollback** | Don't wait — guess and correct later |
-| **Catch-up** | Lagging client processes multiple ticks in one frame to get back on track |
-
-The fundamental insight: **tick number is a logical clock, not a wall clock.** All peers agree on what tick 150 means in terms of game state, but they don't need to process tick 150 at the same real-world moment.
-
 ## Why Not Just Share Inputs? (The Determinism Problem)
 
 The idea of "server as input coordinator, clients simulate independently" is the P2P model. It works when you can guarantee determinism — same inputs on tick N produce bit-identical results on every machine.
@@ -277,7 +212,7 @@ In principle, yes. Each machine is individually deterministic — the divergence
 
 No mainstream compiler currently offers a "fully deterministic floating point" mode that handles all of these. It's solvable in principle but not yet solved as a single switch.
 
-### Practical Options (Easiest to Hardest)
+### Practical Options
 
 **Option 1: Constrained f32 with software transcendentals** (recommended for Bevy)
 - Keep f32 for basic math — already deterministic for +,-,*,/,sqrt
@@ -286,6 +221,8 @@ No mainstream compiler currently offers a "fully deterministic floating point" m
 - Use deterministic collections (BTreeMap, sorted iteration)
 - Disable Bevy's parallel system execution for gameplay systems
 - Lowest friction — most code stays normal, you patch the known problem spots
+
+### Alternatives Considered
 
 **Option 2: Fixed-point math** (sidestep floats entirely)
 - Use integers with implicit scale: 1000 = 1.0, 1500 = 1.5
@@ -386,7 +323,7 @@ A lightweight server that does no simulation — it receives inputs from all pee
 - Relay is the authority on tick ordering
 - Much cheaper than a simulation server — just a mailbox
 
-### Option B: Full Mesh P2P
+### Alternative: Full Mesh P2P
 
 Every peer sends inputs directly to every other peer. No server at all.
 
@@ -396,7 +333,7 @@ Every peer sends inputs directly to every other peer. No server at all.
 - This is what **matchbox** does — WebRTC connections between all peers. Works well for 2-8 players.
 - One peer is designated "host" for clock purposes without being a simulation authority.
 
-### Option C: Host-as-Relay
+### Alternative: Host-as-Relay
 
 One player's machine acts as the relay. Star topology — all traffic flows through one node.
 
@@ -431,13 +368,11 @@ The signaling server is like a matchmaking lobby — it introduces players but d
 
 **Our choice: Dedicated relay on AWS (Option A).** A single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month). All clients make outbound connections to the relay — no client ever accepts incoming connections, no player hosts the relay, and NAT traversal is a non-issue. See [network-operations.md](network-operations.md) — How Clients Connect.
 
-## Case Studies: Factorio and Minecraft
+## Case Study: Factorio
 
-Two games that represent opposite ends of the networking spectrum, both achieving massive player counts through fundamentally different approaches.
+Factorio represents the most successful real-world validation of the lockstep relay model, achieving **500+ simultaneous players** with deterministic lockstep and server-coordinated inputs.
 
-### Factorio: Deterministic Lockstep (The "Trust Everyone" Model at Scale)
-
-Factorio does exactly what the P2P model describes — share inputs, every client simulates independently. Demonstrated with **500+ players**.
+Factorio does exactly what the P2P model describes — share inputs, every client simulates independently.
 
 **Why lockstep:** A late-game factory has **millions of entities** (belts, inserters, bots). Sending state updates for all of them would be impossible. Network traffic is proportional to **player actions** (~500 kbps per player), not entity count.
 
@@ -465,27 +400,7 @@ This change took them from ~24 players to 400+.
 
 **Anti-cheat as side effect:** A player sending invalid inputs causes only their own client to desync. They cannot corrupt others' state because every client independently simulates the same canonical input sequence.
 
-### Minecraft: Server-Authoritative (Opposite Approach)
-
-Minecraft uses traditional server-authoritative. The server simulates everything, clients are mostly renderers. Even singleplayer runs an internal server.
-
-**Why server-authoritative:** The world is procedurally generated, infinitely mutable, and has physics-like interactions (gravity, water flow, mob AI pathfinding). Making all of that deterministic across Java's JVM on different platforms would be extremely difficult. The mod ecosystem also requires servers to run custom logic that clients don't understand.
-
-**Protocol details:**
-- Java Edition uses TCP with a custom binary protocol
-- Bedrock Edition uses RakNet (UDP-based), giving snappier feel on high-latency connections
-- Entity positions use delta compression (fixed-point relative offsets)
-- Only chunks within a player's view distance are tracked and sent
-
-**Scaling limitations:** A single server handles 20-100 players before tick rate (target: 20 TPS) degrades. The community solves this with:
-
-- **Optimized server forks** (Paper, Purpur) — 2-3x more players than vanilla
-- **Proxy networks** (BungeeCord, Velocity) — route players across thousands of backend servers
-- **Folia** — experimental region-based multithreading (different world regions tick on different threads)
-
-Large networks like Hypixel run thousands of separate servers. Each handles 20-100 players. This works because Minecraft has natural spatial locality — players in different areas don't interact.
-
-### Comparison
+### Comparison with Server-Authoritative
 
 | Dimension | Factorio (Lockstep) | Minecraft (Server-Auth) |
 |-----------|-------------------|----------------------|
@@ -542,7 +457,98 @@ All clients have equal latency — everyone's inputs travel the same outbound pa
 
 For connection disruptions (player leave, relay restart, player join mid-game), deployment, persistent state, diagnostics, and debugging, see [network-operations.md](network-operations.md).
 
-## Quick Recommendation
+---
+
+## Alternatives Considered
+
+The following sections document alternative networking architectures that were evaluated. The lockstep relay model was chosen; see [architecture-decisions.md](../architecture-decisions.md) for the rationale.
+
+### Networking Architectures
+
+#### Server-Authoritative (most common)
+One Bevy app is the authoritative server. Clients send inputs, server simulates, server replicates state back. Can be a dedicated server or a listen server (one player also hosts).
+
+#### Peer-to-Peer Rollback
+All peers run the full simulation and only exchange inputs. When a late input arrives that contradicts a prediction, the peer rolls back, inserts the correct input, and re-simulates forward. Used for fast-paced games (fighting, action).
+
+#### Lockstep (Pure P2P)
+All peers exchange inputs each tick; simulation only advances when all inputs arrive. Common in RTS games. Artificial input delay is added to give slow peers time before stalling.
+
+### Bevy Networking Crates
+
+| Crate | Architecture | Notes |
+|-------|-------------|-------|
+| **lightyear** | Server-authoritative | Most feature-complete. Built-in prediction, rollback, interpolation, lag compensation. UDP/WebTransport/Steam transports. |
+| **bevy_replicon** | Server-authoritative | Simpler, modular. Automatic component replication via Bevy's change detection. Bring-your-own transport (renet, quinnet). |
+| **bevy_ggrs** + **matchbox** | P2P rollback | GGRS is a Rust GGPO reimagination. Matchbox provides WebRTC transport (works in browsers). |
+
+**Transport layers** (used standalone or under replicon): **renet** (UDP), **bevy_quinnet** (QUIC).
+
+### Architecture Flows
+
+**Server-authoritative each frame:** receive client inputs → simulate in FixedUpdate → detect component changes → send state updates to clients
+
+**Client (server-authoritative) each frame:** capture local input → send to server → apply local prediction (immediate feel) → receive server state → reconcile (if prediction was wrong, roll back and re-simulate) → interpolate remote entities (other players shown slightly behind, smoothed between snapshots)
+
+**P2P each frame:** exchange inputs with peers → simulate locally → if late input contradicts prediction, roll back and re-simulate forward
+
+### Logical Clocks by Architecture
+
+Clients don't need to be on the same frame at the same time. Each architecture handles this differently.
+
+#### Server-Authoritative
+- Server owns the canonical tick counter (e.g., tick 100, 101, 102...)
+- At connection, client and server negotiate a time offset using RTT (round-trip time) measurement
+- Client runs slightly ahead of the server — far enough that inputs arrive "just in time"
+- Server stamps every state update with its tick number so the client knows where it sits
+- If a client lags: server can repeat last known input, buffer inputs to absorb jitter, or the client catches up by processing multiple ticks in one frame
+
+#### P2P Rollback (GGRS)
+- All peers agree on tick rate at session start
+- Each peer advances its own simulation and sends inputs stamped with tick numbers
+- If remote inputs for tick N haven't arrived yet, predict (repeat last known input) and simulate anyway
+- When real input arrives late, roll back to tick N, replace prediction, re-simulate forward
+- Input delay is dynamically adjusted to give slow peers more time before predictions are needed
+
+#### Lockstep
+- No peer simulates tick N until all inputs for tick N are received
+- If one peer is slow, everyone waits
+- Artificial input delay (4-6 frames) gives all peers a window
+
+#### Key Concepts
+
+| Concept | Purpose |
+|---------|---------|
+| **Tick numbering** | Shared frame identity — everyone agrees tick 150 means the same game state |
+| **RTT measurement** | Clients know how far ahead to run so inputs arrive on time |
+| **Input buffering** | Absorbs jitter — send inputs a few ticks early, server buffers them |
+| **Input delay** | Buys time for slow connections |
+| **Prediction + rollback** | Don't wait — guess and correct later |
+| **Catch-up** | Lagging client processes multiple ticks in one frame to get back on track |
+
+The fundamental insight: **tick number is a logical clock, not a wall clock.** All peers agree on what tick 150 means in terms of game state, but they don't need to process tick 150 at the same real-world moment.
+
+### Alternative Reference: Minecraft (Server-Authoritative)
+
+Minecraft uses traditional server-authoritative. The server simulates everything, clients are mostly renderers. Even singleplayer runs an internal server.
+
+**Why server-authoritative:** The world is procedurally generated, infinitely mutable, and has physics-like interactions (gravity, water flow, mob AI pathfinding). Making all of that deterministic across Java's JVM on different platforms would be extremely difficult. The mod ecosystem also requires servers to run custom logic that clients don't understand.
+
+**Protocol details:**
+- Java Edition uses TCP with a custom binary protocol
+- Bedrock Edition uses RakNet (UDP-based), giving snappier feel on high-latency connections
+- Entity positions use delta compression (fixed-point relative offsets)
+- Only chunks within a player's view distance are tracked and sent
+
+**Scaling limitations:** A single server handles 20-100 players before tick rate (target: 20 TPS) degrades. The community solves this with:
+
+- **Optimized server forks** (Paper, Purpur) — 2-3x more players than vanilla
+- **Proxy networks** (BungeeCord, Velocity) — route players across thousands of backend servers
+- **Folia** — experimental region-based multithreading (different world regions tick on different threads)
+
+Large networks like Hypixel run thousands of separate servers. Each handles 20-100 players. This works because Minecraft has natural spatial locality — players in different areas don't interact.
+
+### Crate Recommendations by Architecture
 
 - Full-featured with prediction/interpolation built in → **lightyear**
 - Simple replication, compose your own features → **bevy_replicon**
