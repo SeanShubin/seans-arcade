@@ -23,7 +23,17 @@ Messages are plain text with a sender name and timestamp. No history is stored o
 
 Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. Each game is its own lockstep session with its own tick stream, while the relay multiplexes a single connection per client across chat and all concurrent game sessions. See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
 
-## What the Application Looks Like (v1 — Chat)
+## Project Binaries
+
+| Binary | Purpose | Where it runs |
+|--------|---------|---------------|
+| **`arcade`** | Game client — the Bevy application players download and run | Player machines |
+| **`relay`** | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM |
+| **`arcade-cli`** | Operator tooling — deploy, monitor, debug, manage saves | Developer machine |
+
+The game client and relay are the runtime system. The CLI is the operator's interface to everything else: deploying the relay (`deploy`), checking its health (`status`), tailing logs (`logs`), investigating desyncs (`desync-check`), and managing S3 saves (`save push`, `save pull`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer.
+
+## What the Game Client Looks Like (v1 — Chat)
 
 A simple window with:
 - A text area showing chat messages (sender name + message)
@@ -31,7 +41,7 @@ A simple window with:
 - A status bar showing: connection state, your name, number of connected peers
 - A name picker on first launch (stored locally for next time)
 
-The entire application is built with Bevy, including v1 chat. Bevy's ECS and rendering pipeline are used from the start, so there's no framework migration when games are added later.
+The game client is built with Bevy from the start, including v1 chat. Bevy's ECS and rendering pipeline are used immediately, so there's no framework migration when games are added later.
 
 ## Evolution Path
 

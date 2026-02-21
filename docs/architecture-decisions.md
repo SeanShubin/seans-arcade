@@ -6,6 +6,18 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Project Structure
+
+### Three binaries: game client, relay server, operator CLI
+
+**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (an operator tool with subcommands for deployment, monitoring, and debugging: `deploy`, `status`, `logs`, `desync-check`, `save push`, `save pull`).
+
+**Over:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
+
+**Rationale:** The game client and relay have different deployment targets (player machines vs. AWS VM) and different security postures (local vs. internet-facing). The operator CLI consolidates all admin tasks because they share configuration (AWS credentials, relay address, S3 bucket) and are all developer-facing. Keeping admin out of the relay means the relay binary stays minimal with no admin attack surface. Three binaries is the minimum — fewer conflates concerns, more fragments shared config.
+
+---
+
 ## Networking Model
 
 ### Deterministic lockstep with relay server

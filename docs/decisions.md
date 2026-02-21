@@ -6,11 +6,17 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### Product
 - The product is **Sean's Arcade**, hosted at **seanshubin.com** (owned, AWS)
-- The application is downloaded from the website
-- The application is built with **Bevy**, compiled to a single Rust binary, distributed as a direct download from S3
+- The game client (`arcade`) is downloaded from the website
+- The game client is built with **Bevy**, compiled to a single Rust binary per platform, distributed as a direct download from S3
 - First application is a **drop-in/drop-out chat room**
 - Chat is the starting point because it exercises the full infrastructure without game complexity
 - Evolution: Chat → Chat + Pong → Game library → Persistence ([plan](project-overview.md))
+
+### Project Structure
+- Three binaries: **`arcade`** (game client, Bevy), **`relay`** (input coordinator, runs on AWS), **`arcade-cli`** (operator tooling)
+- The relay stays minimal — internet-facing, packet forwarding only, no admin features
+- Admin tooling runs on the developer's machine, not on the server
+- `arcade-cli` uses subcommands: `deploy`, `status`, `logs`, `desync-check`, `save push`, `save pull` ([decision](architecture-decisions.md))
 
 ### AWS (Global Coordination)
 - Global coordination is **minimized** — AWS handles only what individual peers cannot
