@@ -45,8 +45,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Games appear in a **game screen within the chat interface** — chat is the lobby
 - Any player can **start a game and invite others**; any player can **spectate** any game
 - **Multiple games run simultaneously** with different player subsets
-- Each game is its own **lockstep session** with its own tick stream and player group
-- The relay **multiplexes** one connection per client across chat and concurrent game sessions
+- Session architecture for concurrent games is an **open decision** — multiplexed sessions vs. unified world state ([analysis](architecture/session-architecture.md))
 
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
@@ -88,7 +87,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ## Decisions Needed
 
-(none)
+### v3: Session Architecture
+- How the arcade supports multiple concurrent games: **multiplexed sessions** (each game is a separate lockstep session, relay manages routing) vs. **unified world state** (entire arcade is one simulation, relay unchanged) — [analysis](architecture/session-architecture.md)
 
 ## Documentation
 
@@ -101,3 +101,4 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [architecture-decisions.md](architecture-decisions.md) | Formalized technical decisions with rationale |
 | [design-philosophy.md](research/design-philosophy.md) | Game design principles that motivate technical decisions |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md) | High-level engine pipeline overview |
+| [session-architecture.md](architecture/session-architecture.md) | Session architecture analysis: multiplexed sessions vs. unified world state (open v3 decision) |

@@ -21,7 +21,7 @@ Messages are plain text with a sender name and timestamp. No history is stored o
 
 ## Arcade Model
 
-Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. Each game is its own lockstep session with its own tick stream, while the relay multiplexes a single connection per client across chat and all concurrent game sessions. See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
+Think of a physical arcade — everyone can hear each other, and players wander around to play or watch games at will. Chat is the shared space (the lobby), and games are the machines players walk up to. Starting or joining a game doesn't take you away from the chat; it opens a game screen within it. Multiple games run simultaneously with different player groups, and anyone can spectate any game in progress. The session architecture for concurrent games is an open question — see [session-architecture.md](architecture/session-architecture.md). See the [decision register](decisions.md#arcade-model-v2) for the full decision list.
 
 ## Project Binaries
 
@@ -49,10 +49,54 @@ The game client is built with Bevy from the start, including v1 chat. Bevy's ECS
 |-------|-------------|-------------------|
 | **v1: Chat** | Drop-in text chat | Relay connection, peer discovery, message forwarding, AWS coordination |
 | **v2: Chat + Pong** | Pong playable within the chat interface. Two peers can start a match while others watch or chat. | Game sub-session within the arcade, spectating, deterministic lockstep, latency hiding |
-| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups. | Relay multiplexing, concurrent sessions, modular game loading |
+| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups. | Session architecture ([open decision](architecture/session-architecture.md)), concurrent games, modular game loading |
 | **v4: Persistence** | Game state saved to S3 between sessions | Cloud storage, tick-based sync protocol |
 
 Each phase builds on the previous infrastructure. Chat is the always-on social layer — it doesn't persist "across" games so much as games exist within it. The chat is the arcade; games are what you do there.
+
+### v1: Chat
+
+**Scope:** Drop-in text chat. No accounts, no login — download, launch, talk.
+
+**What ships:** Bevy game client with chat UI, relay server (UDP, opaque forwarding, version isolation, shared secret), auto-update, `arcade-cli` with `deploy`/`status`/`logs`.
+
+**Infrastructure introduced:** AWS (Lightsail, S3, Route 53), GitHub Actions CI, lockstep protocol, Hello handshake.
+
+**Decisions:** All decided.
+
+### v2: Chat + Pong
+
+**Scope:** Pong playable within chat, one game at a time.
+
+**What ships:** Networked Pong, game screen within chat, spectating, latency hiding, checksums.
+
+**Infrastructure beyond v1:** Latency hiding (dual state), checksum-based desync detection, full message logging, deterministic replay, `desync-check` in CLI.
+
+**Decisions:** All decided.
+
+**What v2 does NOT include:** Multiple simultaneous games, session management, persistence.
+
+### v3: Game Library
+
+**Scope:** Multiple game types, multiple concurrent games.
+
+**What ships:** Additional games, game selection/creation/joining UI, modular game loading.
+
+**Infrastructure beyond v2:** Session architecture — either multiplexed sessions or unified world state.
+
+**Open decision:** See [session-architecture.md](architecture/session-architecture.md).
+
+**Decisions:** Session architecture is open; all others decided.
+
+### v4: Persistence
+
+**Scope:** Game state persists across sessions.
+
+**What ships:** S3 save/load, sync protocol, log compaction, player join mid-session, `save push`/`save pull` in CLI.
+
+**Infrastructure beyond v3:** S3 persistence, two-tier log model, compaction triggers.
+
+**Decisions:** Persistence mechanism is decided; exact storage layout depends on v3 session architecture decision.
 
 ## Open Questions
 
@@ -69,6 +113,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [network-operations.md](architecture/network-operations.md) — Running, debugging, and maintaining networked games; AWS infrastructure and cost estimates
 - [distribution.md](architecture/distribution.md) — Distribution, versioning, CI pipeline, and auto-update
 - [game-engine-anatomy.md](architecture/game-engine-anatomy.md) — How a game engine is structured
+- [session-architecture.md](architecture/session-architecture.md) — Session architecture analysis: multiplexed sessions vs. unified world state (open v3 decision)
 
 ### Research — Game Design
 - [design-philosophy.md](research/design-philosophy.md) — Core game design principles
