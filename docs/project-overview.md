@@ -134,6 +134,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [logical-design.md](games/9-keys/logical-design.md) — Logical design specification
 - [design-analysis.md](games/9-keys/design-analysis.md) — Analysis of game design reasoning behind the constraints
 - [maze-generation.md](games/9-keys/maze-generation.md) — Maze generation theory and approach
+- [mythology-and-naming.md](games/9-keys/mythology-and-naming.md) — Greek mythology behind the item names
 
 ### Research — Technical & Learning
 - [bevy-vs-recoil-rts-scale.md](research/bevy-vs-recoil-rts-scale.md) — Bevy ECS vs Recoil engine for large-scale RTS
