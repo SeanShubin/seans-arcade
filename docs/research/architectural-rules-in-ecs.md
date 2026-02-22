@@ -60,6 +60,92 @@ ECS has its own set of maintainability problems:
 | **Component soup** | Entity has 20 components with no logical grouping | Use marker components and bundles to group related components |
 | **Plugin bloat** | One plugin with 30 systems | Split plugins by subdomain, same as splitting large packages |
 
+### Parallelism Dimensions
+
+Bevy's parallelism is safe by construction, enforced by the type system rather than runtime locks. Every system declares its access needs in its function signature — `Res<T>` / `ResMut<T>` for resources, `Query<&T>` / `Query<&mut T>` for components. The scheduler inspects these declarations at app startup and builds an execution plan. By the time systems actually run, all conflicts are already resolved. There is no locking, no contention, no deadlocks.
+
+The tradeoff: you give up the freedom to grab whatever data you want whenever you want (like a global singleton in Java). In return, you get parallelism that is correct by construction. **Failure modes are all performance, never correctness.** You write slow schedules, not broken ones.
+
+The scheduler resolves conflicts along three dimensions:
+
+**By type.** Systems accessing different types never conflict. A system writing `Transform` and a system writing `Velocity` run in parallel, no questions asked. This applies equally to resources and components.
+
+**By read vs write.** Multiple readers of the same type don't conflict. `Res<Score>` and `Res<Score>` can run in parallel. `Query<&Transform>` and `Query<&Transform>` can run in parallel. Only writers (`ResMut`, `Query<&mut T>`) create exclusivity.
+
+**By entity set.** Two systems can both write the same component type if they provably touch different entities. Within a single system, you prove disjointness with `Without<>` filters:
+
+```rust
+fn my_system(
+    players: Query<&mut Transform, With<Player>>,
+    enemies: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+)
+```
+
+This dimension only exists for components. Resources are global singletons — there is no "which resource instance" to partition on.
+
+| Dimension | Resources | Components |
+|---|---|---|
+| By type | Yes | Yes |
+| By read vs write | Yes | Yes |
+| By entity set | No (singletons) | Within a system only |
+
+**Cross-system caveat.** The entity-set dimension only works within a single function signature — where Bevy can statically verify that queries are disjoint. Between separate systems, the scheduler is conservative: it looks at component-level access, not filter-level access.
+
+This works — one system, two queries, disjointness proven by `Without<>`:
+
+```rust
+fn move_all(
+    players: Query<&mut Transform, With<Player>>,
+    enemies: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
+) { ... }
+```
+
+This serializes — two systems, same component, scheduler can't see the filters:
+
+```rust
+fn move_players(players: Query<&mut Transform, With<Player>>) { ... }
+fn move_enemies(enemies: Query<&mut Transform, With<Enemy>>) { ... }
+```
+
+Both systems write `Transform`, so the scheduler treats them as conflicting even though they touch different entities. For cross-system parallelism, only the type and read-vs-write dimensions apply.
+
+### Drawing Abstraction Boundaries Along Parallelism Dimensions
+
+Each dimension answers a different design question:
+
+**"Do these systems touch different types?"** (Type dimension) — This is the primary tool. Every distinct type is an independent parallelism lane. Group data that's always accessed together into one type. Separate data that's accessed by different systems into different types. This is the "split along access boundaries, not data boundaries" principle — it applies to both resources and components. Components are the more flexible primitive: resources give you two axes of parallelism (type + read vs write), components give you all three. When you hit contention on a resource, moving the data to components opens up the entity dimension as an escape hatch. Resources are for truly global state — input, score, time, configuration — where there is exactly one instance and the concept of "which entity" doesn't apply. If you find yourself wanting two instances of a resource, it should be a component.
+
+**"Does this system actually need to write?"** (Read vs write dimension) — Every unnecessary `mut` is parallelism left on the table. A system that reads `Score` can run alongside every other `Score` reader. A system that writes `Score` forces all of them to wait. `Res` instead of `ResMut`. `Query<&T>` instead of `Query<&mut T>`. This is the cheapest optimization — just change the signature.
+
+**"Should these be one system or two?"** (Entity set dimension) — When two logical operations write the same component to different entities (move players, move enemies), two separate systems is cleaner architecturally but they serialize. One combined system with disjoint queries (`Without<>`) parallelizes internally but is less focused. Default to separate systems for clarity. Combine only if profiling shows the serialization actually matters.
+
+**When each dimension matters.** Type splitting is a design-time decision that's hard to change later — get it roughly right up front. Read vs write is trivial to fix anytime. System consolidation for entity-set parallelism is a performance optimization you defer until measurement tells you it matters.
+
+### Resource Granularity: Three Failure Modes
+
+**Capturing too broadly.** If a system declares `ResMut<Score>` but only reads it, the scheduler treats it as a writer and serializes it against every other system that touches `Score`. Use `Res<Score>` instead and it runs in parallel with other readers.
+
+**Not splitting enough (god resources).** If too much state lives in one resource (e.g., a single `GameState` struct with everything), then every system that touches any part of it conflicts with every other. Splitting into focused resources (`Score`, `PaddleInput`, `BallVelocity`) gives the scheduler more room to parallelize.
+
+**Splitting too much.** Over-splitting has costs:
+- *Boilerplate* — If a system genuinely needs many resources, the function signature becomes unwieldy.
+- *No scheduling benefit* — If you split `GameState` into `BallPosition`, `BallVelocity`, `BallSpin`, but your physics system needs `ResMut` on all three, you haven't gained parallelism. The scheduler still serializes anything that conflicts with any of them.
+- *Logical fragmentation* — State that always changes together probably belongs together. If two resources are never accessed independently, splitting them adds two lookups instead of one with no scheduling benefit.
+
+**The design principle: split along access boundaries, not data boundaries.** If different systems access different subsets of the state, split there. If everything that reads part of it also reads the rest, keep it together.
+
+### Overlapping Access Patterns
+
+When two systems need overlapping but not identical subsets of state, there are three strategies:
+
+1. **Venn diagram split.** Shared fields become their own resource, unique fields stay separate. The systems still serialize on the shared resource, but other systems that only need the unique parts can run freely. This works but gets awkward if access patterns shift.
+
+2. **Accept the serialization.** Keep it as one resource. If the two systems can't run in parallel anyway because of the overlap, splitting just adds indirection for no scheduling benefit. Simpler code wins.
+
+3. **Move the data to components on entities.** Components give you a dimension that resources don't: per-entity access. If two systems touch the same component types but on different entities, the scheduler can still parallelize them. Resources are global singletons with no such escape hatch — any writer blocks all other accessors.
+
+Overlapping resource access problems are often a signal that the data isn't truly global — it belongs on entities, where the query system handles partial overlap naturally. Resources work well for truly global state (input, score, time).
+
 ## Testing in Bevy
 
 Bevy supports isolated testing without running the full engine:
