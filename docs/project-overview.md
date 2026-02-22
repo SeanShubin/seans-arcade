@@ -130,6 +130,11 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [character-rendering.md](research/character-rendering.md) — Character rendering approaches: goals, tensions, and tradeoffs (open question)
 - [third-party-assets.md](research/third-party-assets.md) — Free asset packs and tools for prototyping
 
+### Game Design — 9 Keys
+- [logical-design.md](games/9-keys/logical-design.md) — Logical design specification
+- [design-analysis.md](games/9-keys/design-analysis.md) — Analysis of game design reasoning behind the constraints
+- [maze-generation.md](games/9-keys/maze-generation.md) — Maze generation theory and approach
+
 ### Research — Technical & Learning
 - [architectural-rules-in-ecs.md](research/architectural-rules-in-ecs.md) — Architectural rules for ECS codebases
 - [static-analysis-for-rust.md](research/static-analysis-for-rust.md) — Static analysis tooling for Rust
