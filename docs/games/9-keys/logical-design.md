@@ -81,6 +81,7 @@ This specification covers the logical design of the game only. Visuals will be i
 - The third key cannot be reached without the second key.
 - The next 3 keys can be gathered in any order, but the maze topology will require the first 3 keys be gathered first.
 - The final 3 keys will require backtracking to previously visited areas, meaning the maze topology will have required the player to pass gates these keys were locked behind at the time.
+- Each key unlocks a shortcut gate near it that provides a short return path to previously visited areas.
 - The player cannot obtain the final gate key without obtaining all other keys first.
 
 ## Maze Generation

@@ -32,10 +32,14 @@ Rather than generating a random maze and hoping it satisfies constraints (reject
 
 1. Place the start and end.
 2. Carve the linear path to keys 1-3, placing gates between them.
-3. Branch from the main path for keys 4-6, each behind a gate requiring key 3.
-4. For keys 7-9, place them behind gates on paths the player already traversed (this is the backtracking constraint).
-5. Fill remaining space with maze structure (dead ends, loops, extra corridors).
-6. Place Ariadne's Thread on an early-reachable space (accessible before any keys).
+3. Branch from the main path for keys 4-6, each behind a gate requiring key 3. Add sub-branches and dead ends within each branch so keys require searching, not just walking.
+4. For keys 7-9, place them behind gates on paths the player already traversed (this is the backtracking constraint). Spread these gates apart rather than clustering them.
+5. For each key, place a shortcut gate near the key that the key itself opens, providing a short return path to familiar territory (a junction, main path, or the key's corresponding progression gate).
+6. Fill remaining space with maze structure (dead ends, loops, extra corridors).
+7. Place Ariadne's Thread on an early-reachable space (accessible before any keys).
+8. Place the first Argus's Eye upgrade between key 3 and keys 4-6.
+9. Place the second Argus's Eye upgrade between key 6 and keys 7-9.
+10. Place the third Argus's Eye upgrade in the final space.
 
 ### Reachability Reasoning
 
@@ -57,7 +61,37 @@ This means tracking what the player has and hasn't acquired at each point in the
 | Backtracking keys (7-9) | Hard — requires reachability reasoning |
 | "Always solvable" guarantee | Easy if built by construction |
 | Ariadne's Thread placement | Easy — any early-reachable space |
+| Argus's Eye placement | Easy — constrained to phase transitions and final space |
+| Cooperative tuning (branch depth, key hiding, gate spread) | Moderate — balancing solo fairness with cooperative reward |
 | Small but unpredictable mazes | Moderate — tuning problem |
+
+## Cooperative Play Incentives
+
+The maze generator should reward cooperative play without punishing solo players. The principle: solo should feel fair and complete; cooperation should feel noticeably faster. The maze should never feel tedious alone — it should feel *satisfying* alone and *exciting* together.
+
+### Design Levers
+
+**Branching with depth, not length.** Phase 2 branches should contain sub-branches and dead ends so that finding each key is a search problem, not a walk-to-the-end problem. This rewards parallel search (multiple players cover sub-branches simultaneously) without punishing solo players — a solo player still finds the key through methodical exploration, it just takes longer. The key is that dead ends should be short enough that a solo player doesn't feel cheated, but numerous enough that a group covers ground meaningfully faster.
+
+**Key hiding over key distance.** Place keys off the main path of their branch — behind a turn, down a spur, past a fork. This makes keys harder to *find* rather than harder to *reach*. Finding is parallelizable (more searchers = faster); reaching is not. A solo player who explores methodically will find every key; a group that fans out will find it sooner.
+
+**Spread backtracking gates apart.** In Phase 3, place the backtracking gates far from each other rather than clustered near a central junction. This creates more ground to cover when searching for the right gate to revisit, which rewards the anchoring strategy — one player holds position while others search different areas of the maze. For a solo player, this just means more walking between backtrack targets, which is acceptable if individual distances are reasonable.
+
+**Keys unlock their own shortcuts.** When a player finds a key, a gate near that key (opened by that same key) should provide a shortcut back to familiar territory — a junction, the main path, or the gate the key was needed for. This eliminates backtracking tedium for solo players: the outbound trip is a search through dead ends and branches, but the return trip is a quick shortcut through a newly opened gate. This is the critical design lever that decouples solo fairness from cooperative reward. Solo players are rewarded with a satisfying "aha, a shortcut home" moment. Cooperative players skip the search entirely via parallel coverage and portals — the shortcut is irrelevant to them because they never needed the return trip in the first place.
+
+### What to Avoid
+
+**Don't create mazes that feel broken solo.** Every lever above must be tuned so that the solo experience remains satisfying. If a solo player feels like the maze was designed for groups, the design has failed. The solo player should feel clever for finding the key; the group should feel clever for finding it faster.
+
+**Don't make cooperation mandatory.** No part of the maze should require multiple players. Every key, gate, and item must be reachable by a single player. Cooperation is a speed optimization, never a requirement.
+
+**Don't make return trips punishing.** Every key should have a shortcut return path. The solo experience should never require retracing a long outbound search path. If a solo player feels punished for not having a portal partner, the maze has failed.
+
+### Tuning Guideline
+
+The cooperative advantage should come entirely from **parallel search** — finding keys faster by covering more ground simultaneously. It should not come from avoiding return trips, because the shortcut gates already eliminate return trip tedium for solo players. This cleanly separates the two experiences: solo players are rewarded with shortcut gates, cooperative players are rewarded with search parallelization. Neither is punished.
+
+The target is roughly: a coordinated pair should complete the maze 20-30% faster than a skilled solo player, and a coordinated group of 3-4 should see diminishing but real returns beyond that. This should emerge from the topology rather than being engineered precisely — the generation parameters (branch depth, key hiding, gate spread) are tuning knobs, not formulas.
 
 ## Overall Assessment
 
