@@ -17,12 +17,12 @@ This specification covers the logical design of the game only. Visuals will be i
 
 - There are 9 types of gates, and 9 types of keys.
 - The 9 keys are scattered about the maze.
-- Each key has a unique shape.
-- Each key has a unique color.
-- Each key has a unique name.
 - Each key corresponds to a type of gate.
 - There is only one instance of each key.
 - There are one or more instances of each type of gate.
+- Each key has a unique shape.
+- Each key has a unique color.
+- Each key has a unique name.
 - Gates are passable when the player has the corresponding key, impassable otherwise.
 - Individual players are prevented from moving through a gate they don't have a key for.
 - Keys are never lost once acquired.
@@ -57,12 +57,12 @@ This specification covers the logical design of the game only. Visuals will be i
 
 ## Key Progression
 
-- The player cannot obtain the final gate key without obtaining all other keys first.
 - The first key is the only key that can be reached without any other keys.
 - The second key cannot be reached without the first key.
 - The third key cannot be reached without the second key.
 - The next 3 keys can be gathered in any order, but the maze topology will require the first 3 keys be gathered first.
 - The final 3 keys will require backtracking to previously visited areas, meaning the maze topology will have required the player to pass gates these keys were locked behind at the time.
+- The player cannot obtain the final gate key without obtaining all other keys first.
 
 ## Maze Generation
 
@@ -87,5 +87,4 @@ This specification covers the logical design of the game only. Visuals will be i
 - This is real-time, simultaneous movement.
 - No exploration sharing.
 - No player interaction, other than being able to see each other.
-- Players can see each other.
 - Everyone gets an independent score.
