@@ -12,8 +12,8 @@ Analysis of the theory and approach for generating mazes that satisfy the logica
 The logical design already defines the mission graph. The generation problem is embedding it into a grid maze.
 
 Notable work in this area:
-- Dormans & Bakkes (2011) — "Generating Missions and Spaces for Adaptable Play Experiences" — formalizes mission/space graph separation using graph grammars
-- Zelda dungeon generation literature — 9 Keys is structurally similar to classic Zelda dungeon design (linear progression, branching, backtracking)
+- Dormans & Bakkes (2011) — "Generating Missions and Spaces for Adaptable Play Experiences" — formalizes mission/space graph separation using graph grammars, using Zelda dungeons as the primary case study
+- Mark Brown's "Boss Keys" series — design analysis of Zelda dungeon structure, documenting the linear-then-branching-then-backtracking progression pattern that 9 Keys follows
 
 ## Dependency Structure
 
