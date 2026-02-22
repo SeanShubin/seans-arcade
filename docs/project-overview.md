@@ -136,6 +136,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [maze-generation.md](games/9-keys/maze-generation.md) — Maze generation theory and approach
 
 ### Research — Technical & Learning
+- [bevy-vs-recoil-rts-scale.md](research/bevy-vs-recoil-rts-scale.md) — Bevy ECS vs Recoil engine for large-scale RTS
 - [architectural-rules-in-ecs.md](research/architectural-rules-in-ecs.md) — Architectural rules for ECS codebases
 - [static-analysis-for-rust.md](research/static-analysis-for-rust.md) — Static analysis tooling for Rust
 - [rust-implicit-conventions.md](research/rust-implicit-conventions.md) — Rust implicit conventions
