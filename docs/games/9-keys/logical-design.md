@@ -77,7 +77,7 @@ This specification covers the logical design of the game only. Visuals will be i
 - Each player has their own timer
 - Timer starts upon the player first moving
 - Timer ends when the player reaches the end of the maze
-- An active timer pauses when leaving the game, starts upon re-entering the game
+- An active timer pauses when leaving the game, resumes upon re-entering the game
 - There is no loss condition.
 
 ## Multiplayer
