@@ -10,6 +10,7 @@ Games that inspire the design of Sean's Arcade.
 - **Doom** (id Software, 1993) — Defined the FPS genre with fast movement, spatial combat design, and visceral game feel that still holds up decades later.
 - **Master of Magic** (SimTex, 1994) — Blended Civilization-style empire building with tactical fantasy combat and deep spell research.
 - **Stars!** (Jeff Johnson & Jeff McBride, 1995) — Deep 4X space strategy built around custom race design and asynchronous play-by-email multiplayer.
+- **Total Annihilation** (Cavedog Entertainment, 1997) — Refused to accept industry-standard RTS limitations like zoom range and unit caps, letting players build and command armies at a scale other games wouldn't attempt.
 - **Castlevania: Symphony of the Night** (Konami, 1997) — Fused Castlevania's action with Metroid's exploration structure. The other half of "metroidvania."
 - **Metal Gear Solid** (Konami, 1998) — Cinematic stealth action that proved games could deliver complex narrative alongside systemic gameplay.
 - **Portal** (Valve, 2007) — Perfect pacing as a teaching tool: each chamber introduces one idea, tests it, then combines it with previous concepts.
@@ -19,6 +20,8 @@ Games that inspire the design of Sean's Arcade.
 - **Metal Gear Solid V: The Phantom Pain** (Konami, 2015) — Open-world stealth where emergent AI reactions and systemic tools let the player improvise tactics moment to moment.
 - **The Outer Worlds** (Obsidian, 2019) — First-person RPG with player-driven dialogue, faction reputation systems, and companion builds that shape how encounters play out.
 - **Streets of Rogue** (Matt Dabrowski, 2019) — Roguelite with immersive sim DNA where every class interacts with systems differently, producing emergent solutions.
+- **Beyond All Reason** (Community, 2020) — Carried forward Total Annihilation's refusal to accept artificial limitations, with unrestricted zoom, no unit caps, and battles at a scale the RTS genre still rarely matches.
+- **Ghost of Tsushima** (Sucker Punch Productions, 2020) — Open-world samurai action where wind guides exploration instead of waypoints, with stylish combat and a commitment to atmosphere over UI clutter.
 - **Cyberpunk 2077** (CD Projekt Red, 2020) — Dense open-world RPG with layered quest design and a lived-in city that rewards exploration.
 - **Doom Eternal** (id Software, 2020) — Aggressive resource loop that forces constant forward momentum — every encounter is a puzzle solved through violence and movement.
 - **Factorio** (Wube Software, 2020) — Factory-building automation where every upgrade solves a problem you've been wrestling with. The defining example of pain-before-relief.
