@@ -77,6 +77,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Relay **drops** slow inputs rather than stalling ([decision](architecture-decisions.md))
 - Determinism via **constrained f32 + libm** for transcendentals, enforced by Bevy's `enhanced-determinism` feature flag ([decision](architecture-decisions.md))
 - **Non-cryptographic checksums** (xxhash) for drift detection ([decision](architecture-decisions.md))
+- **Seeded PRNG** for deterministic randomness — seed distributed as a game input, separate PRNGs for gameplay (synchronized) and cosmetics (local only) ([decision](architecture-decisions.md))
 - **Full message logging**, always on ([decision](architecture-decisions.md))
 - **Deterministic replay** from input logs, no game state logging ([decision](architecture-decisions.md))
 - Persistence via **S3**, not always-on servers ([decision](architecture-decisions.md))

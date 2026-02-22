@@ -135,6 +135,14 @@ Cross-game interaction flows through the container, never directly between games
 
 **See:** [network-architecture.md](architecture/network-architecture.md) — State Checksums: Detecting Drift
 
+### Seeded PRNG for deterministic randomness
+
+**Decision:** Randomly generated content (level generation, enemy behavior, loot drops) uses a deterministic pseudorandom number generator seeded from a value distributed as a game input. Use a PRNG with a spec-guaranteed output sequence (e.g., `ChaCha8Rng` from `rand_chacha`). Separate PRNGs for gameplay (must be synchronized) and cosmetics (particles, screen shake — local only, not synchronized). The seed is an opaque input like any other — the relay doesn't know it's a seed.
+
+**Over:** `thread_rng()` or `StdRng` for gameplay randomness (`StdRng`'s algorithm is not guaranteed stable across Rust versions), a single shared PRNG for both gameplay and cosmetics (cosmetic draw count divergence causes gameplay desync), or avoiding randomness entirely.
+
+**Rationale:** Deterministic lockstep requires identical simulation across all clients. A seeded PRNG produces the same sequence on every client given the same seed and the same draw order. Distributing the seed as a game input means it travels through the existing tick-ordered input stream — no new infrastructure. Separating gameplay and cosmetic PRNGs ensures that visual-only randomness (which may vary with frame rate or rendering differences) cannot perturb the gameplay sequence. The existing checksum infrastructure catches any divergence if PRNG draw order accidentally differs between clients.
+
 ---
 
 ## Debugging and Observability

@@ -127,6 +127,8 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [classic-game-candidates.md](research/classic-game-candidates.md) — Candidate classic games for the arcade
 - [zelda-case-study.md](research/zelda-case-study.md) — Zelda design analysis
 - [design-topics-to-explore.md](research/design-topics-to-explore.md) — Design topics for future research
+- [character-rendering.md](research/character-rendering.md) — Character rendering approaches: goals, tensions, and tradeoffs (open question)
+- [third-party-assets.md](research/third-party-assets.md) — Free asset packs and tools for prototyping
 
 ### Research — Technical & Learning
 - [architectural-rules-in-ecs.md](research/architectural-rules-in-ecs.md) — Architectural rules for ECS codebases
