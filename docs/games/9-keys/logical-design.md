@@ -29,11 +29,10 @@ This specification covers the logical design of the game only. Visuals will be i
 
 ## Items
 
-- The two types of items are keys and Ariadne's Thread.
+- The three types of items are keys, Ariadne's Thread, and the Lantern.
 - No two items are in the same space.
 - There are no items in the starting space.
-- When the player enters a space with a key, the key is automatically picked up for that player.
-- When the player enters a space with Ariadne's Thread, Ariadne's Thread is automatically picked up for that player.
+- When a player occupies the same space as an item, they may choose to pick it up.
 - Each player gets their own instance of an item.
 
 ## Ariadne's Thread
@@ -42,6 +41,20 @@ This specification covers the logical design of the game only. Visuals will be i
 - What is "accessible" is determined by what keys the player currently has.
 - Picking up Ariadne's Thread is optional.
 - Ariadne's Thread can be acquired before any keys.
+
+## Visibility
+
+- By default, the player can only see the space they occupy (1x1).
+- The first Lantern expands the player's visible area to a 3x3 square centered on the player.
+- The second Lantern expands the player's visible area to a 5x5 square centered on the player.
+- Spaces outside the player's visible area are not visible.
+
+## The Lantern
+
+- There are exactly two Lanterns in the maze.
+- Picking up a Lantern is optional.
+- The first Lantern can be acquired after the first 3 keys but does not require the 4th key.
+- The second Lantern can be acquired after the first 6 keys but does not require the 7th key.
 
 ## Exploration
 
