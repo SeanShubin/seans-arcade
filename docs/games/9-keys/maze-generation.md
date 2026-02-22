@@ -26,7 +26,7 @@ The key acquisition order forms a partial order (a DAG):
 
 ## Recommended Approach: Construction
 
-Rather than generating a random maze and hoping it satisfies constraints (rejection sampling), build the dependency skeleton first and then fill in the maze. Rejection sampling would waste enormous time given the number of constraints.
+Build the dependency skeleton first, then fill in the remaining space with maze structure. Rejection sampling — generating random mazes and discarding those that violate constraints — would waste enormous time given the number of constraints.
 
 ### Construction Steps
 
@@ -95,4 +95,4 @@ The target is roughly: a coordinated pair should complete the maze 20-30% faster
 
 ## Overall Assessment
 
-This is a constrained procedural generation problem with known solutions. The theory exists and the constraints are well-structured. The hardest part is the backtracking requirement for keys 7-9, which requires the generator to reason about player state at different points in the traversal. A construction-based approach (build the solution topology first, then fill in the maze) is strongly preferred. The alternative — generating random mazes and rejecting those that violate constraints — would waste enormous time given the number of constraints.
+This is a constrained procedural generation problem with known solutions. The theory exists and the constraints are well-structured. The hardest part is the backtracking requirement for keys 7-9, which requires the generator to reason about player state at different points in the traversal.
