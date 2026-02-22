@@ -29,7 +29,7 @@ This specification covers the logical design of the game only. Visuals will be i
 
 ## Items
 
-- The three types of items are keys, Ariadne's Thread, and the Lantern.
+- The three types of items are keys, Ariadne's Thread, and Argus's Eye.
 - No two items are in the same space.
 - There are no items in the starting space.
 - When a player occupies the same space as an item, they may choose to pick it up.
@@ -45,16 +45,22 @@ This specification covers the logical design of the game only. Visuals will be i
 ## Visibility
 
 - By default, the player can only see the space they occupy (1x1).
-- The first Lantern expands the player's visible area to a 3x3 square centered on the player.
-- The second Lantern expands the player's visible area to a 5x5 square centered on the player.
-- Spaces outside the player's visible area are not visible.
+- Argus's Eye has three levels: 3x3, 5x5, and 7x7, each centered on the player.
+- Argus's Eye only affects the view of the player who possesses it.
+- Players may choose their activation level within the range they have unlocked, including turning it off.
+- Spaces outside the player's active visible area are not visible.
 
-## The Lantern
+## Argus's Eye
 
-- There are exactly two Lanterns in the maze.
-- Picking up a Lantern is optional.
-- The first Lantern can be acquired after the first 3 keys but does not require the 4th key.
-- The second Lantern can be acquired after the first 6 keys but does not require the 7th key.
+- Argus's Eye is a single item that can be upgraded twice.
+- There are three locations in the maze where Argus's Eye can be acquired or upgraded.
+- The first location grants Argus's Eye at level 1 (3x3 visibility).
+- The second location upgrades Argus's Eye to level 2 (5x5 visibility).
+- The third location upgrades Argus's Eye to level 3 (7x7 visibility).
+- Picking up Argus's Eye is optional.
+- The first location can be reached after the first 3 keys but does not require the 4th key.
+- The second location can be reached after the first 6 keys but does not require the 7th key.
+- The third location is in the final space of the maze.
 
 ## Exploration
 
@@ -93,11 +99,23 @@ This specification covers the logical design of the game only. Visuals will be i
 - An active timer pauses when leaving the game, resumes upon re-entering the game
 - There is no loss condition.
 
+## Portals
+
+- Any player can spawn a pair of portals linking their current space to another player's current space.
+- A player may only spawn portals between two spaces they have explored.
+- A player does not need the other player's permission to spawn portals to their space.
+- Each player can maintain only one portal pair at a time.
+- A portal pair consists of two connected endpoints, one at each player's space.
+- All players may use any portal to teleport to its linked endpoint.
+- A player may only traverse a portal if the destination is reachable from the origin given the player's current keys.
+- A portal pair persists as long as at least one of the two players who created it occupies a space with one of its endpoints.
+- A portal pair is destroyed when neither of its two related players occupies either endpoint.
+
 ## Multiplayer
 
 - No limit to the number of players, players can come and go as they please.
 - All players are in the same instance of the maze.
 - This is real-time, simultaneous movement.
 - No exploration sharing.
-- No player interaction, other than being able to see each other.
+- Player interaction is limited to seeing each other and creating portals.
 - Everyone gets an independent score.
