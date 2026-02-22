@@ -85,7 +85,7 @@ For lockstep networking, bit-for-bit determinism is required. The Bevy team ackn
 | Rendering | GPU-instanced OpenGL 4, 2-10x over legacy | GPU-driven rendering (0.16), 3x over previous |
 | Proven scale | 10,000-15,000 units, 110+ players, shipped | No large-scale RTS shipped |
 | RTS-specific features | SlowUpdate staggering, spatial partitioning, terrain deformation, ballistic simulation, 20+ years of optimization | General-purpose; all RTS features must be built or sourced from community |
-| Extensibility | Lua scripting over C++ engine | Rust with full ECS composability |
+| Extensibility | Lua scripting on top of C++ engine | Rust with full ECS composability |
 | Stability | Mature, stable API | Breaking changes every ~3 months |
 
 ## Assessment

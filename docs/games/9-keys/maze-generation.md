@@ -24,7 +24,7 @@ The key acquisition order forms a partial order (a DAG):
 - Keys 7-9 depend on earlier keys and require topological backtracking
 - The final key depends on all other 8 keys
 
-## Recommended Approach: Construction Over Rejection
+## Recommended Approach: Construction
 
 Rather than generating a random maze and hoping it satisfies constraints (rejection sampling), build the dependency skeleton first and then fill in the maze. Rejection sampling would waste enormous time given the number of constraints.
 
@@ -73,7 +73,7 @@ The maze generator should reward cooperative play without punishing solo players
 
 **Branching with depth, not length.** Phase 2 branches should contain sub-branches and dead ends so that finding each key is a search problem, not a walk-to-the-end problem. This rewards parallel search (multiple players cover sub-branches simultaneously) without punishing solo players — a solo player still finds the key through methodical exploration, it just takes longer. The key is that dead ends should be short enough that a solo player doesn't feel cheated, but numerous enough that a group covers ground meaningfully faster.
 
-**Key hiding over key distance.** Place keys off the main path of their branch — behind a turn, down a spur, past a fork. This makes keys harder to *find* rather than harder to *reach*. Finding is parallelizable (more searchers = faster); reaching is not. A solo player who explores methodically will find every key; a group that fans out will find it sooner.
+**Key hiding.** Place keys off the main path of their branch — behind a turn, down a spur, past a fork. This makes keys harder to *find* rather than harder to *reach*. Finding is parallelizable (more searchers = faster); reaching is not. A solo player who explores methodically will find every key; a group that fans out will find it sooner.
 
 **Spread backtracking gates apart.** In Phase 3, place the backtracking gates far from each other rather than clustered near a central junction. This creates more ground to cover when searching for the right gate to revisit, which rewards the anchoring strategy — one player holds position while others search different areas of the maze. For a solo player, this just means more walking between backtrack targets, which is acceptable if individual distances are reasonable.
 
@@ -95,4 +95,4 @@ The target is roughly: a coordinated pair should complete the maze 20-30% faster
 
 ## Overall Assessment
 
-This is a constrained procedural generation problem with known solutions. The theory exists and the constraints are well-structured. The hardest part is the backtracking requirement for keys 7-9, which requires the generator to reason about player state at different points in the traversal. A construction-based approach (build the solution topology first, then fill in the maze) is strongly preferred over generate-and-validate.
+This is a constrained procedural generation problem with known solutions. The theory exists and the constraints are well-structured. The hardest part is the backtracking requirement for keys 7-9, which requires the generator to reason about player state at different points in the traversal. A construction-based approach (build the solution topology first, then fill in the maze) is strongly preferred. The alternative — generating random mazes and rejecting those that violate constraints — would waste enormous time given the number of constraints.
