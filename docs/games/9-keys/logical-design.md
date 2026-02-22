@@ -74,9 +74,10 @@ This specification covers the logical design of the game only. Visuals will be i
 ## Scoring
 
 - Score is by a timer, lower timer is better score.
-- Each player has their own timer starting from when they entered the maze.
-- Timer starts upon entering the maze.
-- Timer cannot be paused.
+- Each player has their own timer
+- Timer starts upon the player first moving
+- Timer ends when the player reaches the end of the maze
+- An active timer pauses when leaving the game, starts upon re-entering the game
 - There is no loss condition.
 
 ## Multiplayer
