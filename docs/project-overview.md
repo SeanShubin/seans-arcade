@@ -4,7 +4,7 @@ A website at **seanshubin.com** where anyone can download the Sean's Arcade appl
 
 ## Starting Point: Chat
 
-The first application is a drop-in/drop-out chat room. No accounts, no login, no signup. Download, launch, talk.
+The first application is a drop-in/drop-out chat room. No accounts, no login, no signup. Download, launch, pick a name, talk. Your name persists — claim it once, and it's yours.
 
 Chat is the right starting point because it exercises the full infrastructure — relay connection, peer discovery, message forwarding — without the complexity of deterministic simulation, tick synchronization, or latency hiding. Once chat works end-to-end, games are an incremental addition on top of the same foundation.
 
@@ -39,7 +39,7 @@ A simple window with:
 - A text area showing chat messages (sender name + message)
 - An input field at the bottom for typing
 - A status bar showing: connection state, your name, number of connected peers
-- A name picker on first launch (stored locally for next time)
+- A name entry on first launch — identity secret is auto-generated and stored locally (the player never sees it unless they set up a second machine)
 
 The game client is built with Bevy from the start, including v1 chat. Bevy's ECS and rendering pipeline are used immediately, so there's no framework migration when games are added later.
 
@@ -56,7 +56,7 @@ Each phase builds on the previous infrastructure. Chat is the always-on social l
 
 ### v1: Chat
 
-**Scope:** Drop-in text chat. No accounts, no login — download, launch, talk.
+**Scope:** Drop-in text chat. No accounts, no login — download, launch, claim your name, talk.
 
 **What ships:** Bevy game client with chat UI, relay server (UDP, opaque forwarding, version isolation, shared secret), auto-update, `arcade-cli` with `deploy`/`status`/`logs`.
 

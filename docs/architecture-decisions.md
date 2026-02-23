@@ -10,7 +10,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Three binaries: game client, relay server, operator CLI
 
-**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (an operator tool with subcommands for deployment, monitoring, and debugging: `deploy`, `status`, `logs`, `desync-check`, `save push`, `save pull`).
+**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (an operator tool with subcommands for deployment, monitoring, and debugging: `deploy`, `status`, `logs`, `desync-check`, `save push`, `save pull`, `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`).
 
 **Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
 
@@ -89,7 +89,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 The boundary is defined by a **runtime contract** between the game and its container:
 
 The container provides:
-- **Identity** — who the players are (display names, player slots)
+- **Identity** — who the players are (identity names, player slots)
 - **Input** — abstract game actions, not raw devices (the game never touches keyboards or gamepads directly)
 - **Output surfaces** — render target, audio channel, output event sink
 - **Lifecycle signals** — start, pause, teardown
@@ -253,19 +253,27 @@ Cross-game interaction flows through the container, never directly between games
 
 **Decision:** The relay is protected by a shared passphrase. The operator sets the secret on the relay (environment variable or config file) and distributes it to invited players through an out-of-band channel (text message, Discord, phone call). The client includes the secret in the Hello handshake alongside the commit hash. The relay silently drops connections with an incorrect or missing secret — no error response, no acknowledgment. The secret is sent in plaintext over UDP.
 
-**Alternatives rejected:** Per-user tokens with a revocation list (more infrastructure for a problem that doesn't exist at 0-10 trusted users), client certificates or key pairs (overengineered, contradicts "no cryptographic identity"), IP allowlists (fragile — residential IPs change, people play from different networks), and encrypted handshake (DTLS — all session traffic is already plaintext UDP; encrypting only the handshake solves nothing).
+**Alternatives rejected:** Per-user tokens with a revocation list (more infrastructure for a problem that doesn't exist at 0-10 trusted users), client certificates or key pairs (overengineered — requires PKI infrastructure for 0-10 trusted users), IP allowlists (fragile — residential IPs change, people play from different networks), and encrypted handshake (DTLS — all session traffic is already plaintext UDP; encrypting only the handshake solves nothing).
 
 **Rationale:** The threat model is random strangers on the internet discovering the relay's IP and connecting — not malicious insiders or targeted surveillance. A shared secret stops port scanners, bots, and accidental connections. The group is small (0-10) and trusted, so the social cost of sharing one passphrase is near zero. Rotation is trivial — the operator changes it on the relay and tells everyone the new one. The secret is not stored in S3 or any cloud service; it exists only on the relay and on each client's local disk.
 
 **See:** [network-operations.md](architecture/network-operations.md) — Relay Access Control
 
-### Hello handshake carries commit hash, secret, and display name
+### Player identity: self-service first-claim with auto-generated identity secret
 
-**Decision:** All three fields in a single Hello message. The relay validates the secret first (silently drops if wrong), groups by commit hash (version isolation), and tracks the display name. One round-trip, no multi-step handshake.
+**Decision:** Each player has a persistent identity name (up to 20 characters), used everywhere as their sole identifier. On first launch the client prompts for a name only — the client auto-generates 4 random BIP-39 words as the identity secret, stores both in config.toml, and the player never sees the secret during onboarding. The relay stores identity_name → hash(identity_secret) in a local registry file. On subsequent connections: unclaimed name → register and accept; correct secret → accept; wrong secret → relay responds with a "name claimed" rejection (the client has already passed shared secret validation, so it's trusted). The client then prompts the player to enter their identity secret or pick a different name. The player can view or change their secret later via `arcade-cli identity secret [<new-secret>]` (any passphrase, not restricted to BIP-39 or 4 words).
+
+**Alternatives rejected:** Account registration via web portal (contradicts download-launch-play for 0-10 people), operator-managed identity list (bottleneck on operator for every player), cryptographic key pairs (key loss = permanent identity loss with no recourse), prompting for an identity secret on first launch (the player has no context for why they need one, will type something throwaway and forget it).
+
+**Rationale:** Extends the existing access control pattern — shared secret stops strangers, identity secret stops impersonation. Shared secret failure is silent drop (outsiders learn nothing); identity failure after passing shared secret is a rejection response (the client is already trusted and needs to know the reason to prompt the player). The registry is access control state, not game state. At 0-10 people, registry loss on VM replacement means friends re-claim in seconds.
+
+### Hello handshake carries commit hash, shared secret, identity name, and identity secret
+
+**Decision:** All four fields in a single Hello message. The relay validates the shared secret first (silently drops if wrong — rejects strangers), then validates identity (unclaimed name → register; correct secret → accept; wrong secret → responds with a "name claimed" rejection), then groups by commit hash (version isolation). The handshake may involve a retry for the claimed-name case: client sends Hello → gets "name claimed" → prompts user for their identity secret → sends Hello again with the correct secret.
 
 **Alternatives rejected:** Multi-step handshake where secret validation, version check, and identity registration happen in separate exchanges.
 
-**Rationale:** A single message keeps the protocol simple and minimizes round-trips. The relay already needs all three pieces of information before it can assign a player slot. Bundling them means a connecting client is either fully accepted or silently rejected in one exchange.
+**Rationale:** A single message keeps the protocol simple and minimizes round-trips. The relay already needs all four pieces of information before it can assign a player slot. Shared secret failure is silent drop — outsiders learn nothing about whether the relay exists or what protocol is in use. Identity failure after passing shared secret is a rejection response — the client has already proven it's invited, so there's no security reason to withhold the rejection reason, and the client needs to know the reason to prompt the player appropriately. The claimed-name retry adds at most one additional round-trip in the second-machine case.
 
 ---
 
@@ -285,11 +293,11 @@ Cross-game interaction flows through the container, never directly between games
 
 ### Local config in platform app data directory
 
-**Decision:** Player display name and relay secret persist between launches in a TOML file at the platform-conventional location (`%APPDATA%\seans-arcade\config.toml` on Windows). Not alongside the binary, not in the registry.
+**Decision:** Player identity name, identity secret, and relay secret persist between launches in a TOML file at the platform-conventional location (`%APPDATA%\seans-arcade\config.toml` on Windows). Not alongside the binary, not in the registry.
 
 **Alternatives rejected:** Config file next to the binary (binary self-replaces on update, complicating the update dance or risking config loss) and Windows registry (not portable, harder to inspect, platform-specific API).
 
-**Rationale:** Platform app data directories survive application updates, are user-discoverable, and work the same conceptual way across platforms. TOML is human-readable and trivially editable. The file contains no secrets that need encryption — the relay secret is a shared passphrase, not a credential.
+**Rationale:** Platform app data directories survive application updates, are user-discoverable, and work the same conceptual way across platforms. TOML is human-readable and trivially editable. The file contains no secrets that need encryption — the relay secret is a shared passphrase, not a credential, and the identity secret has the same security posture — auto-generated on first launch (4 BIP-39 words), stored locally, changeable via `arcade-cli identity secret <new-secret>` (any passphrase, not restricted to BIP-39).
 
 ---
 

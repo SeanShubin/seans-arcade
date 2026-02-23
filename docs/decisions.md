@@ -25,8 +25,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - All clients make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](architecture/network-operations.md))
 - Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](architecture-decisions.md))
-- Hello handshake carries **commit hash, shared secret, and display name** — one message, one round-trip; relay validates secret, groups by version, tracks identity ([decision](architecture-decisions.md))
-- Identity is a **self-chosen display name** — no cryptographic identity, no uniqueness enforcement
+- Hello handshake carries **commit hash, shared secret, identity name, and identity secret** — one message, one round-trip; relay validates secret, validates identity, groups by version ([decision](architecture-decisions.md))
+- **Identity registry** on the relay — maps identity names to hashed secrets, persisted to local disk, access control state not game state
+- Identity is a **persistent identity name** with an auto-generated identity secret (4 BIP-39 words) — first-claim registration, enforced by the relay; secret changeable via CLI
 - **Fixed 30-second retry** for all connectivity failures — version check, relay connection, S3 sync ([decision](architecture-decisions.md))
 - Estimated total cost for 0-10 users: **~$5/month** ([cost details](architecture/network-operations.md#cost-estimate-0-10-users))
 
@@ -36,8 +37,10 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Chat history is **world state** — persisted, compacted, and restored via the same S3 save infrastructure as game state
 - Joining peers receive chat history as part of the S3 save download, same as player positions in a game
 - Bounding of chat history (last N messages, session-only, unlimited) is a **game mechanic**, not an infrastructure decision
-- Identity is a self-chosen display name, stored locally, no uniqueness enforcement
-- Local config (display name, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](architecture-decisions.md))
+- Identity is a **persistent identity name** — name chosen on first launch, identity secret auto-generated, first-claim enforced by relay
+- Local config (identity name, identity secret, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](architecture-decisions.md))
+- Game entities reference **identity name as persistent owner key** — entity reassociation on reconnect is game-layer logic
+- `arcade-cli` identity management: `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`
 
 ### Arcade Model (v2+)
 - The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it

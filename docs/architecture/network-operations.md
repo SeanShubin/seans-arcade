@@ -24,9 +24,18 @@ This is actually two different problems that present the same way:
 
 **Processing starvation** — all confirmations have been received, but the CPU can't simulate fast enough to keep up. Ticks are piling up in the inbox.
 
-Both result in the authoritative state falling behind, but the cause and fix are different. Network starvation needs better connection or packet recovery. Processing starvation means the game is too expensive to simulate at the target tick rate.
+Both result in the authoritative state falling behind, but the cause and fix are different. Network starvation needs better connection or packet recovery. Processing starvation means the game is too expensive to simulate at the target tick rate — the simulation consistently takes longer than 1/tick-rate seconds, causing a death spiral where catch-up ticks pile up faster than they can be processed.
 
 In normal operation this should be **zero**. Any non-zero value is a problem.
+
+#### Distinguishing the Two Causes
+
+Each input message carries a client-local wall-clock timestamp alongside the tick number. The tick number says *which* tick the input is for. The timestamp says *when* the client produced it. This lets the relay distinguish:
+
+- **Computed on time, arrived late** — the timestamp is close to the expected wall-clock time for that tick, but the message arrived after the relay's broadcast deadline. This is network starvation. The client's simulation is keeping up; the network isn't delivering fast enough.
+- **Computed late, arrived late** — the timestamp is later than expected for that tick. The client produced the input after it should have, meaning its simulation is falling behind. This is processing starvation.
+
+The relay tracks this per player. A pattern of late timestamps from a specific client indicates that client can't sustain the tick rate. A pattern of on-time timestamps with late arrivals indicates a network problem between that client and the relay.
 
 ### Other Metrics
 
@@ -48,6 +57,7 @@ Jitter determines → required input buffer depth
 Input buffer too shallow + jitter → input omissions (actions get dropped)
 Packet loss → tick deficit (client falls behind)
 CPU too slow → tick deficit (client falls behind)
+Client timestamp vs tick deadline → distinguishes CPU-late from network-late
 Tick deficit → catch-up needed (fast-forward multiple ticks)
 Prediction depth too large → visual corrections feel jarring
 ```
@@ -57,7 +67,7 @@ Prediction depth too large → visual corrections feel jarring
 | Metric | Normal value | Concerning when | Indicates |
 |--------|-------------|----------------|-----------|
 | Prediction depth | 2-5 ticks | Growing or fluctuating | Latency increasing or jitter |
-| Tick deficit | 0 | Any non-zero | Network or CPU starvation |
+| Tick deficit | 0 | Any non-zero | Network or CPU starvation (compare client timestamp to distinguish) |
 | RTT | Stable, any value | Spiking or trending up | Connection quality |
 | Jitter | Low variance | High variance | Unreliable connection |
 | Input omissions | 0 | Frequent | Buffer depth too shallow |
@@ -84,7 +94,7 @@ In lockstep relay, the **only** things on the wire are player inputs, confirmed 
 
 | Message | Size | Frequency |
 |---------|------|-----------|
-| Player input | ~20 bytes (tick + slot + input data) | 60/sec per player |
+| Player input | ~24 bytes (tick + slot + client timestamp + input data) | 60/sec per player |
 | Confirmed input package | ~20 bytes × player count | 60/sec from relay |
 | Checksum | 8 bytes | Every 30-60 ticks |
 
@@ -110,6 +120,10 @@ On every message, both sides:
 
 On connection events (Hello/disconnect), additionally:
 - Commit hash — the git commit hash of the connecting client's build, identifying the exact code version for all subsequent messages from this connection (see [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier)
+- Identity name — persistent identity of the connecting player, logged once per connection (same pattern as commit hash), used to build slot-to-identity mapping
+
+On player input messages, additionally:
+- Client-local wall-clock timestamp — when the client produced the input, carried in the message payload. Compared against the relay's receive timestamp to distinguish processing starvation (client computed the input late) from network starvation (client computed on time but the message arrived late). See [Tick Deficit — Distinguishing the Two Causes](#distinguishing-the-two-causes).
 
 On the relay, additionally:
 - Time between receiving a player's input and broadcasting the confirmed package (relay processing latency)
@@ -138,6 +152,12 @@ This is exactly how Factorio debugs desyncs — replay the input log, checksum e
 **"Something weird happened on tick 4000"** — replay the input log up to tick 3999, then step through tick 4000 examining state changes.
 
 **"Is this a determinism bug or a network bug?"** — replay the same input log on two separate instances offline (no network). If checksums diverge, it's a determinism bug. If they match, the original divergence was caused by a network issue (dropped or reordered packet, relay bug).
+
+**"One player's inputs keep getting dropped but their connection seems fine"** — check the client timestamps on that player's inputs. If timestamps are consistently late relative to the expected wall-clock time for each tick, the client's simulation is falling behind (processing starvation) — inputs are computed after the relay's broadcast deadline, not because the network is slow but because the client can't sustain the tick rate. This points to a performance problem on that specific machine, not a network problem.
+
+**"Someone is using my name"** — the normal path is that the client prompted the player to enter their identity secret when the relay responded with "name claimed." If they're on a second machine, they need their secret from the first machine (`arcade-cli identity secret` on machine A). If the name was genuinely claimed by someone else (e.g., someone claimed a friend's name before they connected), the operator can reset the claim with `arcade-cli identity reset <name>`, and the rightful owner re-claims on next connection.
+
+**"A player reconnected but lost their game entities"** — verify the connection event shows the same identity name as the previous connection. If the name is different (typo, different config), the game layer can't reassociate the new connection with the old player's entities. Entity reassociation uses identity name as the persistent key — same name means same player, different name means different player regardless of intent.
 
 ### Version Index
 
@@ -255,10 +275,12 @@ Client C ──outbound──→ AWS Relay ←──outbound── Client D
 When a user launches the application:
 1. Version check against `seanshubin.com/version` (auto-update if stale)
 2. Connect to the relay on AWS
-3. Hello handshake — send commit hash, shared secret, and display name
-4. Relay validates the secret — match continues, mismatch silently drops the connection
-5. Relay assigns a player slot
-6. Begin sending/receiving inputs
+3. Hello handshake — send commit hash, shared secret, identity name, and identity secret
+4. Relay validates the shared secret — mismatch silently drops the connection
+5. Relay validates identity — unclaimed name is registered, correct secret accepted, wrong secret rejected with "name claimed" response
+6. If name claimed: client prompts for identity secret, re-sends Hello with the provided secret
+7. Relay assigns a player slot
+8. Begin sending/receiving inputs
 
 ### Relay Access Control
 
@@ -279,6 +301,47 @@ The relay is protected by a shared passphrase. For the decision and rationale, s
 **Secret rotation:** The operator changes the environment variable or config file on the relay and restarts (or the relay hot-reloads, if supported). The operator tells all players the new secret through the same out-of-band channel. At 0-10 people this takes seconds. Connected clients are unaffected until they reconnect — the secret is only checked during the Hello handshake.
 
 **Plaintext transmission:** The secret is sent in plaintext over UDP. This is consistent with the rest of the protocol — all session traffic (inputs, confirmed packages, checksums) is also plaintext UDP. The secret's purpose is to stop unsolicited connections from strangers, not to resist an attacker who can read packets in transit. See the note on who can observe UDP traffic below.
+
+### Identity Registry
+
+The relay maintains an identity registry that maps identity names to hashed identity secrets, stored as a local file on relay disk. This is access control state, not game state — the relay remains stateless with respect to game state.
+
+**First-claim flow:**
+
+| Scenario | Relay behavior |
+|----------|---------------|
+| Unclaimed name | Register the name with hash(identity_secret), accept the connection |
+| Claimed name, correct secret | Accept the connection |
+| Claimed name, wrong secret | Rejection response — relay tells the client the name is claimed |
+
+**Validation order:** The relay validates the shared secret first, then identity. Outsiders (wrong shared secret) are rejected before they ever interact with the identity registry. This means the registry is never probed by unauthorized connections.
+
+**Relay behavior on identity failure:** Different from shared secret failure. Shared secret failure is silent drop — outsiders learn nothing about whether the relay exists or what protocol is in use. Identity failure after passing shared secret is a rejection response — the client has already proven it's invited (correct shared secret), so there's no security reason to withhold the rejection reason. The client needs to know the name is claimed so it can prompt the player to enter their identity secret or pick a different name.
+
+**Registry loss:** If the relay VM is replaced, the registry is lost. At 0-10 people, friends re-claim their names on next connection — trivial. The registry is a convenience (prevents impersonation), not a critical data store.
+
+**Where identity data lives:**
+
+| Location | Data | Details |
+|----------|------|---------|
+| Relay local disk | identity_name → hash(identity_secret) | The identity registry. Access control state, not game state. Lost if relay VM is replaced. |
+| Client config.toml | identity_name, identity_secret (plaintext) | Auto-generated on first launch (4 BIP-39 words), stored locally. Changeable via `arcade-cli identity secret <new-secret>` (any passphrase, not restricted to BIP-39). |
+
+**Client-side identity flow:**
+
+- **First launch:** Client prompts for identity name only. Auto-generates 4 BIP-39 words as the identity secret. Stores both in config.toml. The player never sees the secret.
+- **Name unclaimed:** Registered, accepted, done.
+- **Name claimed (wrong secret):** Relay responds "name claimed." Client shows: "That name is already taken. If it's yours, enter your identity secret." Player enters their secret → retry Hello with the provided secret, or picks a different name.
+- **Subsequent launches:** Config already populated — connect automatically with the stored name and secret.
+
+**`arcade-cli identity` subcommands:**
+
+| Subcommand | What it does |
+|------------|-------------|
+| `identity list` | Show all registered identity names in the relay registry |
+| `identity reset <name>` | Clear a name's claim — the next connection with that name re-registers it |
+| `identity secret` | Print the current identity secret from local config.toml |
+| `identity secret <new-secret>` | Update identity secret locally and on the relay (sends old secret to prove ownership, relay re-hashes with new one) |
 
 ## Connecting Over the Internet
 
@@ -499,6 +562,15 @@ Organized by commit hash (version isolation) and session ID.
 
 The save and the log are separate objects, correlated by tick number. See [Log Compaction](#log-compaction) for the procedure and lifecycle.
 
+### Relay Local Disk
+
+| Data | Contents | Purpose |
+|------|----------|---------|
+| Shared secret | Passphrase (env var or config file) | Access control — rejects strangers |
+| Identity registry | identity_name → hash(identity_secret) | Access control — rejects impersonation |
+
+Both are access control state, not game state. Lost if the relay VM is replaced.
+
 ### Relay Memory (Ephemeral)
 
 | Data | Contents | Lifetime |
@@ -506,7 +578,7 @@ The save and the log are separate objects, correlated by tick number. See [Log C
 | Hot input buffer | Input entries from latest compaction tick to current tick | Lost on relay crash; rebuilt from restart point |
 | Connection state | Connected clients, player slots, commit hashes | Lost on relay crash; clients reconnect and re-handshake |
 
-The relay holds no persistent state. Everything in relay memory is either reconstructible (clients reconnect) or backed by S3.
+The relay holds no game state. Its persistent state is limited to access control (shared secret and identity registry). Everything in relay memory is either reconstructible (clients reconnect) or backed by S3.
 
 ### Local Client Disk
 
@@ -516,7 +588,7 @@ The relay holds no persistent state. Everything in relay memory is either recons
 | Old binary (Windows only) | `seans-arcade-old.exe` from rename dance | Cleanup on next launch |
 | Local save copy | Authoritative state at current tick | Every client has this in memory during play; can persist to disk on exit |
 | Client-side message log | Full log of sent/received messages | Local debugging, independent of relay's log |
-| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — display name and relay secret | Persists identity and access between launches ([decision](../architecture-decisions.md)) |
+| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — identity name, identity secret, and relay secret | Persists identity and access between launches ([decision](../architecture-decisions.md)) |
 
 ### What Is NOT in Persistent Storage
 
