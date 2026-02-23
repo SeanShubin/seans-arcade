@@ -2,6 +2,51 @@
 
 Free asset packs and tools for prototyping and development.
 
+## Sourcing Requirements
+
+- Large variety of sprites (characters, enemies, tilesets, items, UI)
+- No attribution/credit required
+- No restrictions on use within a game (redistribution of raw assets not needed)
+- Commercial use allowed
+
+## Large Catalogs
+
+### [Kenney](https://kenney.nl/assets)
+
+60,000+ assets spanning sprites, tilesets, UI, 3D models, and audio. Clean, consistent art style (low-poly / simple vector aesthetic). Everything downloadable individually from the site or as a single bundle via [itch.io](https://kenney.itch.io/kenney-game-assets).
+
+- **License:** CC0 (public domain — no attribution, no restrictions whatsoever)
+- **Cost:** Free
+
+### [CraftPix](https://craftpix.net/)
+
+Large catalog of 2D sprites, tilesets, characters, backgrounds, GUI. More visually polished/detailed styles than Kenney. Has both free packs and a paid [membership](https://craftpix.net/membership/) for full access.
+
+- **License:** No attribution required, unlimited commercial projects. Cannot resell raw assets.
+- **Cost:** Free + paid tiers
+
+### [itch.io Game Assets](https://itch.io/game-assets/free)
+
+Massive marketplace with thousands of creators posting sprite packs. Great for variety since you browse many different artists. License varies per pack — check each one individually. Many are CC0 or "free for commercial use, no credit required."
+
+- **License:** Varies per pack (check each one)
+- **Cost:** Free + paid options
+
+### [Game Art 2D](https://www.gameart2d.com/)
+
+Royalty-free 2D assets. Platformer tilesets, character spritesheets, backgrounds, GUI. Smaller catalog but high quality.
+
+- **License:** No restrictions on commercial use
+- **Cost:** Free + paid options
+
+## AI Sprite Generation
+
+For custom sprites without learning art. May need manual cleanup for visual consistency across a project.
+
+- [PixelLab](https://www.pixellab.ai/) — AI pixel art generator designed for game assets
+- [Scenario](https://www.scenario.com) — train on a style to generate visually consistent assets
+- [God Mode AI](https://www.godmodeai.co/) — production-ready sprites with commercial licensing
+
 ## 2D Sprite Sheets (Top-Down)
 
 ### [Ninja Adventure Asset Pack](https://pixel-boy.itch.io/ninja-adventure-asset-pack) — pixel-boy
