@@ -48,6 +48,27 @@ Start with `syn` crate for name extraction and `use`-statement-based dependency 
 - **Hierarchical name prefix matching** for ancestor/descendant checks - works with module paths
 - **Scoped analysis at multiple levels** (global, per-module depth) - same concept
 
+## ECS-Specific Lint Opportunities
+
+Bevy's ECS wiring happens at runtime — the compiler sees system functions as ordinary functions and can't catch ECS-specific errors. Several categories of bugs are mechanically detectable from source but silently compile and panic at runtime.
+
+### Conflicting query access
+
+Two system parameters that access the same component type with overlapping mutability and no distinguishing filters will panic when Bevy initializes the system.
+
+```rust
+// Compiles. Panics at runtime.
+fn bad_system(a: Query<&mut Transform>, b: Query<&Transform>) { ... }
+
+// Fine — filters make the sets disjoint.
+fn good_system(
+    players: Query<&Transform, With<Player>>,
+    enemies: Query<&Transform, With<Enemy>>,
+) { ... }
+```
+
+A lint rule can inspect system function signatures for: same component type appearing in multiple query parameters, at least one mutable, with no filters (or with overlapping filters). This covers the most common case. Full disjointness analysis (proving filters are mutually exclusive) is harder but the no-filter case catches the majority of real mistakes.
+
 ## Implementation Phases
 
 1. **Phase 1**: Write a Rust source parser using `syn` to extract module structure and `use` dependencies
