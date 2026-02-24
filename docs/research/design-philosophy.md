@@ -173,7 +173,24 @@ A choice is meaningful only when the world visibly changes, the decision can't b
 
 ---
 
-## 11. Trust Between Players
+## 11. Prefer Diegetic Design
+
+Interactions should happen inside the game world, not in menus. The player walks to a shield to pick it up, not equips it from an inventory screen. The player walks to a location to exit, not selects "quit" from a pause menu. The player approaches a forge to craft, not opens a crafting UI.
+
+**Why:** Menus break presence. Every time the player opens a screen overlay, they stop being a character in a world and become a user of software. Diegetic design keeps the player embodied — their avatar is always the verb. This reinforces player control (#1), world reactivity (#7), and discovery (#3): if the game's interface is the game's world, then learning the interface is learning the world.
+
+**Spectrum, not dogma.** Pure diegetic design isn't always practical. The preference is:
+
+1. **Diegetic** (preferred) — the interaction exists in the game world. Walk to the item, talk to the NPC, stand on the portal.
+2. **Spatial** — UI elements placed in world space (health bar floating above an enemy, sign text appearing when you approach). Not fully diegetic but preserves spatial awareness.
+3. **Meta** — effects on the "camera" that communicate state without UI chrome (screen shake, vignette, color desaturation for low health).
+4. **Non-diegetic** (least preferred) — traditional HUD overlays, menus, inventory screens. Use when diegetic alternatives would be clumsy or hostile to the player's time (#10).
+
+**The test:** Before adding a menu, ask: can this interaction happen through the avatar instead? If yes, prefer the diegetic version. If the diegetic version would waste the player's time or obscure critical information, use the lightest non-diegetic option that works.
+
+---
+
+## 12. Trust Between Players
 
 Games may have adversarial mechanics (competition, PvP, territory control), but the architecture assumes all players are acting in good faith. Distrust between players is a game mechanic, not a technical reality.
 
@@ -209,6 +226,7 @@ Games may have adversarial mechanics (competition, PvP, territory control), but 
 | Does this moment complement what came before? | Pacing |
 | Does this choice have visible, irrevocable, remembered consequences? | Meaningful choice |
 | Is every second spent here worthwhile? | Time respect |
+| Can this interaction happen through the avatar instead of a menu? | Diegetic design |
 | Are we paying any technical cost to prevent cheating? | Player trust |
 | If rules are hidden, do stakes match the player's current knowledge? | Discovered contract |
 

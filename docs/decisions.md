@@ -42,6 +42,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Game entities reference **identity name as persistent owner key** — entity reassociation on reconnect is game-layer logic
 - `arcade-cli` identity management: `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`
 
+### Design
+- Prefer **diegetic design** — interactions happen in the game world through the avatar, not in menus or overlays ([philosophy](research/design-philosophy.md))
+
 ### Arcade Model (v2+)
 - The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it
 - Chat is **always visible** to everyone — playing or watching a game does not leave the chat

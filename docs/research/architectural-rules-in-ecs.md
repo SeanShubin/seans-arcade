@@ -121,6 +121,38 @@ Each dimension answers a different design question:
 
 **When each dimension matters.** Type splitting is a design-time decision that's hard to change later — get it roughly right up front. Read vs write is trivial to fix anytime. System consolidation for entity-set parallelism is a performance optimization you defer until measurement tells you it matters.
 
+### System-Level vs Iteration-Level Parallelism
+
+Bevy's automatic parallelism operates at the **system level**: the scheduler runs non-conflicting systems on different threads simultaneously. It does NOT parallelize iteration within a single system. A `Query` loop processes entities sequentially on one thread by default.
+
+```rust
+fn move_enemies(mut q: Query<&mut Transform, With<Enemy>>) {
+    for mut transform in &mut q {
+        // sequential — one enemy at a time, single thread
+        transform.translation.x += 1.0;
+    }
+}
+```
+
+To parallelize iteration within a system, opt in explicitly with `par_iter`:
+
+```rust
+fn move_enemies(q: Query<&mut Transform, With<Enemy>>) {
+    q.par_iter_mut().for_each(|mut transform| {
+        // parallel — enemies distributed across threads via Bevy's task pool
+        transform.translation.x += 1.0;
+    });
+}
+```
+
+`par_iter` is worth it when per-entity work is non-trivial (pathfinding, spatial queries, complex AI). For simple operations like applying velocity to position, the overhead of task distribution usually exceeds the savings. Profile before opting in.
+
+### Commands Are Deferred
+
+`Commands` is a special system parameter. Unlike `Query` or `ResMut`, it doesn't access any data immediately — it queues structural changes (spawn, despawn, insert/remove components) that are applied later at a **sync point** between system sets. Because `Commands` doesn't read or write anything during system execution, it doesn't conflict with any other system parameter. A system using `Commands` can run in parallel with any other system, regardless of what that other system accesses.
+
+This is why startup systems that only call `commands.spawn(...)` never cause scheduling conflicts — they produce deferred work, not immediate data access.
+
 ### Resource Granularity: Three Failure Modes
 
 **Capturing too broadly.** If a system declares `ResMut<Score>` but only reads it, the scheduler treats it as a writer and serializes it against every other system that touches `Score`. Use `Res<Score>` instead and it runs in parallel with other readers.
@@ -145,6 +177,52 @@ When two systems need overlapping but not identical subsets of state, there are 
 3. **Move the data to components on entities.** Components give you a dimension that resources don't: per-entity access. If two systems touch the same component types but on different entities, the scheduler can still parallelize them. Resources are global singletons with no such escape hatch — any writer blocks all other accessors.
 
 Overlapping resource access problems are often a signal that the data isn't truly global — it belongs on entities, where the query system handles partial overlap naturally. Resources work well for truly global state (input, score, time).
+
+### How Parallelism Gets Defeated
+
+The type system draws a hard line between two categories of failure. Staying within it can only cost performance. Going around it can break correctness.
+
+**Within the type system — performance degrades, correctness preserved:**
+
+- *Unnecessary `mut`* — `ResMut<T>` when `Res<T>` would do, `Query<&mut T>` when `Query<&T>` would work. Every writer excludes all other accessors of that type.
+- *God resources / god components* — One big struct everything touches. Every system conflicts with every other.
+- *Exclusive systems* — A system taking `&mut World` gets exclusive access to everything. Nothing else runs alongside it. Necessary sometimes (scene loading, structural changes) but serializes the entire schedule while it runs.
+- *Non-Send resources* — Resources that aren't `Send` (window handles, GPU contexts) force their systems onto the main thread. Other systems can still run on other threads, but work is pinned to one core.
+
+The worst case: your "parallel" game loop is effectively single-threaded. But it's still correct. The scheduler never lets two conflicting accesses happen simultaneously.
+
+**Outside the type system — correctness breaks:**
+
+- *`unsafe` access* — Raw pointers, `UnsafeCell`, or `UnsafeWorldCell` to read/write data the function signature doesn't declare. The scheduler doesn't know about these accesses, so it may schedule conflicting systems in parallel. Result: data races, torn reads, corrupted state, undefined behavior.
+- *Global mutable state outside ECS* — `static mut`, lazy statics with interior mutability, thread-local state. The scheduler can't see it, can't protect it.
+- *`Mutex`/`RwLock` inside components or resources* — Technically safe Rust (no UB), but reintroduces runtime contention that the ECS was designed to eliminate. Lock contention, potential deadlocks, and non-deterministic ordering — the exact problems Bevy's type-driven scheduling exists to avoid.
+
+| Approach | What breaks | Symptom |
+|---|---|---|
+| Unnecessary `mut` | Performance | Systems serialize, underused cores |
+| God resources/components | Performance | Everything waits in line |
+| Exclusive systems | Performance | Full schedule stall |
+| `unsafe` / global state | **Correctness** | Data races, UB, heisenbugs |
+| Interior mutability (`Mutex`) | **Determinism** | Lock contention, non-deterministic ordering |
+
+### Parallelism, Ordering, and Determinism
+
+Bevy's scheduler guarantees **safety** (no conflicting access), not **ordering**. When two systems run in parallel, their completion order is non-deterministic. Whether this matters depends on the operation.
+
+**Order doesn't matter when:**
+
+- *Operations are independent per entity.* Each entity's update only reads/writes its own components and the computation is self-contained. Moving 1000 enemies by their individual velocities produces the same result regardless of which enemy gets processed first: `transform.translation += velocity.0 * time.delta_secs();`
+- *Operations are commutative.* Adding score from two kills: `10 + 20 = 20 + 10`. Doesn't matter which system runs first.
+- *Integer or fixed-point math.* Integer addition is truly associative: `(a + b) + c == a + (b + c)` always. No rounding surprises.
+
+**Order matters when:**
+
+- *Floating-point accumulation across entities.* Summing floats from multiple entities gives different results depending on the order, because float addition isn't associative. `(0.1 + 0.2) + 0.3 != 0.1 + (0.2 + 0.3)` in IEEE 754. This is the `par_iter` trap — thread scheduling changes the accumulation order.
+- *Sequential dependencies.* Collision resolution where entity A pushes B, then B pushes C. Final positions depend on processing order.
+- *State machines with shared transitions.* Two systems both check "is the game tied?" and one triggers overtime while the other triggers sudden death. Who runs first determines the outcome.
+- *Read-then-write on shared state.* System A reads score, adds 10. System B reads score, adds 20. If both read before either writes, you get a lost update. Bevy prevents this via scheduling — but the order of the serialized execution still determines intermediate states that other systems might observe.
+
+**The practical rule for lockstep:** you don't need to constrain everything — just the operations where order changes the result. Independent per-entity updates with integer/fixed-point math are safe to parallelize freely. Cross-entity accumulations and sequential dependencies need deterministic ordering via `.before()` / `.after()`.
 
 ## Testing in Bevy
 
