@@ -463,6 +463,8 @@ No streaming infrastructure (Kafka, Kinesis, etc.) is needed. A periodic S3 PUT 
 
 The input log grows continuously during a session. Compaction materializes the log into a world state snapshot, advances the hot/cold boundary, and keeps the relay's memory bounded. For the decisions and rationale, see [architecture-decisions.md](../architecture-decisions.md) — Log Compaction.
 
+**Terminology note:** In this document, "save" and "snapshot" refer to the same S3 artifact — a serialized authoritative world state at a specific compaction tick. "Save" emphasizes the persistence role (stored in S3, used to resume sessions). "Snapshot" emphasizes the point-in-time capture. The S3 key uses `save`; the log marker uses `snapshot`.
+
 **Two tiers:**
 
 | Tier | Location | Contents | Purpose |

@@ -4,7 +4,7 @@ Architecture and concepts for the lockstep relay networking model. For the key d
 
 ## Terminology
 
-The networking pattern we prefer (see design philosophy #11) is **deterministic lockstep with a relay server**. The pieces:
+The networking pattern we prefer (see design philosophy #12) is **deterministic lockstep with a relay server**. The pieces:
 
 | Term | Meaning |
 |------|---------|
@@ -168,8 +168,8 @@ If tick 200 diverges by 0.001 on one client, by tick 500 the worlds can be compl
 ### For Bevy Specifically
 
 Bevy's parallel scheduler and f32-based transforms make perfect determinism difficult out of the box. You'd need to:
-- Force single-threaded system execution
-- Use a fixed-point math library instead of f32
+- Disable Bevy's parallel system execution for gameplay systems
+- Use a fixed-point math library instead of f32 (see [architecture-decisions.md](../architecture-decisions.md) for the chosen approach — constrained f32 with software transcendentals, not fixed-point)
 - Avoid HashMap and use deterministic collections
 - Carefully audit every system for ordering dependencies
 
@@ -284,7 +284,7 @@ Use **non-cryptographic hashes**, not cryptographic ones. The distinction matter
 - **Cryptographic hashes** (SHA-256) resist *intentional* collisions — someone crafting two inputs with the same hash. Slow because that security property is expensive.
 - **Non-cryptographic hashes** (xxhash, CRC32, FNV) detect *accidental* differences. Orders of magnitude faster.
 
-Since players are trusted (see design philosophy #11), nobody is forging matching hashes to hide tampered state. We're only detecting accidental drift. Using a cryptographic hash here would be paying a CPU cost for distrust — exactly the kind of cost the design philosophy rejects.
+Since players are trusted (see design philosophy #12), nobody is forging matching hashes to hide tampered state. We're only detecting accidental drift. Using a cryptographic hash here would be paying a CPU cost for distrust — exactly the kind of cost the design philosophy rejects.
 
 **Practical choices for Rust:**
 - **xxhash** — extremely fast, excellent distribution, 64-bit output. Best default. Crate: `xxhash-rust`

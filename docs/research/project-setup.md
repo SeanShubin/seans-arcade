@@ -2,6 +2,8 @@
 
 ## Create the project
 
+The repository is `seans-arcade` (originally created as `bevy-prototyping`). The workspace crate name remains `bevy-prototyping` in `Cargo.toml`.
+
 ```bash
 cargo new bevy-prototyping --lib
 cd bevy-prototyping

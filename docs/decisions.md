@@ -109,3 +109,10 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [design-philosophy.md](research/design-philosophy.md) | Game design principles that motivate technical decisions |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md) | High-level engine pipeline overview |
 | [session-architecture.md](architecture/session-architecture.md) | Session architecture decision: unified world state, not multiplexed sessions |
+| [bevy-vs-recoil-rts-scale.md](research/bevy-vs-recoil-rts-scale.md) | Bevy ECS vs Recoil engine for large-scale RTS |
+| [classic-game-candidates.md](research/classic-game-candidates.md) | Candidate classic games for the arcade |
+| [zelda-case-study.md](research/zelda-case-study.md) | Zelda design analysis |
+| [logical-design.md](games/9-keys/logical-design.md) | 9 Keys — logical design specification |
+| [design-analysis.md](games/9-keys/design-analysis.md) | 9 Keys — game design reasoning |
+| [maze-generation.md](games/9-keys/maze-generation.md) | 9 Keys — maze generation theory |
+| [mythology-and-naming.md](games/9-keys/mythology-and-naming.md) | 9 Keys — Greek mythology behind item names |

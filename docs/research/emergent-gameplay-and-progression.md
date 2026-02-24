@@ -17,54 +17,9 @@ The design goal: all of these are valid currencies, and they're all exchangeable
 
 ## Multiple Progression Axes
 
-Design at least three independent axes of player power:
-
-### 1. Character Power (Grindable)
-
-Stats, equipment, levels, upgrades. The player gets stronger by repeating content. This is the safety net - anyone can progress given enough time.
-
-- Health upgrades - more mistakes allowed
-- Damage upgrades - fights end faster
-- Defensive items - specific hazards become trivial
-- Consumables - temporary power spikes
-
-This axis respects the player's time. "I spent two hours farming, I deserve to be stronger." They're right.
-
-### 2. Player Skill (Practiced)
-
-The player's actual ability: dodging, timing, pattern recognition, resource management. This cannot be taken away and doesn't appear in any inventory.
-
-- A skilled player with starting equipment can beat content designed for max-level characters
-- An unskilled player with max equipment can brute-force content designed for skilled players
-- The game never tells the player which path they're on - both feel like "playing the game correctly"
-
-This axis respects mastery. "I died 40 times and learned the pattern." They earned it differently but equally.
-
-### 3. Knowledge (Discovered)
-
-What the player knows about the world: secret passages, enemy weaknesses, optimal routes, hidden interactions, NPC hints. This is the axis that rewards exploration and curiosity.
-
-- A player who explores thoroughly finds the fire weapon before the ice dungeon
-- A player who talks to every NPC learns the boss's weakness
-- A player who experiments discovers that combining two items creates something powerful
-- A player on their second playthrough is "overpowered" by knowledge alone
-
-This axis respects attention. "I noticed the cracked wall, I read the old man's hint, I tried using the lantern on the dark room." They were paying attention, and the game rewarded it.
+The three axes of player investment — Persistence, Mastery, and Curiosity — are defined in [design-philosophy.md](design-philosophy.md) principle #1, along with the substitution table showing how each axis can independently solve every challenge. The rest of this section elaborates on the deeper form of the knowledge axis and on designing content that respects all three axes equally.
 
 **Deeper form: knowledge of rules.** Most games assume the player knows the rules and discovers secrets within them (hidden passages, enemy weaknesses). Some designs hide the rules themselves — the player discovers how the game works through play. Knowledge of rules is the most powerful form because it's transferable: learning one rule calibrates your judgment for ALL future decisions, not just the specific situation. When rules are the discovery content, the knowledge axis dominates early game and the other axes become relevant once the player knows enough to use them strategically. See [discovered-contract.md](discovered-contract.md).
-
-## How The Axes Interact
-
-The magic happens when the axes substitute for each other:
-
-| Situation | Power Solution | Skill Solution | Knowledge Solution |
-|-----------|---------------|----------------|-------------------|
-| Hard boss | Grind until you out-stat it | Learn the pattern, beat it at base level | Find the weakness item hidden in the world |
-| Locked area | Find the key through main progression | Sequence break with precise movement | Discover the hidden back entrance |
-| Resource scarcity | Farm enemies for drops | Play flawlessly, need fewer healing items | Find the hidden stash the NPCs hinted at |
-| Long dangerous path | Level up to survive the gauntlet | Navigate it without getting hit | Find the shortcut/warp |
-
-Every cell in this table should be a valid way to play. The player picks their column unconsciously based on their personality, and the game respects all three equally.
 
 ## Designing For Unexpected Discovery
 
@@ -103,36 +58,7 @@ Design specific interactions that surprise even attentive players:
 
 ## The Fairness Contract
 
-For all of this to feel earned rather than arbitrary, there's an implicit contract:
-
-### The Player Must Be Able To Reason About It
-
-- If fire beats ice, the player should suspect it before confirming it
-- If a wall is breakable, there should be a visual tell (even subtle)
-- If an NPC gives a hint, it should be actionable, not just flavor text
-- No "how was I supposed to know that?" moments - every discovery should feel like "I should have seen that sooner"
-
-### Power Must Be Proportional To Investment
-
-- A hard-to-reach secret should contain a powerful reward
-- An easy-to-find item should be modestly useful
-- A long grind should produce meaningful improvement
-- A trivial task should produce trivial reward
-- The player's internal accounting must balance. If they did something hard and got something weak, trust is broken.
-
-### Multiple Solutions Must Not Invalidate Each Other
-
-- The player who grinded for 2 hours should not feel stupid when they learn there was a shortcut
-- The player who found the shortcut should not feel they missed out on the grinding rewards
-- Frame it as: "I chose my path and it worked" not "I chose wrong"
-- Solution: the grind path and the clever path should give different rewards that are laterally equivalent, not the same reward with different effort
-
-### Difficulty Must Be Readable
-
-- The player should be able to look at a challenge and estimate its difficulty before committing
-- Visual language: enemy size, color intensity, environmental hostility
-- This lets the player make informed decisions about which axis to lean on
-- "That looks too hard for me right now, I'll come back stronger" is a valid and satisfying decision
+The fairness contract — proportional rewards, consistent rules, readable difficulty, and parallel solutions that don't invalidate each other — is defined in [design-philosophy.md](design-philosophy.md) principle #6. For how the contract can evolve through discovery, see [discovered-contract.md](discovered-contract.md).
 
 ## Implementation Architecture
 

@@ -57,6 +57,8 @@ ECS is essentially a relational data model with reactive query functions. This m
 
 ## 5. Decision Log
 
+Learning and setup decisions are tracked here. Architectural decisions are tracked in [decisions.md](../decisions.md).
+
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-02-14 | Created sandbox repository | Dedicated space for game dev experimentation |

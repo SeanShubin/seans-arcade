@@ -110,6 +110,8 @@ This directly mitigates the two main design risks:
 
 Making item pickup voluntary rather than automatic adds a layer of intentionality. Every item in the maze — Ariadne's Thread, Argus's Eye upgrades — represents a decision: is this worth my time? For speedrunners, skipping optional items is a meaningful optimization. For new players, picking everything up is the safe play. The game never forces the player's hand, which keeps agency with the player at every step.
 
+This is also an example of [diegetic design](../../research/design-philosophy.md) (principle #11) — the player walks to an item to pick it up rather than selecting it from an inventory screen. Portal spawning works the same way: the player walks to a location and creates a portal in the game world, not through a menu. The game's interface is the game's world.
+
 ## Design Philosophy Summary
 
 The design reflects a clear philosophy: respect the player's time, reward spatial thinking, and let skill express itself through efficiency rather than survival. The constraints build a progression from guided to free to demanding, with optional tools, visibility upgrades, and an optional cooperative layer on top. Limited visibility creates tension and uncertainty; Argus's Eye relieves that tension at the pace of progression; portals add a social dimension without compromising independent play. Every mechanic is either mandatory (keys and gates) or voluntary (Thread, Eye, portals), giving players control over their own difficulty curve.

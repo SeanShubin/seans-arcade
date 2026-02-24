@@ -6,13 +6,9 @@ The player must feel a problem viscerally before receiving the solution. The sol
 
 ## The Cycle (Factorio as Primary Example)
 
-1. **You build something that works.** Your iron smelting line produces enough iron.
-2. **Your needs outgrow it.** You need more iron for steel, which you need for engines, which you need for blue science. The line that was fine ten minutes ago is now a bottleneck.
-3. **You feel the pain.** You're manually carrying iron between chests and furnaces, or your factory is backed up, or you're standing around waiting. The frustration is real and personal because you built the thing that's now failing.
-4. **You unlock the solution.** Logistics robots, or a faster belt tier, or modules. The research completes and suddenly the problem you've been wrestling with has an elegant answer.
-5. **The relief is euphoric.** Not because the solution is inherently exciting, but because you remember the pain. A faster conveyor belt is boring in isolation. A faster conveyor belt after 20 minutes of watching your factory starve is a revelation.
+The core cycle — build, outgrow, feel the pain, unlock the solution, experience relief — is summarized in [design-philosophy.md](design-philosophy.md) principle #4. Factorio is the defining example.
 
-The critical design choice: Factorio could give you the solution earlier. The tech tree is deliberately paced so that you always feel the limitation before you unlock the fix. If logistics robots were available from the start, they'd be just another mechanic. Because you've spent hours manually managing logistics first, they feel like a miracle.
+Factorio could give you the solution earlier. The tech tree is deliberately paced so that you always feel the limitation before you unlock the fix. If logistics robots were available from the start, they'd be just another mechanic. Because you've spent hours manually managing logistics first, they feel like a miracle.
 
 ## Why It Works Psychologically
 
@@ -38,18 +34,8 @@ The critical design choice: Factorio could give you the solution earlier. The te
 
 ## The Anti-Pattern: Solution Before Pain
 
-- **Tutorials that teach mechanics before you need them.** "Press X to use your grappling hook!" But you haven't encountered a gap you can't cross yet, so the grappling hook is abstract information, not a relief.
-- **Skill trees that unlock abilities for areas you haven't reached.** You buy the swimming upgrade but haven't encountered water. When you find water, the upgrade is a checkbox you already ticked, not a discovery.
-- **Difficulty settings at the start.** The player hasn't experienced the game yet. They don't know what "Normal" means. (Exception: difficulty framed as emotional posture toward uncertainty — "how cautious are you?" — works because it describes the player's tolerance for not-yet-knowing, which is the one thing they DO understand. See [discovered-contract.md](discovered-contract.md).)
-
-The solution feels like nothing when delivered before the pain. It feels like everything when delivered after.
+The anti-pattern is summarized in [design-philosophy.md](design-philosophy.md) principle #4. One nuance worth expanding: difficulty settings at the start are a version of this anti-pattern (the player hasn't experienced the game yet, so they don't know what "Normal" means), with one exception — difficulty framed as emotional posture toward uncertainty ("how cautious are you?") works because it describes the player's tolerance for not-yet-knowing, which is the one thing they DO understand at that point. See [discovered-contract.md](discovered-contract.md).
 
 ## The Pattern Formalized
 
-1. Introduce the mechanic in its limited form. Let the player use it, build with it, depend on it.
-2. Scale the demands beyond the mechanic's capacity. The player's own success creates the pressure.
-3. Let the player feel the gap. Don't rush to fix it. A few minutes of real frustration (not hours) creates the contrast.
-4. Make the solution available through natural progression, exploration, or discovery.
-5. The player deploys the solution and feels the relief. Self-explanatory because they already understand the problem deeply.
-
-**Timing is everything.** Too early and it's a feature the player doesn't appreciate. Too late and the player quits in frustration. The window: long enough to feel the pain, short enough that pain hasn't turned into resentment.
+The five-step cycle and timing guidance are in [design-philosophy.md](design-philosophy.md) principle #4. The key nuance for implementation: the player's own success creates the pressure (step 2). The bottleneck comes from the player building something that works and then outgrowing it — the frustration is personal because they built the thing that's now failing. This is why the pain feels fair rather than imposed.

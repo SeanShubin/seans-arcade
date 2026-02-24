@@ -224,6 +224,8 @@ Bevy's scheduler guarantees **safety** (no conflicting access), not **ordering**
 
 **The practical rule for lockstep:** you don't need to constrain everything — just the operations where order changes the result. Independent per-entity updates with integer/fixed-point math are safe to parallelize freely. Cross-entity accumulations and sequential dependencies need deterministic ordering via `.before()` / `.after()`.
 
+**See also:** [network-architecture.md](../architecture/network-architecture.md) — Making P2P Determinism Practical, and [bevy-vs-recoil-rts-scale.md](bevy-vs-recoil-rts-scale.md) — Determinism (the critical problem).
+
 ## Testing in Bevy
 
 Bevy supports isolated testing without running the full engine:

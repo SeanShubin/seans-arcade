@@ -28,17 +28,7 @@ Why Baldur's Gate 3's choices feel meaningful despite unpredictable outcomes, wh
 
 ## The Design Principle
 
-**Meaningful choice = visible consequence + irrevocability + the world remembering.**
-
-All three are required:
-
-| Element | Present | Absent |
-|---------|---------|--------|
-| Visible consequence | Player sees the impact | Choice entered a void |
-| Irrevocability | Decision has weight | Player knows they can reload |
-| World remembers | Later content reflects the choice | Nothing changed |
-
-BG3 has all three. Cyberpunk has the third element only at the very end, and by then it's too late.
+The three requirements for meaningful choice — visible consequence, irrevocability, and the world remembering — are defined in [design-philosophy.md](design-philosophy.md) principle #9. BG3 has all three. Cyberpunk has the third element only at the very end, and by then it's too late.
 
 ## The Unpredictability Paradox
 

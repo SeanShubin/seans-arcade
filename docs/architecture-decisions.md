@@ -26,7 +26,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Alternatives rejected:** Server-authoritative (server simulates, clients render) and peer-to-peer rollback (clients simulate with rollback on misprediction).
 
-**Rationale:** Trust between players (design philosophy #11) means no resources should be spent on server-side validation. Lockstep minimizes bandwidth (only inputs travel, not entity state) and eliminates the need for a powerful central server. The relay is stateless, cheap, and trivially replaceable.
+**Rationale:** Trust between players (design philosophy #12) means no resources should be spent on server-side validation. Lockstep minimizes bandwidth (only inputs travel, not entity state) and eliminates the need for a powerful central server. The relay is stateless, cheap, and trivially replaceable.
 
 **See:** [network-architecture.md](architecture/network-architecture.md) — How Lockstep Relay Works
 
@@ -131,7 +131,7 @@ Cross-game interaction flows through the container, never directly between games
 
 **Alternatives rejected:** Cryptographic hashes (SHA-256) or no checksums.
 
-**Rationale:** Players are trusted (design philosophy #11), so collision resistance against intentional forgery is unnecessary. Non-cryptographic hashes are orders of magnitude faster. 64-bit xxhash has a 1-in-2^64 probability of accidental false-match — effectively impossible. Checksums cost 8 bytes per exchange per peer.
+**Rationale:** Players are trusted (design philosophy #12), so collision resistance against intentional forgery is unnecessary. Non-cryptographic hashes are orders of magnitude faster. 64-bit xxhash has a 1-in-2^64 probability of accidental false-match — effectively impossible. Checksums cost 8 bytes per exchange per peer.
 
 **See:** [network-architecture.md](architecture/network-architecture.md) — State Checksums: Detecting Drift
 
