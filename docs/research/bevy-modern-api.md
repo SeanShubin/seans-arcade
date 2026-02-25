@@ -96,6 +96,23 @@ commands.spawn((Camera3d, Hdr));
 
 **Avoid:** `JustifyText` — renamed for consistency.
 
+## 10. bevy_egui Context Access
+
+**Current (bevy_egui 0.39 / Bevy 0.18):** Register UI systems in `EguiPrimaryContextPass`, not `Update`. `ctx_mut()` returns `Result`.
+```rust
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+
+app.add_plugins(EguiPlugin::default())
+   .add_systems(EguiPrimaryContextPass, ui_system);
+
+fn ui_system(mut contexts: EguiContexts) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    egui::CentralPanel::default().show(ctx, |ui| { /* ... */ });
+}
+```
+
+**Avoid:** `EguiPlugin` as unit struct (now has fields, use `EguiPlugin::default()`), registering egui systems in `Update` (panics: "Called `available_rect()` before `Context::run()`"), `ctx_mut()` without handling `Result`.
+
 ## Sources
 
 - [Bevy 0.14 to 0.15 migration](https://bevy.org/learn/migration-guides/0-14-to-0-15/)
