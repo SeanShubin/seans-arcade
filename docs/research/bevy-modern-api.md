@@ -20,7 +20,7 @@ commands.spawn(Text2d::new("hello"));     // TextLayout, Transform auto-inserted
 | Need | Constructor |
 |---|---|
 | Specific color (matches hex) | `Color::srgb()` / `srgba()` |
-| Tweak hue/saturation/brightness | `Color::hsl()` / `hsla()` |
+| Tweak hue/saturation/lightness | `Color::hsl()` / `hsla()` |
 | Perceptual palettes, gradients | `Color::oklch()` / `oklcha()` / `oklab()` / `oklaba()` |
 | Shader math, lighting | `Color::linear_rgb()` / `linear_rgba()` |
 
