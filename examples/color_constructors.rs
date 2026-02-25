@@ -96,6 +96,42 @@ fn color_preview(ui: &mut egui::Ui, color: Color) {
 }
 
 // ---------------------------------------------------------------------------
+// Slider with [-] / [+] step buttons
+// ---------------------------------------------------------------------------
+
+fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, label: &str) {
+    let min = *range.start();
+    let max = *range.end();
+    let step = (max - min) / 10.0;
+
+    // Snap to the next grid line in the given direction.
+    // E.g. for step=0.1: 0.37 → minus gives 0.3, plus gives 0.4.
+    let snap_down = |v: f32| ((v / step).floor() * step).max(min);
+    let snap_up = |v: f32| ((v / step).ceil() * step).min(max);
+
+    ui.horizontal(|ui| {
+        if ui.small_button("-").clicked() {
+            let snapped = snap_down(*value);
+            // If already on a grid line, go one step further
+            *value = if (snapped - *value).abs() < f32::EPSILON {
+                (snapped - step).max(min)
+            } else {
+                snapped
+            };
+        }
+        ui.add(egui::Slider::new(value, range).text(label));
+        if ui.small_button("+").clicked() {
+            let snapped = snap_up(*value);
+            *value = if (snapped - *value).abs() < f32::EPSILON {
+                (snapped + step).min(max)
+            } else {
+                snapped
+            };
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Individual color-space panels
 // ---------------------------------------------------------------------------
 
@@ -103,10 +139,10 @@ fn srgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
     ui.strong("Color::srgb() / srgba()");
     ui.label("Specific colors matching hex values. Most common constructor.");
     ui.add_space(4.0);
-    ui.add(egui::Slider::new(&mut values[0], 0.0..=1.0).text("red"));
-    ui.add(egui::Slider::new(&mut values[1], 0.0..=1.0).text("green"));
-    ui.add(egui::Slider::new(&mut values[2], 0.0..=1.0).text("blue"));
-    ui.add(egui::Slider::new(&mut values[3], 0.0..=1.0).text("alpha"));
+    stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
+    stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
+    stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
+    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
     ui.monospace(format!("Color::srgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
     color_preview(ui, Color::srgba(r, g, b, a));
@@ -116,10 +152,10 @@ fn hsl_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
     ui.strong("Color::hsl() / hsla()");
     ui.label("Rotate hue, adjust saturation and lightness.");
     ui.add_space(4.0);
-    ui.add(egui::Slider::new(&mut values[0], 0.0..=360.0).text("hue"));
-    ui.add(egui::Slider::new(&mut values[1], 0.0..=1.0).text("saturation"));
-    ui.add(egui::Slider::new(&mut values[2], 0.0..=1.0).text("lightness"));
-    ui.add(egui::Slider::new(&mut values[3], 0.0..=1.0).text("alpha"));
+    stepped_slider(ui, &mut values[0], 0.0..=360.0, "hue");
+    stepped_slider(ui, &mut values[1], 0.0..=1.0, "saturation");
+    stepped_slider(ui, &mut values[2], 0.0..=1.0, "lightness");
+    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [h, s, l, a] = *values;
     ui.monospace(format!("Color::hsla({h:.0}, {s:.2}, {l:.2}, {a:.2})"));
     color_preview(ui, Color::hsla(h, s, l, a));
@@ -129,10 +165,10 @@ fn oklch_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
     ui.strong("Color::oklch() / oklcha()");
     ui.label("Perceptually uniform. Great for palettes and gradients.");
     ui.add_space(4.0);
-    ui.add(egui::Slider::new(&mut values[0], 0.0..=1.0).text("lightness"));
-    ui.add(egui::Slider::new(&mut values[1], 0.0..=0.4).text("chroma"));
-    ui.add(egui::Slider::new(&mut values[2], 0.0..=360.0).text("hue"));
-    ui.add(egui::Slider::new(&mut values[3], 0.0..=1.0).text("alpha"));
+    stepped_slider(ui, &mut values[0], 0.0..=1.0, "lightness");
+    stepped_slider(ui, &mut values[1], 0.0..=0.4, "chroma");
+    stepped_slider(ui, &mut values[2], 0.0..=360.0, "hue");
+    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [l, c, h, a] = *values;
     ui.monospace(format!("Color::oklcha({l:.2}, {c:.3}, {h:.0}, {a:.2})"));
     color_preview(ui, Color::oklcha(l, c, h, a));
@@ -142,10 +178,10 @@ fn linear_rgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
     ui.strong("Color::linear_rgb() / linear_rgba()");
     ui.label("Linear color space. For shader math, lighting, and blending.");
     ui.add_space(4.0);
-    ui.add(egui::Slider::new(&mut values[0], 0.0..=1.0).text("red"));
-    ui.add(egui::Slider::new(&mut values[1], 0.0..=1.0).text("green"));
-    ui.add(egui::Slider::new(&mut values[2], 0.0..=1.0).text("blue"));
-    ui.add(egui::Slider::new(&mut values[3], 0.0..=1.0).text("alpha"));
+    stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
+    stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
+    stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
+    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
     ui.monospace(format!("Color::linear_rgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
     color_preview(ui, Color::linear_rgba(r, g, b, a));
@@ -160,6 +196,7 @@ const TWO_COLUMN_THRESHOLD: f32 = 700.0;
 fn ui_system(mut contexts: EguiContexts, mut sliders: ResMut<ColorSliders>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::CentralPanel::default().show(ctx, |ui| {
+        ui.spacing_mut().slider_width = ui.spacing().slider_width * 4.0;
         ui.heading("Bevy Color Constructors");
         ui.label("Drag sliders to explore each color space.");
         ui.add_space(8.0);
