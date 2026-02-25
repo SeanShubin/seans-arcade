@@ -146,3 +146,4 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [learning-plan.md](research/learning-plan.md) — Learning roadmap
 - [project-setup.md](research/project-setup.md) — Project setup and configuration
 - [pong-step-by-step.md](research/pong-step-by-step.md) — Step-by-step pong implementation
+- [bevy-modern-api.md](research/bevy-modern-api.md) — Bevy modern API reference: current patterns vs deprecated ones

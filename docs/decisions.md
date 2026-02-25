@@ -116,3 +116,4 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [design-analysis.md](games/9-keys/design-analysis.md) | 9 Keys — game design reasoning |
 | [maze-generation.md](games/9-keys/maze-generation.md) | 9 Keys — maze generation theory |
 | [mythology-and-naming.md](games/9-keys/mythology-and-naming.md) | 9 Keys — Greek mythology behind item names |
+| [bevy-modern-api.md](research/bevy-modern-api.md) | Bevy modern API reference: current patterns vs deprecated ones |
