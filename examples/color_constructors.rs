@@ -48,11 +48,18 @@ struct ColorSliders {
 
 impl Default for ColorSliders {
     fn default() -> Self {
+        let r: f32 = rand::random();
+        let g: f32 = rand::random();
+        let b: f32 = rand::random();
+        let srgb = Srgba::new(r, g, b, 1.0);
+        let hsl: Hsla = srgb.into();
+        let oklch: Oklcha = srgb.into();
+        let lin: LinearRgba = srgb.into();
         Self {
-            srgb: [1.0, 0.5, 0.0, 1.0],
-            hsl: [200.0, 0.8, 0.5, 1.0],
-            oklch: [0.7, 0.2, 150.0, 1.0],
-            linear: [0.2, 0.6, 1.0, 1.0],
+            srgb: [r, g, b, 1.0],
+            hsl: [hsl.hue, hsl.saturation, hsl.lightness, hsl.alpha],
+            oklch: [oklch.lightness, oklch.chroma, oklch.hue, oklch.alpha],
+            linear: [lin.red, lin.green, lin.blue, lin.alpha],
             last_changed: ChangedPanel::None,
         }
     }

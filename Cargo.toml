@@ -9,6 +9,7 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.18.0", features = ["wav"] }
 bevy_egui = "0.39.1"
+rand = "0.10.0"
 
 # Enable fast compiles for development (Bevy recommendation)
 # Disable when profiling or benchmarking
