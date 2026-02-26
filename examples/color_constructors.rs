@@ -133,7 +133,7 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
             };
             changed = true;
         }
-        if ui.add(egui::Slider::new(value, range)).changed() {
+        if ui.add(egui::Slider::new(value, range.clone()).show_value(false)).changed() {
             changed = true;
         }
         if ui.small_button("+").clicked() {
@@ -143,6 +143,9 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
             } else {
                 snapped
             };
+            changed = true;
+        }
+        if ui.add(egui::DragValue::new(value).range(range).speed(step * 0.1)).changed() {
             changed = true;
         }
         ui.label(label);
