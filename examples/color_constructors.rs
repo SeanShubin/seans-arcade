@@ -997,9 +997,114 @@ fn closest_xkcd_name(r: f32, g: f32, b: f32) -> &'static str {
     best
 }
 
+fn sorted_xkcd_indices(mode: ColorSortMode, current_rgb: [f32; 3]) -> Vec<usize> {
+    let len = XKCD_COLORS.len();
+    let mut indices: Vec<usize> = (0..len).collect();
+
+    match mode {
+        ColorSortMode::Original => {} // identity order
+        ColorSortMode::Alphabetical => {
+            indices.sort_by(|&a, &b| XKCD_COLORS[a].0.cmp(XKCD_COLORS[b].0));
+        }
+        ColorSortMode::Hue => {
+            // Precompute oklch for each color
+            let oklch_vals: Vec<Oklcha> = XKCD_COLORS
+                .iter()
+                .map(|&(_, rgb)| {
+                    let srgb = Srgba::new(
+                        rgb[0] as f32 / 255.0,
+                        rgb[1] as f32 / 255.0,
+                        rgb[2] as f32 / 255.0,
+                        1.0,
+                    );
+                    let oklch: Oklcha = srgb.into();
+                    oklch
+                })
+                .collect();
+            indices.sort_by(|&a, &b| {
+                let oa = &oklch_vals[a];
+                let ob = &oklch_vals[b];
+                let achromatic_a = oa.chroma < 0.02;
+                let achromatic_b = ob.chroma < 0.02;
+                // Push achromatic colors to the end
+                match (achromatic_a, achromatic_b) {
+                    (true, false) => std::cmp::Ordering::Greater,
+                    (false, true) => std::cmp::Ordering::Less,
+                    (true, true) => oa.lightness.partial_cmp(&ob.lightness).unwrap_or(std::cmp::Ordering::Equal),
+                    (false, false) => oa.hue.partial_cmp(&ob.hue).unwrap_or(std::cmp::Ordering::Equal),
+                }
+            });
+        }
+        ColorSortMode::HueThenLightness => {
+            let oklch_vals: Vec<Oklcha> = XKCD_COLORS
+                .iter()
+                .map(|&(_, rgb)| {
+                    let srgb = Srgba::new(
+                        rgb[0] as f32 / 255.0,
+                        rgb[1] as f32 / 255.0,
+                        rgb[2] as f32 / 255.0,
+                        1.0,
+                    );
+                    let oklch: Oklcha = srgb.into();
+                    oklch
+                })
+                .collect();
+            indices.sort_by(|&a, &b| {
+                let oa = &oklch_vals[a];
+                let ob = &oklch_vals[b];
+                let achromatic_a = oa.chroma < 0.02;
+                let achromatic_b = ob.chroma < 0.02;
+                match (achromatic_a, achromatic_b) {
+                    (true, false) => std::cmp::Ordering::Greater,
+                    (false, true) => std::cmp::Ordering::Less,
+                    (true, true) => oa.lightness.partial_cmp(&ob.lightness).unwrap_or(std::cmp::Ordering::Equal),
+                    (false, false) => {
+                        let bin_a = (oa.hue / 30.0) as u32;
+                        let bin_b = (ob.hue / 30.0) as u32;
+                        bin_a.cmp(&bin_b).then_with(|| {
+                            oa.lightness.partial_cmp(&ob.lightness).unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                    }
+                }
+            });
+        }
+        ColorSortMode::ClosestToCurrent => {
+            indices.sort_by(|&a, &b| {
+                let ra = XKCD_COLORS[a].1;
+                let rb = XKCD_COLORS[b].1;
+                let dist_a = {
+                    let dr = current_rgb[0] - ra[0] as f32 / 255.0;
+                    let dg = current_rgb[1] - ra[1] as f32 / 255.0;
+                    let db = current_rgb[2] - ra[2] as f32 / 255.0;
+                    dr * dr + dg * dg + db * db
+                };
+                let dist_b = {
+                    let dr = current_rgb[0] - rb[0] as f32 / 255.0;
+                    let dg = current_rgb[1] - rb[1] as f32 / 255.0;
+                    let db = current_rgb[2] - rb[2] as f32 / 255.0;
+                    dr * dr + dg * dg + db * db
+                };
+                dist_a.partial_cmp(&dist_b).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+    }
+
+    indices
+}
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, EguiPlugin::default(), ColorConstructorsPlugin))
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    resolution: (2400, 1300).into(),
+                    ..default()
+                }),
+                ..default()
+            }),
+            EguiPlugin::default(),
+            ColorConstructorsPlugin,
+        ))
         .run();
 }
 
@@ -1009,8 +1114,16 @@ impl Plugin for ColorConstructorsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ColorSliders>()
             .add_systems(Startup, setup)
+            .add_systems(Update, update_title)
             .add_systems(EguiPrimaryContextPass, ui_system);
     }
+}
+
+fn update_title(mut windows: Query<&mut Window>) {
+    let Ok(mut window) = windows.single_mut() else { return };
+    let w = window.resolution.width() as u32;
+    let h = window.resolution.height() as u32;
+    window.title = format!("Color Constructors — {w} × {h}");
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
@@ -1023,6 +1136,28 @@ enum ChangedPanel {
     Linear,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum ColorSortMode {
+    Original,
+    Alphabetical,
+    #[default]
+    Hue,
+    HueThenLightness,
+    ClosestToCurrent,
+}
+
+impl ColorSortMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Alphabetical => "A\u{2013}Z",
+            Self::Hue => "Hue (rainbow)",
+            Self::HueThenLightness => "Hue + Lightness",
+            Self::ClosestToCurrent => "Closest to Current",
+        }
+    }
+}
+
 #[derive(Resource)]
 struct ColorSliders {
     srgb: [f32; 4],
@@ -1030,6 +1165,7 @@ struct ColorSliders {
     oklch: [f32; 4],
     linear: [f32; 4],
     last_changed: ChangedPanel,
+    sort_mode: ColorSortMode,
 }
 
 impl Default for ColorSliders {
@@ -1047,6 +1183,7 @@ impl Default for ColorSliders {
             oklch: [oklch.lightness, oklch.chroma, oklch.hue, oklch.alpha],
             linear: [lin.red, lin.green, lin.blue, lin.alpha],
             last_changed: ChangedPanel::None,
+            sort_mode: ColorSortMode::default(),
         }
     }
 }
@@ -1328,12 +1465,29 @@ fn ui_system(mut contexts: EguiContexts, mut sliders: ResMut<ColorSliders>) {
             ui.strong("xkcd Colors (click to apply)");
             ui.add_space(4.0);
 
+            ui.horizontal_wrapped(|ui| {
+                for mode in [
+                    ColorSortMode::Original,
+                    ColorSortMode::Alphabetical,
+                    ColorSortMode::Hue,
+                    ColorSortMode::HueThenLightness,
+                    ColorSortMode::ClosestToCurrent,
+                ] {
+                    ui.selectable_value(&mut sliders.sort_mode, mode, mode.label());
+                }
+            });
+            ui.add_space(4.0);
+
+            let current_srgb = [sliders.srgb[0], sliders.srgb[1], sliders.srgb[2]];
+            let indices = sorted_xkcd_indices(sliders.sort_mode, current_srgb);
+
             egui::ScrollArea::vertical()
                 .id_salt("xkcd_color_list")
-                .max_height(300.0)
+                .max_height(700.0)
                 .show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
-                        for &(name, rgb) in XKCD_COLORS {
+                        for i in indices {
+                            let (name, rgb) = XKCD_COLORS[i];
                             let bg = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
                             let text_color = xkcd_text_color(rgb);
                             let button = egui::Button::new(
