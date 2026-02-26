@@ -41,6 +41,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Local config (identity name, identity secret, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](architecture-decisions.md))
 - Game entities reference **identity name as persistent owner key** — entity reassociation on reconnect is game-layer logic
 - `arcade-cli` identity management: `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`
+- **Identity secret rotation** via two-field config — player adds `new_identity_secret` to `config.toml`, client sends both in Hello, relay rotates the stored hash, client removes the field after success; Hello gains an optional `new_secret` field (backward-compatible) ([decision](architecture-decisions.md))
+- **New-machine identity recovery** via claimed-name prompt — new machine auto-generates a secret, gets rejected, prompts "enter your identity secret"; player reads the 4 words from `config.toml` on old machine and types them; if old machine is gone, operator runs `identity reset` ([decision](architecture-decisions.md))
 
 ### Design
 - Prefer **diegetic design** — interactions happen in the game world through the avatar, not in menus or overlays ([philosophy](research/design-philosophy.md))
@@ -117,3 +119,4 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [maze-generation.md](games/9-keys/maze-generation.md) | 9 Keys — maze generation theory |
 | [mythology-and-naming.md](games/9-keys/mythology-and-naming.md) | 9 Keys — Greek mythology behind item names |
 | [bevy-modern-api.md](research/bevy-modern-api.md) | Bevy modern API reference: current patterns vs deprecated ones |
+| [randomness-in-bevy.md](research/randomness-in-bevy.md) | Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking |

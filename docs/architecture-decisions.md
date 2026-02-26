@@ -275,6 +275,22 @@ Cross-game interaction flows through the container, never directly between games
 
 **Rationale:** A single message keeps the protocol simple and minimizes round-trips. The relay already needs all four pieces of information before it can assign a player slot. Shared secret failure is silent drop — outsiders learn nothing about whether the relay exists or what protocol is in use. Identity failure after passing shared secret is a rejection response — the client has already proven it's invited, so there's no security reason to withhold the rejection reason, and the client needs to know the reason to prompt the player appropriately. The claimed-name retry adds at most one additional round-trip in the second-machine case.
 
+### Identity secret rotation via two-field config
+
+**Decision:** A player changes their identity secret by adding a `new_identity_secret` field to `config.toml` alongside the existing `identity_secret`. On next launch, the client sends both values in the Hello message — the current secret for authentication, the new secret for rotation. The relay validates the current secret, replaces the stored hash with `hash(new_identity_secret)`, and accepts the connection. The client then rewrites `config.toml` with only the new secret, removing the `new_identity_secret` field. The Hello message gains an optional `new_secret` field for this purpose — if absent, the existing Hello flow is unchanged (backward-compatible).
+
+**Alternatives rejected:** Dedicated CLI command requiring the user to run a separate tool (extra step for a one-field edit), web-based secret change (no web UI exists), or relay admin endpoint for rotation (exposes admin surface on the internet-facing server).
+
+**Rationale:** The user already has `config.toml` open as their single point of configuration. Adding one line to the file they already edit is the lowest-friction rotation flow possible. The two-field approach is atomic from the user's perspective — edit, launch, done — and safe: if the old secret is wrong, nothing changes and the `new_identity_secret` field stays for the user to diagnose. The protocol extension is backward-compatible: the optional `new_secret` field is ignored by relays that don't support it, and its absence preserves the existing flow exactly. Edge cases are benign — setting the new secret identical to the old one is a harmless no-op (relay re-hashes the same value, client cleans up the field).
+
+### New-machine identity recovery via claimed-name prompt
+
+**Decision:** When a player connects from a new machine, the client auto-generates a new secret (as with any first launch), sends Hello, and receives a "name claimed" rejection because the auto-generated secret doesn't match the relay's stored hash. The client then prompts: "This name is already taken. Enter your identity secret to prove it's yours." The player reads their `identity_secret` from `config.toml` on their old machine and types it on the new machine. The client sends Hello again with the entered secret. On success, the new machine's `config.toml` is written with the correct name and secret. If the old machine is inaccessible, the operator runs `arcade-cli identity reset <name>` to clear the relay's stored hash, and the player re-claims the name on next connect via first-claim registration.
+
+**Alternatives rejected:** Automatic multi-device sync (requires sync infrastructure that doesn't exist for 0-10 users), export/import key file (extra steps for a 4-word string the user can just read and type), or email/SMS recovery (requires account infrastructure that doesn't exist).
+
+**Rationale:** The secret is already stored in plaintext in `config.toml` — the user just reads 4 words and types them. No recovery tool, no export step, no QR code. The claimed-name prompt is the same one that fires for any wrong-secret Hello, so no new UI is needed. The operator reset fallback (`arcade-cli identity reset <name>`) handles the lost-machine case without building recovery infrastructure; at 0-10 friends this is a quick ask, not a support ticket. The flow reuses the existing Hello retry mechanism — the client already handles "name claimed" rejections and re-prompts.
+
 ---
 
 ## Connectivity
