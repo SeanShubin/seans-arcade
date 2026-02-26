@@ -27,12 +27,23 @@ impl Plugin for ColorConstructorsPlugin {
     }
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum ChangedPanel {
+    #[default]
+    None,
+    Srgb,
+    Hsl,
+    Oklch,
+    Linear,
+}
+
 #[derive(Resource)]
 struct ColorSliders {
     srgb: [f32; 4],
     hsl: [f32; 4],
     oklch: [f32; 4],
     linear: [f32; 4],
+    last_changed: ChangedPanel,
 }
 
 impl Default for ColorSliders {
@@ -42,6 +53,7 @@ impl Default for ColorSliders {
             hsl: [200.0, 0.8, 0.5, 1.0],
             oklch: [0.7, 0.2, 150.0, 1.0],
             linear: [0.2, 0.6, 1.0, 1.0],
+            last_changed: ChangedPanel::None,
         }
     }
 }
@@ -99,7 +111,7 @@ fn color_preview(ui: &mut egui::Ui, color: Color) {
 // Slider with [-] / [+] step buttons
 // ---------------------------------------------------------------------------
 
-fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, label: &str) {
+fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, label: &str) -> bool {
     let min = *range.start();
     let max = *range.end();
     let step = (max - min) / 10.0;
@@ -109,6 +121,7 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
     let snap_down = |v: f32| ((v / step).floor() * step).max(min);
     let snap_up = |v: f32| ((v / step).ceil() * step).min(max);
 
+    let mut changed = false;
     ui.horizontal(|ui| {
         if ui.small_button("-").clicked() {
             let snapped = snap_down(*value);
@@ -118,8 +131,11 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
             } else {
                 snapped
             };
+            changed = true;
         }
-        ui.add(egui::Slider::new(value, range).text(label));
+        if ui.add(egui::Slider::new(value, range)).changed() {
+            changed = true;
+        }
         if ui.small_button("+").clicked() {
             let snapped = snap_up(*value);
             *value = if (snapped - *value).abs() < f32::EPSILON {
@@ -127,64 +143,75 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
             } else {
                 snapped
             };
+            changed = true;
         }
+        ui.label(label);
     });
+    changed
 }
 
 // ---------------------------------------------------------------------------
 // Individual color-space panels
 // ---------------------------------------------------------------------------
 
-fn srgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
+fn srgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     ui.strong("Color::srgb() / srgba()");
     ui.label("Specific colors matching hex values. Most common constructor.");
     ui.add_space(4.0);
-    stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
-    stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
-    stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
-    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
+    let mut changed = false;
+    changed |= stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
+    changed |= stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
+    changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
+    changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
     ui.monospace(format!("Color::srgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
     color_preview(ui, Color::srgba(r, g, b, a));
+    changed
 }
 
-fn hsl_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
+fn hsl_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     ui.strong("Color::hsl() / hsla()");
     ui.label("Rotate hue, adjust saturation and lightness.");
     ui.add_space(4.0);
-    stepped_slider(ui, &mut values[0], 0.0..=360.0, "hue");
-    stepped_slider(ui, &mut values[1], 0.0..=1.0, "saturation");
-    stepped_slider(ui, &mut values[2], 0.0..=1.0, "lightness");
-    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
+    let mut changed = false;
+    changed |= stepped_slider(ui, &mut values[0], 0.0..=360.0, "hue");
+    changed |= stepped_slider(ui, &mut values[1], 0.0..=1.0, "saturation");
+    changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "lightness");
+    changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [h, s, l, a] = *values;
     ui.monospace(format!("Color::hsla({h:.0}, {s:.2}, {l:.2}, {a:.2})"));
     color_preview(ui, Color::hsla(h, s, l, a));
+    changed
 }
 
-fn oklch_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
+fn oklch_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     ui.strong("Color::oklch() / oklcha()");
     ui.label("Perceptually uniform. Great for palettes and gradients.");
     ui.add_space(4.0);
-    stepped_slider(ui, &mut values[0], 0.0..=1.0, "lightness");
-    stepped_slider(ui, &mut values[1], 0.0..=0.4, "chroma");
-    stepped_slider(ui, &mut values[2], 0.0..=360.0, "hue");
-    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
+    let mut changed = false;
+    changed |= stepped_slider(ui, &mut values[0], 0.0..=1.0, "lightness");
+    changed |= stepped_slider(ui, &mut values[1], 0.0..=0.4, "chroma");
+    changed |= stepped_slider(ui, &mut values[2], 0.0..=360.0, "hue");
+    changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [l, c, h, a] = *values;
     ui.monospace(format!("Color::oklcha({l:.2}, {c:.3}, {h:.0}, {a:.2})"));
     color_preview(ui, Color::oklcha(l, c, h, a));
+    changed
 }
 
-fn linear_rgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
+fn linear_rgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     ui.strong("Color::linear_rgb() / linear_rgba()");
     ui.label("Linear color space. For shader math, lighting, and blending.");
     ui.add_space(4.0);
-    stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
-    stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
-    stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
-    stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
+    let mut changed = false;
+    changed |= stepped_slider(ui, &mut values[0], 0.0..=1.0, "red");
+    changed |= stepped_slider(ui, &mut values[1], 0.0..=1.0, "green");
+    changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
+    changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
     ui.monospace(format!("Color::linear_rgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
     color_preview(ui, Color::linear_rgba(r, g, b, a));
+    changed
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +220,75 @@ fn linear_rgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) {
 
 const TWO_COLUMN_THRESHOLD: f32 = 700.0;
 
+/// Convert the changed panel's values to Srgba, then derive all other panels
+/// from that single Srgba value. This avoids inconsistencies from independent
+/// conversion paths (e.g. Oklcha→Hsla vs Oklcha→Srgba→Hsla).
+fn sync_from_panel(sliders: &mut ColorSliders) {
+    let srgb = match sliders.last_changed {
+        ChangedPanel::None => return,
+        ChangedPanel::Srgb => {
+            let [r, g, b, a] = sliders.srgb;
+            Srgba::new(r, g, b, a)
+        }
+        ChangedPanel::Hsl => {
+            let [h, s, l, a] = sliders.hsl;
+            Hsla::new(h, s, l, a).into()
+        }
+        ChangedPanel::Oklch => {
+            let [l, c, h, a] = sliders.oklch;
+            Oklcha::new(l, c, h, a).into()
+        }
+        ChangedPanel::Linear => {
+            let [r, g, b, a] = sliders.linear;
+            LinearRgba::new(r, g, b, a).into()
+        }
+    };
+
+    // Clamp to sRGB gamut so downstream conversions (especially HSL) get valid
+    // inputs and egui sliders don't silently re-clamp and trigger false changes.
+    let srgb = Srgba::new(
+        srgb.red.clamp(0.0, 1.0),
+        srgb.green.clamp(0.0, 1.0),
+        srgb.blue.clamp(0.0, 1.0),
+        srgb.alpha.clamp(0.0, 1.0),
+    );
+
+    let hsl: Hsla = srgb.into();
+    let oklch: Oklcha = srgb.into();
+    let lin: LinearRgba = srgb.into();
+
+    // Skip the source panel to avoid round-trip drift triggering a feedback loop.
+    if sliders.last_changed != ChangedPanel::Srgb {
+        sliders.srgb = [srgb.red, srgb.green, srgb.blue, srgb.alpha];
+    }
+    if sliders.last_changed != ChangedPanel::Hsl {
+        sliders.hsl = [hsl.hue, hsl.saturation, hsl.lightness, hsl.alpha];
+    }
+    if sliders.last_changed != ChangedPanel::Oklch {
+        sliders.oklch = [oklch.lightness, oklch.chroma, oklch.hue, oklch.alpha];
+    }
+    if sliders.last_changed != ChangedPanel::Linear {
+        sliders.linear = [lin.red, lin.green, lin.blue, lin.alpha];
+    }
+
+    sliders.last_changed = ChangedPanel::None;
+}
+
 fn ui_system(mut contexts: EguiContexts, mut sliders: ResMut<ColorSliders>) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    // Sync BEFORE rendering so all previews show the same color this frame.
+    sync_from_panel(&mut sliders);
+
+    let mut srgb_changed = false;
+    let mut hsl_changed = false;
+    let mut oklch_changed = false;
+    let mut linear_changed = false;
+
     egui::CentralPanel::default().show(ctx, |ui| {
         ui.spacing_mut().slider_width = ui.spacing().slider_width * 4.0;
         ui.heading("Bevy Color Constructors");
-        ui.label("Drag sliders to explore each color space.");
+        ui.label("Drag sliders to explore each color space. All panels stay in sync.");
         ui.add_space(8.0);
 
         let wide = ui.available_width() >= TWO_COLUMN_THRESHOLD;
@@ -207,24 +297,35 @@ fn ui_system(mut contexts: EguiContexts, mut sliders: ResMut<ColorSliders>) {
             if wide {
                 // 2x2 grid: top row, then bottom row
                 ui.columns(2, |cols| {
-                    cols[0].group(|ui| srgb_panel(ui, &mut sliders.srgb));
-                    cols[1].group(|ui| hsl_panel(ui, &mut sliders.hsl));
+                    srgb_changed = cols[0].group(|ui| srgb_panel(ui, &mut sliders.srgb)).inner;
+                    hsl_changed = cols[1].group(|ui| hsl_panel(ui, &mut sliders.hsl)).inner;
                 });
                 ui.add_space(12.0);
                 ui.columns(2, |cols| {
-                    cols[0].group(|ui| oklch_panel(ui, &mut sliders.oklch));
-                    cols[1].group(|ui| linear_rgb_panel(ui, &mut sliders.linear));
+                    oklch_changed = cols[0].group(|ui| oklch_panel(ui, &mut sliders.oklch)).inner;
+                    linear_changed = cols[1].group(|ui| linear_rgb_panel(ui, &mut sliders.linear)).inner;
                 });
             } else {
                 // Single column stack
-                ui.group(|ui| srgb_panel(ui, &mut sliders.srgb));
+                srgb_changed = ui.group(|ui| srgb_panel(ui, &mut sliders.srgb)).inner;
                 ui.add_space(12.0);
-                ui.group(|ui| hsl_panel(ui, &mut sliders.hsl));
+                hsl_changed = ui.group(|ui| hsl_panel(ui, &mut sliders.hsl)).inner;
                 ui.add_space(12.0);
-                ui.group(|ui| oklch_panel(ui, &mut sliders.oklch));
+                oklch_changed = ui.group(|ui| oklch_panel(ui, &mut sliders.oklch)).inner;
                 ui.add_space(12.0);
-                ui.group(|ui| linear_rgb_panel(ui, &mut sliders.linear));
+                linear_changed = ui.group(|ui| linear_rgb_panel(ui, &mut sliders.linear)).inner;
             }
         });
     });
+
+    // Record which panel changed — sync will run next frame before rendering.
+    if srgb_changed {
+        sliders.last_changed = ChangedPanel::Srgb;
+    } else if hsl_changed {
+        sliders.last_changed = ChangedPanel::Hsl;
+    } else if oklch_changed {
+        sliders.last_changed = ChangedPanel::Oklch;
+    } else if linear_changed {
+        sliders.last_changed = ChangedPanel::Linear;
+    }
 }
