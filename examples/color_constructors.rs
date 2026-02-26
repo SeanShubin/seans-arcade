@@ -963,6 +963,21 @@ const XKCD_COLORS: &[(&str, [u8; 3])] = &[
     ("purple", [0x7e, 0x1e, 0x9c]),
 ];
 
+fn xkcd_text_color(rgb: [u8; 3]) -> egui::Color32 {
+    let srgb = Srgba::new(
+        rgb[0] as f32 / 255.0,
+        rgb[1] as f32 / 255.0,
+        rgb[2] as f32 / 255.0,
+        1.0,
+    );
+    let oklch: Oklcha = srgb.into();
+    if oklch.lightness > 0.5 {
+        egui::Color32::BLACK
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
 fn closest_xkcd_name(r: f32, g: f32, b: f32) -> &'static str {
     let ri = (r.clamp(0.0, 1.0) * 255.0) as i32;
     let gi = (g.clamp(0.0, 1.0) * 255.0) as i32;
@@ -1306,6 +1321,37 @@ fn ui_system(mut contexts: EguiContexts, mut sliders: ResMut<ColorSliders>) {
                 ui.add_space(12.0);
                 linear_changed = ui.group(|ui| linear_rgb_panel(ui, &mut sliders.linear)).inner;
             }
+
+            // ----- xkcd color picker list -----
+            ui.add_space(16.0);
+            ui.separator();
+            ui.strong("xkcd Colors (click to apply)");
+            ui.add_space(4.0);
+
+            egui::ScrollArea::vertical()
+                .id_salt("xkcd_color_list")
+                .max_height(300.0)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for &(name, rgb) in XKCD_COLORS {
+                            let bg = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                            let text_color = xkcd_text_color(rgb);
+                            let button = egui::Button::new(
+                                egui::RichText::new(name).color(text_color),
+                            )
+                            .fill(bg);
+                            if ui.add(button).clicked() {
+                                sliders.srgb = [
+                                    rgb[0] as f32 / 255.0,
+                                    rgb[1] as f32 / 255.0,
+                                    rgb[2] as f32 / 255.0,
+                                    1.0,
+                                ];
+                                srgb_changed = true;
+                            }
+                        }
+                    });
+                });
         });
     });
 
