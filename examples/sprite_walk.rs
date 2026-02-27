@@ -2,14 +2,17 @@
 //!
 //! Loads Time Fantasy character frames, displays a character on screen,
 //! and plays the correct walk animation based on keyboard input direction.
+//! Q/E cycles through available characters.
 //!
 //! Run with: `cargo run --example sprite_walk`
 
 use bevy::prelude::*;
+use std::fs;
 
 const MOVE_SPEED: f32 = 400.0;
 const FRAME_DURATION: f32 = 0.15;
 const SPRITE_SCALE: f32 = 4.0;
+const ASSET_ROOT: &str = "external/timefantasy";
 
 fn main() {
     App::new()
@@ -17,7 +20,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
+            (switch_character, player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
         )
         .run();
 }
@@ -39,30 +42,32 @@ enum Direction {
 #[derive(Component)]
 struct Facing(Direction);
 
+type FrameSet = [[Handle<Image>; 3]; 4]; // [direction][stand, walk1, walk2]
+
+#[derive(Resource)]
+struct CharacterAssets {
+    groups: Vec<(String, FrameSet)>,
+    current: usize,
+}
+
 #[derive(Component)]
 struct WalkAnimation {
-    frames: [[Handle<Image>; 3]; 4], // [direction][stand, walk1, walk2]
     frame_index: usize,
     timer: Timer,
     moving: bool,
 }
 
-impl WalkAnimation {
-    fn direction_row(direction: Direction) -> usize {
-        match direction {
-            Direction::Down => 0,
-            Direction::Up => 1,
-            Direction::Left => 2,
-            Direction::Right => 3,
-        }
+fn direction_row(direction: Direction) -> usize {
+    match direction {
+        Direction::Down => 0,
+        Direction::Up => 1,
+        Direction::Left => 2,
+        Direction::Right => 3,
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(Camera2d);
-
-    let path = "external/timefantasy/chara/chara2_1";
-    let frames = [
+fn load_frame_set(asset_server: &AssetServer, path: &str) -> FrameSet {
+    [
         [
             asset_server.load(format!("{path}/down_stand.png")),
             asset_server.load(format!("{path}/down_walk1.png")),
@@ -83,15 +88,80 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             asset_server.load(format!("{path}/right_walk1.png")),
             asset_server.load(format!("{path}/right_walk2.png")),
         ],
+    ]
+}
+
+/// Scans the asset directory for character folders that have the full 12-frame walk set.
+fn discover_character_paths() -> Vec<String> {
+    let base = std::path::Path::new("assets").join(ASSET_ROOT);
+    let required = [
+        "down_stand.png", "down_walk1.png", "down_walk2.png",
+        "up_stand.png", "up_walk1.png", "up_walk2.png",
+        "left_stand.png", "left_walk1.png", "left_walk2.png",
+        "right_stand.png", "right_walk1.png", "right_walk2.png",
     ];
 
-    let initial_sprite = frames[0][0].clone();
+    let mut paths = Vec::new();
+
+    let Ok(categories) = fs::read_dir(&base) else {
+        return paths;
+    };
+
+    for category in categories.flatten() {
+        if !category.file_type().map_or(false, |ft| ft.is_dir()) {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(category.path()) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if !entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                continue;
+            }
+            let has_all = required.iter().all(|name| entry.path().join(name).exists());
+            if has_all {
+                // Build the asset path relative to assets/
+                let category_name = category.file_name();
+                let entry_name = entry.file_name();
+                let asset_path = format!(
+                    "{ASSET_ROOT}/{}/{}",
+                    category_name.to_string_lossy(),
+                    entry_name.to_string_lossy()
+                );
+                paths.push(asset_path);
+            }
+        }
+    }
+
+    paths.sort();
+    paths
+}
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn(Camera2d);
+
+    let paths = discover_character_paths();
+    assert!(!paths.is_empty(), "No character assets found. Run setup-assets.sh first.");
+
+    let groups: Vec<(String, FrameSet)> = paths
+        .into_iter()
+        .map(|path| {
+            let frames = load_frame_set(&asset_server, &path);
+            (path, frames)
+        })
+        .collect();
+
+    let initial_sprite = groups[0].1[0][0].clone();
+
+    commands.insert_resource(CharacterAssets {
+        groups,
+        current: 0,
+    });
 
     commands.spawn((
         Player,
         Facing(Direction::Down),
         WalkAnimation {
-            frames,
             frame_index: 0,
             timer: Timer::from_seconds(FRAME_DURATION, TimerMode::Repeating),
             moving: false,
@@ -100,7 +170,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
     ));
 
-    // Three ghosts handle edge wrapping: horizontal, vertical, and corner
     for _ in 0..3 {
         commands.spawn((
             Ghost,
@@ -108,6 +177,36 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
             Visibility::Hidden,
         ));
+    }
+}
+
+fn switch_character(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut assets: ResMut<CharacterAssets>,
+    mut query: Query<(&Facing, &mut WalkAnimation, &mut Sprite), With<Player>>,
+) {
+    let count = assets.groups.len();
+    let prev = assets.current;
+
+    if keyboard.just_pressed(KeyCode::KeyQ) {
+        assets.current = (assets.current + count - 1) % count;
+    }
+    if keyboard.just_pressed(KeyCode::KeyE) {
+        assets.current = (assets.current + 1) % count;
+    }
+
+    if assets.current == prev {
+        return;
+    }
+
+    info!("Character: {} ({}/{})", assets.groups[assets.current].0, assets.current + 1, count);
+
+    for (facing, mut anim, mut sprite) in &mut query {
+        let row = direction_row(facing.0);
+        let frames = &assets.groups[assets.current].1;
+        anim.frame_index = 0;
+        anim.timer.reset();
+        sprite.image = frames[row][0].clone();
     }
 }
 
@@ -153,25 +252,27 @@ fn player_movement(
 
 fn animate_sprite(
     time: Res<Time>,
+    assets: Res<CharacterAssets>,
     mut query: Query<(&Facing, &mut WalkAnimation, &mut Sprite), With<Player>>,
 ) {
+    let frames = &assets.groups[assets.current].1;
+
     for (facing, mut anim, mut sprite) in &mut query {
-        let row = WalkAnimation::direction_row(facing.0);
+        let row = direction_row(facing.0);
 
         if !anim.moving {
             anim.frame_index = 0;
             anim.timer.reset();
-            sprite.image = anim.frames[row][0].clone();
+            sprite.image = frames[row][0].clone();
             continue;
         }
 
         anim.timer.tick(time.delta());
         if anim.timer.just_finished() {
-            // Alternate between walk1 (index 1) and walk2 (index 2)
             anim.frame_index = if anim.frame_index == 1 { 2 } else { 1 };
         }
 
-        sprite.image = anim.frames[row][anim.frame_index].clone();
+        sprite.image = frames[row][anim.frame_index].clone();
     }
 }
 
@@ -217,7 +318,6 @@ fn sync_ghosts(
     let px = player_tf.translation.x;
     let py = player_tf.translation.y;
 
-    // Pick which side each ghost wraps to based on which half the player is in
     let offset_x = if px > 0.0 { -w } else { w };
     let offset_y = if py > 0.0 { -h } else { h };
 
@@ -235,7 +335,6 @@ fn sync_ghosts(
         ghost_tf.scale = player_tf.scale;
         ghost_sprite.image = player_sprite.image.clone();
 
-        // Only show ghosts when the player is near the relevant edge
         let near_x = px.abs() > w / 2.0 - SPRITE_SCALE * 20.0;
         let near_y = py.abs() > h / 2.0 - SPRITE_SCALE * 20.0;
 
