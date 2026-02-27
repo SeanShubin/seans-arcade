@@ -7,7 +7,7 @@
 
 use bevy::prelude::*;
 
-const MOVE_SPEED: f32 = 100.0;
+const MOVE_SPEED: f32 = 400.0;
 const FRAME_DURATION: f32 = 0.15;
 const SPRITE_SCALE: f32 = 4.0;
 
