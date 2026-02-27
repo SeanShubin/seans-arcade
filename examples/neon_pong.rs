@@ -849,9 +849,9 @@ struct SoundAssets {
 
 fn load_sound_assets(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(SoundAssets {
-        hit: asset_server.load("sounds/hit.wav"),
-        bounce: asset_server.load("sounds/bounce.wav"),
-        score: asset_server.load("sounds/score.wav"),
+        hit: asset_server.load("local/sounds/hit.wav"),
+        bounce: asset_server.load("local/sounds/bounce.wav"),
+        score: asset_server.load("local/sounds/score.wav"),
     });
 }
 

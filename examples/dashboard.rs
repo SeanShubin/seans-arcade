@@ -254,7 +254,7 @@ fn panel_node() -> Node {
 fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2d);
 
-    let mono_font: Handle<Font> = asset_server.load("fonts/FiraMono-Regular.ttf");
+    let mono_font: Handle<Font> = asset_server.load("local/fonts/FiraMono-Regular.ttf");
 
     let text_font = TextFont {
         font: mono_font.clone(),
