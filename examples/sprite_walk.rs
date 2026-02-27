@@ -15,12 +15,18 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_systems(Startup, setup)
-        .add_systems(Update, (player_movement, animate_sprite).chain())
+        .add_systems(
+            Update,
+            (player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
+        )
         .run();
 }
 
 #[derive(Component)]
 struct Player;
+
+#[derive(Component)]
+struct Ghost;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Direction {
@@ -90,9 +96,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             timer: Timer::from_seconds(FRAME_DURATION, TimerMode::Repeating),
             moving: false,
         },
-        Sprite::from_image(initial_sprite),
+        Sprite::from_image(initial_sprite.clone()),
         Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
     ));
+
+    // Three ghosts handle edge wrapping: horizontal, vertical, and corner
+    for _ in 0..3 {
+        commands.spawn((
+            Ghost,
+            Sprite::from_image(initial_sprite.clone()),
+            Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
+            Visibility::Hidden,
+        ));
+    }
 }
 
 fn player_movement(
@@ -156,5 +172,79 @@ fn animate_sprite(
         }
 
         sprite.image = anim.frames[row][anim.frame_index].clone();
+    }
+}
+
+fn wrap_position(
+    windows: Query<&Window>,
+    mut query: Query<&mut Transform, With<Player>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let half_w = window.width() / 2.0;
+    let half_h = window.height() / 2.0;
+
+    for mut transform in &mut query {
+        let pos = &mut transform.translation;
+        if pos.x > half_w {
+            pos.x -= window.width();
+        } else if pos.x < -half_w {
+            pos.x += window.width();
+        }
+        if pos.y > half_h {
+            pos.y -= window.height();
+        } else if pos.y < -half_h {
+            pos.y += window.height();
+        }
+    }
+}
+
+fn sync_ghosts(
+    windows: Query<&Window>,
+    player_query: Query<(&Transform, &Sprite), With<Player>>,
+    mut ghost_query: Query<(&mut Transform, &mut Sprite, &mut Visibility), (With<Ghost>, Without<Player>)>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok((player_tf, player_sprite)) = player_query.single() else {
+        return;
+    };
+
+    let w = window.width();
+    let h = window.height();
+    let px = player_tf.translation.x;
+    let py = player_tf.translation.y;
+
+    // Pick which side each ghost wraps to based on which half the player is in
+    let offset_x = if px > 0.0 { -w } else { w };
+    let offset_y = if py > 0.0 { -h } else { h };
+
+    let ghost_offsets = [
+        Vec3::new(offset_x, 0.0, 0.0),
+        Vec3::new(0.0, offset_y, 0.0),
+        Vec3::new(offset_x, offset_y, 0.0),
+    ];
+
+    for (i, (mut ghost_tf, mut ghost_sprite, mut visibility)) in ghost_query.iter_mut().enumerate() {
+        let Some(&offset) = ghost_offsets.get(i) else {
+            break;
+        };
+        ghost_tf.translation = player_tf.translation + offset;
+        ghost_tf.scale = player_tf.scale;
+        ghost_sprite.image = player_sprite.image.clone();
+
+        // Only show ghosts when the player is near the relevant edge
+        let near_x = px.abs() > w / 2.0 - SPRITE_SCALE * 20.0;
+        let near_y = py.abs() > h / 2.0 - SPRITE_SCALE * 20.0;
+
+        let visible = match i {
+            0 => near_x,
+            1 => near_y,
+            2 => near_x && near_y,
+            _ => false,
+        };
+        *visibility = if visible { Visibility::Inherited } else { Visibility::Hidden };
     }
 }
