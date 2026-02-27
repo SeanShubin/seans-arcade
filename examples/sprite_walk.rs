@@ -160,7 +160,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (read_gamepad_input, switch_character, player_movement, update_camera_scale, wrap_position, animate_sprite, sync_ghosts).chain(),
+            (read_gamepad_input, switch_character, player_movement, update_camera_scale, wrap_position, animate_sprite, sync_ghosts, update_window_title).chain(),
         )
         .run();
 }
@@ -571,4 +571,44 @@ fn sync_ghosts(
         };
         *visibility = if visible { Visibility::Inherited } else { Visibility::Hidden };
     }
+}
+
+fn update_window_title(
+    mut windows: Query<&mut Window>,
+    projection_query: Query<&Projection, With<Camera2d>>,
+    player_query: Query<(&Transform, &Sprite), With<Player>>,
+    images: Res<Assets<Image>>,
+    assets: Res<CharacterAssets>,
+) {
+    let Ok(mut window) = windows.single_mut() else {
+        return;
+    };
+    let Ok(projection) = projection_query.single() else {
+        return;
+    };
+    let Projection::Orthographic(ref ortho) = *projection else {
+        return;
+    };
+    let Ok((player_tf, player_sprite)) = player_query.single() else {
+        return;
+    };
+
+    let cam_scale = (1.0 / ortho.scale).round() as i32;
+    let win_w = window.width() as i32;
+    let win_h = window.height() as i32;
+    let world_w = (window.width() * ortho.scale) as i32;
+    let world_h = (window.height() * ortho.scale) as i32;
+    let px = player_tf.translation.x as i32;
+    let py = player_tf.translation.y as i32;
+
+    let sprite_size = images
+        .get(&player_sprite.image)
+        .map(|img| format!("{}x{}", img.width(), img.height()))
+        .unwrap_or_else(|| "?x?".into());
+
+    let char_path = &assets.groups[assets.current].0;
+
+    window.title = format!(
+        "pos ({px},{py}) | sprite {sprite_size} | cam {cam_scale}x | window {win_w}x{win_h} | world {world_w}x{world_h} | {char_path}"
+    );
 }
