@@ -147,4 +147,5 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [project-setup.md](research/project-setup.md) — Project setup and configuration
 - [pong-step-by-step.md](research/pong-step-by-step.md) — Step-by-step pong implementation
 - [bevy-modern-api.md](research/bevy-modern-api.md) — Bevy modern API reference: current patterns vs deprecated ones
+- [coordinate-systems-and-pixels.md](research/coordinate-systems-and-pixels.md) — World units, screen pixels, camera projection, sprites, and when to use what
 - [randomness-in-bevy.md](research/randomness-in-bevy.md) — Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking
