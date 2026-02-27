@@ -10,8 +10,9 @@
 use bevy::prelude::*;
 use std::fs;
 
-const MOVE_SPEED: f32 = 400.0;
-const FRAME_DURATION: f32 = 0.15;
+const MOVE_SPEED: f32 = 500.0;
+const STRIDE: f32 = 50.0;
+const FRAME_DURATION: f32 = STRIDE / MOVE_SPEED;
 const SPRITE_SCALE: f32 = 4.0;
 const ASSET_ROOT: &str = "external/timefantasy";
 const STICK_DEADZONE: f32 = 0.2;
