@@ -49,6 +49,30 @@ A sprite's texture resolution and its world size are independent:
 
 With a default camera (1:1 mapping), a 16x16 texture with no `custom_size` appears as 16x16 screen pixels. Zoom the camera to 2x and it appears as 32x32 screen pixels, but it's still 16x16 world units.
 
+## Transform Scale vs Camera Projection Scale
+
+Two ways to make sprites bigger on screen — they have different trade-offs.
+
+**Transform scaling** (`Transform::from_scale`):
+
+- Per-entity — each sprite can have a different scale
+- Inflates the entity's world-space footprint (17×31 texels at 4× = 68×124 world units)
+- Game logic (speeds, distances, bounds) must work in inflated coordinates
+- Can be animated (squash/stretch, grow/shrink)
+- Use when: entities need different relative sizes, or you need animated scale
+
+**Camera projection scaling** (`OrthographicProjection { scale }`)::
+
+- Applies to the entire view uniformly
+- World coordinates stay at texel dimensions (17×31 texels = 17×31 world units)
+- Game logic operates in texel space — intuitive, simple math
+- Enables integer scaling for pixel-perfect rendering at any window size
+- Use when: uniform pixel-art magnification, adapting to window resize
+
+**Both together**: Camera provides base magnification, Transform provides per-entity variation on top. A 2× Transform on top of a 4× camera = 8× total screen size.
+
+**Rule of thumb**: If every sprite gets the same scale constant, that magnification belongs on the camera, not on every Transform.
+
 ## Pixel Art and Integer Scaling
 
 When the camera maps 1 texel to a non-integer number of screen pixels, some texels get more pixels than others. A row of evenly spaced pixels in the art becomes unevenly spaced on screen. This causes **pixel shimmer** — visible jitter, especially during movement.

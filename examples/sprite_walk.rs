@@ -7,13 +7,14 @@
 //!
 //! Run with: `cargo run --example sprite_walk`
 
-use bevy::prelude::*;
+use bevy::{camera::ScalingMode, prelude::*};
 use std::fs;
 
-const MOVE_SPEED: f32 = 500.0;
-const STRIDE: f32 = 50.0;
+const MOVE_SPEED: f32 = 125.0;
+const STRIDE: f32 = 12.5;
 const FRAME_DURATION: f32 = STRIDE / MOVE_SPEED;
-const SPRITE_SCALE: f32 = 4.0;
+const CANVAS_W: f32 = 320.0;
+const CANVAS_H: f32 = 180.0;
 const ASSET_ROOT: &str = "external/timefantasy";
 const STICK_DEADZONE: f32 = 0.2;
 
@@ -159,7 +160,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (read_gamepad_input, switch_character, player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
+            (read_gamepad_input, switch_character, player_movement, update_camera_scale, wrap_position, animate_sprite, sync_ghosts).chain(),
         )
         .run();
 }
@@ -277,7 +278,14 @@ fn discover_character_paths() -> Vec<String> {
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        Projection::from(OrthographicProjection {
+            scaling_mode: ScalingMode::WindowSize,
+            scale: 1.0 / 4.0, // initial value for 1280×720
+            ..OrthographicProjection::default_2d()
+        }),
+    ));
 
     let paths = discover_character_paths();
     assert!(!paths.is_empty(), "No character assets found. Run setup-assets.sh first.");
@@ -306,14 +314,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             moving: false,
         },
         Sprite::from_image(initial_sprite.clone()),
-        Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
     ));
 
     for _ in 0..3 {
         commands.spawn((
             Ghost,
             Sprite::from_image(initial_sprite.clone()),
-            Transform::from_scale(Vec3::splat(SPRITE_SCALE)),
             Visibility::Hidden,
         ));
     }
@@ -454,45 +460,87 @@ fn animate_sprite(
     }
 }
 
+fn update_camera_scale(
+    windows: Query<&Window>,
+    mut projection_query: Query<&mut Projection, With<Camera2d>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(mut projection) = projection_query.single_mut() else {
+        return;
+    };
+    let Projection::Orthographic(ref mut ortho) = *projection else {
+        return;
+    };
+
+    let integer_scale = (window.width() / CANVAS_W)
+        .min(window.height() / CANVAS_H)
+        .floor()
+        .max(1.0);
+    let new_scale = 1.0 / integer_scale;
+
+    if (ortho.scale - new_scale).abs() > f32::EPSILON {
+        ortho.scale = new_scale;
+    }
+}
+
 fn wrap_position(
     windows: Query<&Window>,
+    projection_query: Query<&Projection, With<Camera2d>>,
     mut query: Query<&mut Transform, With<Player>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
     };
-    let half_w = window.width() / 2.0;
-    let half_h = window.height() / 2.0;
+    let Ok(projection) = projection_query.single() else {
+        return;
+    };
+    let Projection::Orthographic(ref ortho) = *projection else {
+        return;
+    };
+
+    let world_w = window.width() * ortho.scale;
+    let world_h = window.height() * ortho.scale;
+    let half_w = world_w / 2.0;
+    let half_h = world_h / 2.0;
 
     for mut transform in &mut query {
         let pos = &mut transform.translation;
         if pos.x > half_w {
-            pos.x -= window.width();
+            pos.x -= world_w;
         } else if pos.x < -half_w {
-            pos.x += window.width();
+            pos.x += world_w;
         }
         if pos.y > half_h {
-            pos.y -= window.height();
+            pos.y -= world_h;
         } else if pos.y < -half_h {
-            pos.y += window.height();
+            pos.y += world_h;
         }
     }
 }
 
 fn sync_ghosts(
     windows: Query<&Window>,
+    projection_query: Query<&Projection, With<Camera2d>>,
     player_query: Query<(&Transform, &Sprite), With<Player>>,
     mut ghost_query: Query<(&mut Transform, &mut Sprite, &mut Visibility), (With<Ghost>, Without<Player>)>,
 ) {
     let Ok(window) = windows.single() else {
         return;
     };
+    let Ok(projection) = projection_query.single() else {
+        return;
+    };
+    let Projection::Orthographic(ref ortho) = *projection else {
+        return;
+    };
     let Ok((player_tf, player_sprite)) = player_query.single() else {
         return;
     };
 
-    let w = window.width();
-    let h = window.height();
+    let w = window.width() * ortho.scale;
+    let h = window.height() * ortho.scale;
     let px = player_tf.translation.x;
     let py = player_tf.translation.y;
 
@@ -510,11 +558,10 @@ fn sync_ghosts(
             break;
         };
         ghost_tf.translation = player_tf.translation + offset;
-        ghost_tf.scale = player_tf.scale;
         ghost_sprite.image = player_sprite.image.clone();
 
-        let near_x = px.abs() > w / 2.0 - SPRITE_SCALE * 20.0;
-        let near_y = py.abs() > h / 2.0 - SPRITE_SCALE * 20.0;
+        let near_x = px.abs() > w / 2.0 - 20.0;
+        let near_y = py.abs() > h / 2.0 - 20.0;
 
         let visible = match i {
             0 => near_x,
