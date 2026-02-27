@@ -1098,6 +1098,7 @@ fn main() {
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     resolution: (2400, 1300).into(),
+                    position: WindowPosition::Centered(MonitorSelection::Primary),
                     ..default()
                 }),
                 ..default()
