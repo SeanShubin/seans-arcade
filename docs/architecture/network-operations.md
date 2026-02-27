@@ -64,15 +64,15 @@ Prediction depth too large → visual corrections feel jarring
 
 ### Summary
 
-| Metric | Normal value | Concerning when | Indicates |
-|--------|-------------|----------------|-----------|
-| Prediction depth | 2-5 ticks | Growing or fluctuating | Latency increasing or jitter |
-| Tick deficit | 0 | Any non-zero | Network or CPU starvation (compare client timestamp to distinguish) |
-| RTT | Stable, any value | Spiking or trending up | Connection quality |
-| Jitter | Low variance | High variance | Unreliable connection |
-| Input omissions | 0 | Frequent | Buffer depth too shallow |
-| Packet loss | 0 | Frequent | Network degradation |
-| Checksum match | Always | Ever mismatched | Determinism bug |
+| Metric           | Normal value      | Concerning when        | Indicates                                                           |
+| ---------------- | ----------------- | ---------------------- | ------------------------------------------------------------------- |
+| Prediction depth | 2-5 ticks         | Growing or fluctuating | Latency increasing or jitter                                        |
+| Tick deficit     | 0                 | Any non-zero           | Network or CPU starvation (compare client timestamp to distinguish) |
+| RTT              | Stable, any value | Spiking or trending up | Connection quality                                                  |
+| Jitter           | Low variance      | High variance          | Unreliable connection                                               |
+| Input omissions  | 0                 | Frequent               | Buffer depth too shallow                                            |
+| Packet loss      | 0                 | Frequent               | Network degradation                                                 |
+| Checksum match   | Always            | Ever mismatched        | Determinism bug                                                     |
 
 ## Message Logging and Deterministic Replay
 
@@ -92,11 +92,11 @@ Three principles govern what goes into the log. For the formalized decisions and
 
 In lockstep relay, the **only** things on the wire are player inputs, confirmed input packages, and periodic checksums. There is no entity state replication, no position updates, no snapshot traffic.
 
-| Message | Size | Frequency |
-|---------|------|-----------|
-| Player input | ~24 bytes (tick + slot + client timestamp + input data) | 60/sec per player |
-| Confirmed input package | ~20 bytes × player count | 60/sec from relay |
-| Checksum | 8 bytes | Every 30-60 ticks |
+| Message                 | Size                                                    | Frequency         |
+| ----------------------- | ------------------------------------------------------- | ----------------- |
+| Player input            | ~24 bytes (tick + slot + client timestamp + input data) | 60/sec per player |
+| Confirmed input package | ~20 bytes × player count                                | 60/sec from relay |
+| Checksum                | 8 bytes                                                 | Every 30-60 ticks |
 
 For 4 players at 60 ticks/second:
 - Each client sends ~1.2 KB/sec and receives ~4.8 KB/sec
@@ -109,14 +109,14 @@ A one-hour session produces ~360 MB of uncompressed logs on the relay. Structure
 
 On every message, both sides:
 
-| Field | Purpose |
-|-------|---------|
-| Wall-clock timestamp | Latency measurement, jitter analysis |
-| Tick number | Correlate across clients |
-| Player slot | Who sent it |
-| Direction (send/recv) | Trace message flow |
-| Message type | Input, confirmed package, checksum |
-| Payload | The actual input bytes or checksum value |
+| Field                 | Purpose                                  |
+| --------------------- | ---------------------------------------- |
+| Wall-clock timestamp  | Latency measurement, jitter analysis     |
+| Tick number           | Correlate across clients                 |
+| Player slot           | Who sent it                              |
+| Direction (send/recv) | Trace message flow                       |
+| Message type          | Input, confirmed package, checksum       |
+| Payload               | The actual input bytes or checksum value |
 
 On connection events (Hello/disconnect), additionally:
 - Commit hash — the git commit hash of the connecting client's build, identifying the exact code version for all subsequent messages from this connection (see [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier)
@@ -221,20 +221,20 @@ The relay needs to retain recent input history back to the latest S3 save tick, 
 
 Three previously separate features converge to make this work:
 
-| Feature | Original motivation | Also enables |
-|---------|-------------------|--------------|
-| S3 periodic sync | Persistent state between sessions | Base state for joining players |
-| Message logging | Debugging and replay | Catch-up input history for joining players |
-| Relay input buffer | Absorbing jitter during play | Providing recent ticks to joining players |
+| Feature            | Original motivation               | Also enables                               |
+| ------------------ | --------------------------------- | ------------------------------------------ |
+| S3 periodic sync   | Persistent state between sessions | Base state for joining players             |
+| Message logging    | Debugging and replay              | Catch-up input history for joining players |
+| Relay input buffer | Absorbing jitter during play      | Providing recent ticks to joining players  |
 
 ### Difficulty Summary
 
-| Scenario | Difficulty | Why |
-|----------|-----------|-----|
-| Player leave | Trivial | Stop expecting their inputs, continue simulation |
-| Relay restart | Simple | Relay is stateless; hosting platform restarts it, clients reconnect, agree on last confirmed tick |
-| Player join mid-game (with S3) | Easy | Download from S3, catch up from input log |
-| Player join mid-game (without S3) | Moderate | Existing client must snapshot and send state through relay |
+| Scenario                          | Difficulty | Why                                                                                               |
+| --------------------------------- | ---------- | ------------------------------------------------------------------------------------------------- |
+| Player leave                      | Trivial    | Stop expecting their inputs, continue simulation                                                  |
+| Relay restart                     | Simple     | Relay is stateless; hosting platform restarts it, clients reconnect, agree on last confirmed tick |
+| Player join mid-game (with S3)    | Easy       | Download from S3, catch up from input log                                                         |
+| Player join mid-game (without S3) | Moderate   | Existing client must snapshot and send state through relay                                        |
 
 The stateless relay and full-simulation-on-every-client design means all three scenarios are simpler than in server-authoritative architectures, where the server holds all game state and losing it means losing the game.
 
@@ -244,24 +244,24 @@ The stateless relay and full-simulation-on-every-client design means all three s
 
 The goal is to get clients talking to each other. Clients never communicate directly — all traffic flows through a relay. The infrastructure below supports this.
 
-| Service | Purpose | Implementation |
-|---------|---------|----------------|
-| **Static website** | Serves seanshubin.com — download links, info page | S3 + CloudFront (or just S3 static hosting) |
-| **Relay server** | Forwards inputs between clients, assigns player slots, manages connections | Single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month) |
-| **Version file** | Source of truth for current application version | Single file in S3 containing the commit hash |
-| **Binary downloads** | Platform-specific executables for auto-update | S3 |
-| **Save files** | Persistent game state between sessions | S3 |
+| Service              | Purpose                                                                    | Implementation                                                               |
+| -------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Static website**   | Serves seanshubin.com — download links, info page                          | S3 + CloudFront (or just S3 static hosting)                                  |
+| **Relay server**     | Forwards inputs between clients, assigns player slots, manages connections | Single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month) |
+| **Version file**     | Source of truth for current application version                            | Single file in S3 containing the commit hash                                 |
+| **Binary downloads** | Platform-specific executables for auto-update                              | S3                                                                           |
+| **Save files**       | Persistent game state between sessions                                     | S3                                                                           |
 
 ### What Runs on the User's Machine
 
 The downloaded application is a **client only**. It never accepts incoming connections and never acts as a relay. Every client makes an outbound connection to the AWS relay.
 
-| Responsibility | Details |
-|---------------|---------|
+| Responsibility           | Details                                                               |
+| ------------------------ | --------------------------------------------------------------------- |
 | **Full game simulation** | Every client runs the complete deterministic simulation independently |
-| **Local input capture** | Captures player input and sends it to the relay |
-| **Rendering** | Displays the latency state (authoritative + unconfirmed local inputs) |
-| **Auto-update** | Checks version, downloads new binary when needed |
+| **Local input capture**  | Captures player input and sends it to the relay                       |
+| **Rendering**            | Displays the latency state (authoritative + unconfirmed local inputs) |
+| **Auto-update**          | Checks version, downloads new binary when needed                      |
 
 ### How Clients Connect
 
@@ -288,11 +288,11 @@ The relay is protected by a shared passphrase. For the decision and rationale, s
 
 **Where the secret lives:**
 
-| Location | Form | Details |
-|----------|------|---------|
-| Relay | Environment variable or config file | The accepted secret. Not in source control. |
-| Client (local disk) | Stored after first entry | Client prompts on first launch, remembers for subsequent launches. |
-| S3 | Nowhere | The secret is never in cloud storage. |
+| Location            | Form                                | Details                                                            |
+| ------------------- | ----------------------------------- | ------------------------------------------------------------------ |
+| Relay               | Environment variable or config file | The accepted secret. Not in source control.                        |
+| Client (local disk) | Stored after first entry            | Client prompts on first launch, remembers for subsequent launches. |
+| S3                  | Nowhere                             | The secret is never in cloud storage.                              |
 
 **Relay behavior on invalid secret:** No response. The relay silently drops the packet. From the outside, the relay looks like a closed port — no information is leaked about whether the relay exists, whether the secret was wrong, or what protocol is in use.
 
@@ -308,11 +308,11 @@ The relay maintains an identity registry that maps identity names to hashed iden
 
 **First-claim flow:**
 
-| Scenario | Relay behavior |
-|----------|---------------|
-| Unclaimed name | Register the name with hash(identity_secret), accept the connection |
-| Claimed name, correct secret | Accept the connection |
-| Claimed name, wrong secret | Rejection response — relay tells the client the name is claimed |
+| Scenario                     | Relay behavior                                                      |
+| ---------------------------- | ------------------------------------------------------------------- |
+| Unclaimed name               | Register the name with hash(identity_secret), accept the connection |
+| Claimed name, correct secret | Accept the connection                                               |
+| Claimed name, wrong secret   | Rejection response — relay tells the client the name is claimed     |
 
 **Validation order:** The relay validates the shared secret first, then identity. Outsiders (wrong shared secret) are rejected before they ever interact with the identity registry. This means the registry is never probed by unauthorized connections.
 
@@ -322,9 +322,9 @@ The relay maintains an identity registry that maps identity names to hashed iden
 
 **Where identity data lives:**
 
-| Location | Data | Details |
-|----------|------|---------|
-| Relay local disk | identity_name → hash(identity_secret) | The identity registry. Access control state, not game state. Lost if relay VM is replaced. |
+| Location           | Data                                       | Details                                                                                                                                                               |
+| ------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Relay local disk   | identity_name → hash(identity_secret)      | The identity registry. Access control state, not game state. Lost if relay VM is replaced.                                                                            |
 | Client config.toml | identity_name, identity_secret (plaintext) | Auto-generated on first launch (4 BIP-39 words), stored locally. Changeable via `arcade-cli identity secret <new-secret>` (any passphrase, not restricted to BIP-39). |
 
 **Client-side identity flow:**
@@ -336,11 +336,11 @@ The relay maintains an identity registry that maps identity names to hashed iden
 
 **`arcade-cli identity` subcommands:**
 
-| Subcommand | What it does |
-|------------|-------------|
-| `identity list` | Show all registered identity names in the relay registry |
-| `identity reset <name>` | Clear a name's claim — the next connection with that name re-registers it |
-| `identity secret` | Print the current identity secret from local config.toml |
+| Subcommand                     | What it does                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `identity list`                | Show all registered identity names in the relay registry                                                            |
+| `identity reset <name>`        | Clear a name's claim — the next connection with that name re-registers it                                           |
+| `identity secret`              | Print the current identity secret from local config.toml                                                            |
 | `identity secret <new-secret>` | Update identity secret locally and on the relay (sends old secret to prove ownership, relay re-hashes with new one) |
 
 ## Connecting Over the Internet
@@ -365,11 +365,11 @@ Assumes 0-10 users online randomly throughout the month, averaging ~2 hours/day 
 
 ### Fixed Costs (Always Running)
 
-| Service | What | Monthly Cost |
-|---------|------|-------------|
-| Route 53 hosted zone | DNS for seanshubin.com | $0.50 |
-| S3 storage | Website + binaries (~100MB) | $0.003 |
-| Domain renewal | seanshubin.com (already owned) | ~$1 amortized ($10-12/year) |
+| Service              | What                           | Monthly Cost                |
+| -------------------- | ------------------------------ | --------------------------- |
+| Route 53 hosted zone | DNS for seanshubin.com         | $0.50                       |
+| S3 storage           | Website + binaries (~100MB)    | $0.003                      |
+| Domain renewal       | seanshubin.com (already owned) | ~$1 amortized ($10-12/year) |
 
 ### Relay
 
@@ -377,33 +377,33 @@ The relay needs to be reachable by all clients. An always-on VM is the simplest 
 
 **Option A: Cheap cloud VM (e.g., AWS Lightsail — recommended for v1)**
 
-| Service | What | Monthly Cost |
-|---------|------|-------------|
-| Cloud VM | 512MB instance running the relay | ~$3.50 |
-| Data transfer | Chat messages, 0-10 users | $0.00 (included) |
-| S3 requests | Save file sync | $0.00 (pennies) |
+| Service       | What                             | Monthly Cost     |
+| ------------- | -------------------------------- | ---------------- |
+| Cloud VM      | 512MB instance running the relay | ~$3.50           |
+| Data transfer | Chat messages, 0-10 users        | $0.00 (included) |
+| S3 requests   | Save file sync                   | $0.00 (pennies)  |
 
 **Total: ~$5/month.** The machine sits idle most of the time, but at ~$3.50/month the simplicity of "always ready, no cold starts" is worth more than the savings from on-demand startup.
 
 **Option B: Serverless relay (API Gateway WebSocket + Lambda)**
 
-| Service | What | Monthly Cost |
-|---------|------|-------------|
-| API Gateway WebSocket | Connection relay | $0.04 |
-| Lambda | Message routing logic | $0.00 (free tier) |
-| S3 requests | Save file sync | $0.00 |
+| Service               | What                  | Monthly Cost      |
+| --------------------- | --------------------- | ----------------- |
+| API Gateway WebSocket | Connection relay      | $0.04             |
+| Lambda                | Message routing logic | $0.00 (free tier) |
+| S3 requests           | Save file sync        | $0.00             |
 
 ~600 hours total connection time/month (36,000 connection-minutes), ~50,000 messages/month including broadcasts. **Total: ~$1.50/month.** Cheaper but more complex to implement — WebSocket API Gateway + Lambda is a different programming model than a plain TCP/UDP relay.
 
 ### What's Effectively Free at This Scale
 
-| Thing | Why |
-|-------|-----|
-| S3 data transfer | Under 100GB/month free tier |
-| CloudFront | 1TB/month free tier (if added) |
-| Binary downloads | 10 users x 50MB = 500MB — free |
-| SSL certificate | Free via ACM |
-| Save file sync | A few hundred GET/PUT requests — fractions of a cent |
+| Thing            | Why                                                  |
+| ---------------- | ---------------------------------------------------- |
+| S3 data transfer | Under 100GB/month free tier                          |
+| CloudFront       | 1TB/month free tier (if added)                       |
+| Binary downloads | 10 users x 50MB = 500MB — free                       |
+| SSL certificate  | Free via ACM                                         |
+| Save file sync   | A few hundred GET/PUT requests — fractions of a cent |
 
 ### Recommendation
 
@@ -417,11 +417,11 @@ Most multiplayer games require renting a server that runs 24/7. The server holds
 
 The fundamental issue: traditional server-authoritative architectures **conflate three concerns**:
 
-| Concern | What it actually needs | Traditional server | Lockstep relay |
-|---------|----------------------|-------------------|----------------|
-| Simulation compute | CPU during play | Server runs 24/7 | Clients compute; relay is near-free |
-| Authoritative state | One source of truth during play | Server holds it | Every client holds it |
-| Persistent storage | Save file between sessions | Server's disk (must stay on) | S3 |
+| Concern             | What it actually needs          | Traditional server           | Lockstep relay                      |
+| ------------------- | ------------------------------- | ---------------------------- | ----------------------------------- |
+| Simulation compute  | CPU during play                 | Server runs 24/7             | Clients compute; relay is near-free |
+| Authoritative state | One source of truth during play | Server holds it              | Every client holds it               |
+| Persistent storage  | Save file between sessions      | Server's disk (must stay on) | S3                                  |
 
 Always-on hosting pays for **compute** when what you actually need is **storage**. Storage costs essentially nothing.
 
@@ -467,18 +467,18 @@ The input log grows continuously during a session. Compaction materializes the l
 
 **Two tiers:**
 
-| Tier | Location | Contents | Purpose |
-|------|----------|----------|---------|
-| **Hot** | Relay memory | Input entries from the latest snapshot tick to the current tick | Player join catch-up, jitter absorption |
-| **Cold** | S3 | Full input history from tick 0 through the latest compaction point | Session replay, desync debugging |
+| Tier     | Location     | Contents                                                           | Purpose                                 |
+| -------- | ------------ | ------------------------------------------------------------------ | --------------------------------------- |
+| **Hot**  | Relay memory | Input entries from the latest snapshot tick to the current tick    | Player join catch-up, jitter absorption |
+| **Cold** | S3           | Full input history from tick 0 through the latest compaction point | Session replay, desync debugging        |
 
 **Three artifacts per session:**
 
-| Artifact | S3 key pattern | Contents | Written |
-|----------|---------------|----------|---------|
-| **Save** (snapshot) | `sessions/{commit}/{session-id}/save` | Serialized authoritative world state. Tick number in S3 object metadata. | Overwritten at each compaction — only the latest matters for operations. |
-| **Log** (cold tier) | `sessions/{commit}/{session-id}/log` | All input entries, checksums, and snapshot markers from session start. | Grows at each compaction — appended through session end. |
-| **Snapshot marker** | (inside the log) | `{type: "snapshot", tick: T, s3_key: "..."}` — correlates a log position with a snapshot. | One entry per compaction point. |
+| Artifact            | S3 key pattern                        | Contents                                                                                  | Written                                                                  |
+| ------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Save** (snapshot) | `sessions/{commit}/{session-id}/save` | Serialized authoritative world state. Tick number in S3 object metadata.                  | Overwritten at each compaction — only the latest matters for operations. |
+| **Log** (cold tier) | `sessions/{commit}/{session-id}/log`  | All input entries, checksums, and snapshot markers from session start.                    | Grows at each compaction — appended through session end.                 |
+| **Snapshot marker** | (inside the log)                      | `{type: "snapshot", tick: T, s3_key: "..."}` — correlates a log position with a snapshot. | One entry per compaction point.                                          |
 
 The save and the log are separate S3 objects. The save is the materialized world state for operations (join, resume, crash recovery). The log is the sequential input history for replay and debugging. Snapshot markers in the log are the glue — they tell a replay reader "you can start from this snapshot instead of tick 0."
 
@@ -493,12 +493,12 @@ The save and the log are separate S3 objects. The save is the materialized world
 
 **Compaction triggers:**
 
-| Trigger | When | Why |
-|---------|------|-----|
-| **Periodic** | Every 2–5 minutes of session time | Steady-state compaction — bounds hot buffer size and data-loss window |
-| **Session end** | Last client disconnects gracefully | Captures the final state — the S3 save reflects the complete session |
-| **Player join** | New player requests to join and the hot log has grown large since the last compaction (e.g., >30 seconds) | Reduces catch-up window for the joining player |
-| **Size threshold** | Hot buffer exceeds a tick-count ceiling (e.g., 20,000 ticks) | Safety valve — guards against timer drift or failure |
+| Trigger            | When                                                                                                      | Why                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Periodic**       | Every 2–5 minutes of session time                                                                         | Steady-state compaction — bounds hot buffer size and data-loss window |
+| **Session end**    | Last client disconnects gracefully                                                                        | Captures the final state — the S3 save reflects the complete session  |
+| **Player join**    | New player requests to join and the hot log has grown large since the last compaction (e.g., >30 seconds) | Reduces catch-up window for the joining player                        |
+| **Size threshold** | Hot buffer exceeds a tick-count ceiling (e.g., 20,000 ticks)                                              | Safety valve — guards against timer drift or failure                  |
 
 **When compaction should NOT happen:**
 
@@ -530,10 +530,10 @@ Session starts
 
 ### Cost Comparison
 
-| Model | Monthly cost (idle) | Monthly cost (active) | Who can start a session? |
-|-------|--------------------|-----------------------|--------------------------|
-| Traditional server-authoritative | $4-50/month (always on) | Same | Anyone (server always running) |
-| S3 save (lockstep relay) | ~$0.01 (S3 storage) | ~$0.01 + relay compute | Anyone |
+| Model                            | Monthly cost (idle)     | Monthly cost (active)  | Who can start a session?       |
+| -------------------------------- | ----------------------- | ---------------------- | ------------------------------ |
+| Traditional server-authoritative | $4-50/month (always on) | Same                   | Anyone (server always running) |
+| S3 save (lockstep relay)         | ~$0.01 (S3 storage)     | ~$0.01 + relay compute | Anyone                         |
 
 The relay compute cost during active play is the same as in the "Connecting Over the Internet" section — a cheap VM at ~$3.50/month. Between sessions, the only cost is S3 storage.
 
@@ -543,13 +543,13 @@ A complete inventory of everything in persistent storage. Infrastructure artifac
 
 ### S3 — Application Infrastructure
 
-| Key | Contents | Written by | Read by |
-|-----|----------|-----------|---------|
-| `version` | Git commit hash (plain text) | CI deploy job | Every client on startup |
-| `seans-arcade-windows.exe` | Windows binary | CI deploy job | Clients during auto-update |
-| `seans-arcade-macos` | macOS universal binary | CI deploy job | Clients during auto-update |
-| `seans-arcade-linux` | Linux binary | CI deploy job | Clients during auto-update |
-| Static website files | HTML/CSS for seanshubin.com | CI or manual | Browsers |
+| Key                        | Contents                     | Written by    | Read by                    |
+| -------------------------- | ---------------------------- | ------------- | -------------------------- |
+| `version`                  | Git commit hash (plain text) | CI deploy job | Every client on startup    |
+| `seans-arcade-windows.exe` | Windows binary               | CI deploy job | Clients during auto-update |
+| `seans-arcade-macos`       | macOS universal binary       | CI deploy job | Clients during auto-update |
+| `seans-arcade-linux`       | Linux binary                 | CI deploy job | Clients during auto-update |
+| Static website files       | HTML/CSS for seanshubin.com  | CI or manual  | Browsers                   |
 
 These are version-unaware. The version file points to the commit hash; the binaries correspond to that hash. Overwritten on every release.
 
@@ -557,40 +557,40 @@ These are version-unaware. The version file points to the commit hash; the binar
 
 Organized by commit hash (version isolation) and session ID.
 
-| Key pattern | Contents | Written by | When |
-|-------------|----------|-----------|------|
-| `sessions/{commit}/{session-id}/save` | Serialized authoritative world state at tick T. Tick number in S3 object metadata. | Any client (whoever is furthest ahead) | Each compaction point, session end |
-| `sessions/{commit}/{session-id}/log` | Cold input log — all input entries, checksums, and snapshot markers from session start | Relay (or a client on relay's behalf) | Each compaction point (grows through session) |
+| Key pattern                           | Contents                                                                               | Written by                             | When                                          |
+| ------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------- |
+| `sessions/{commit}/{session-id}/save` | Serialized authoritative world state at tick T. Tick number in S3 object metadata.     | Any client (whoever is furthest ahead) | Each compaction point, session end            |
+| `sessions/{commit}/{session-id}/log`  | Cold input log — all input entries, checksums, and snapshot markers from session start | Relay (or a client on relay's behalf)  | Each compaction point (grows through session) |
 
 The save and the log are separate objects, correlated by tick number. See [Log Compaction](#log-compaction) for the procedure and lifecycle.
 
 ### Relay Local Disk
 
-| Data | Contents | Purpose |
-|------|----------|---------|
-| Shared secret | Passphrase (env var or config file) | Access control — rejects strangers |
+| Data              | Contents                              | Purpose                                |
+| ----------------- | ------------------------------------- | -------------------------------------- |
+| Shared secret     | Passphrase (env var or config file)   | Access control — rejects strangers     |
 | Identity registry | identity_name → hash(identity_secret) | Access control — rejects impersonation |
 
 Both are access control state, not game state. Lost if the relay VM is replaced.
 
 ### Relay Memory (Ephemeral)
 
-| Data | Contents | Lifetime |
-|------|----------|----------|
-| Hot input buffer | Input entries from latest compaction tick to current tick | Lost on relay crash; rebuilt from restart point |
-| Connection state | Connected clients, player slots, commit hashes | Lost on relay crash; clients reconnect and re-handshake |
+| Data             | Contents                                                  | Lifetime                                                |
+| ---------------- | --------------------------------------------------------- | ------------------------------------------------------- |
+| Hot input buffer | Input entries from latest compaction tick to current tick | Lost on relay crash; rebuilt from restart point         |
+| Connection state | Connected clients, player slots, commit hashes            | Lost on relay crash; clients reconnect and re-handshake |
 
 The relay holds no game state. Its persistent state is limited to access control (shared secret and identity registry). Everything in relay memory is either reconstructible (clients reconnect) or backed by S3.
 
 ### Local Client Disk
 
-| Data | Contents | Purpose |
-|------|----------|---------|
-| Application binary | `seans-arcade.exe` (or platform equivalent) | The application |
-| Old binary (Windows only) | `seans-arcade-old.exe` from rename dance | Cleanup on next launch |
-| Local save copy | Authoritative state at current tick | Every client has this in memory during play; can persist to disk on exit |
-| Client-side message log | Full log of sent/received messages | Local debugging, independent of relay's log |
-| Config file | `%APPDATA%\seans-arcade\config.toml` (Windows) — identity name, identity secret, and relay secret | Persists identity and access between launches ([decision](../architecture-decisions.md)) |
+| Data                      | Contents                                                                                          | Purpose                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Application binary        | `seans-arcade.exe` (or platform equivalent)                                                       | The application                                                                          |
+| Old binary (Windows only) | `seans-arcade-old.exe` from rename dance                                                          | Cleanup on next launch                                                                   |
+| Local save copy           | Authoritative state at current tick                                                               | Every client has this in memory during play; can persist to disk on exit                 |
+| Client-side message log   | Full log of sent/received messages                                                                | Local debugging, independent of relay's log                                              |
+| Config file               | `%APPDATA%\seans-arcade\config.toml` (Windows) — identity name, identity secret, and relay secret | Persists identity and access between launches ([decision](../architecture-decisions.md)) |
 
 ### What Is NOT in Persistent Storage
 
@@ -621,12 +621,12 @@ bevy-prototyping/
 │       └── src/main.rs
 ```
 
-| Command | What it runs |
-|---------|-------------|
-| `cargo run --example pong` | Standalone pong (unchanged) |
-| `cargo run -p relay` | Relay server |
-| `cargo run -p net_pong` | Networked pong client |
-| `cargo clippy --workspace -- -D warnings` | Lint everything |
+| Command                                   | What it runs                |
+| ----------------------------------------- | --------------------------- |
+| `cargo run --example pong`                | Standalone pong (unchanged) |
+| `cargo run -p relay`                      | Relay server                |
+| `cargo run -p net_pong`                   | Networked pong client       |
+| `cargo clippy --workspace -- -D warnings` | Lint everything             |
 
 ### Game-Agnostic Relay
 

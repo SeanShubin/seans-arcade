@@ -60,11 +60,11 @@ When a newer version is detected:
 
 The binary knows its own platform at compile time and fetches the correct artifact:
 
-| Platform | Download URL | Binary name |
-|----------|-------------|-------------|
-| Windows | `https://seanshubin.com/seans-arcade-windows.exe` | `seans-arcade.exe` |
-| macOS | `https://seanshubin.com/seans-arcade-macos` | `seans-arcade` |
-| Linux | `https://seanshubin.com/seans-arcade-linux` | `seans-arcade` |
+| Platform | Download URL                                      | Binary name        |
+| -------- | ------------------------------------------------- | ------------------ |
+| Windows  | `https://seanshubin.com/seans-arcade-windows.exe` | `seans-arcade.exe` |
+| macOS    | `https://seanshubin.com/seans-arcade-macos`       | `seans-arcade`     |
+| Linux    | `https://seanshubin.com/seans-arcade-linux`       | `seans-arcade`     |
 
 ### Platform-Specific Replacement
 
@@ -128,10 +128,10 @@ The relay understands the **protocol envelope** — message type, tick number, p
 
 **Relay protocol changes vs. client-only changes:**
 
-| Scenario | What happens |
-|----------|-------------|
-| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash and form a new version group. Old-version clients continue undisturbed. No relay downtime. |
-| **Relay protocol changed** | CI deploys new relay binary. Relay restart disconnects all clients. Clients auto-update on next launch via the startup flow, then reconnect with the correct version. |
+| Scenario                                          | What happens                                                                                                                                                          |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash and form a new version group. Old-version clients continue undisturbed. No relay downtime.             |
+| **Relay protocol changed**                        | CI deploys new relay binary. Relay restart disconnects all clients. Clients auto-update on next launch via the startup flow, then reconnect with the correct version. |
 
 ## Cross-Platform Considerations (Bevy)
 

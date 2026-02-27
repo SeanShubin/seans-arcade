@@ -108,12 +108,12 @@ The WGI backend reports three events (connected, disconnected, connected) when a
 
 ## Possible Fixes Considered
 
-| Approach | Pros | Cons |
-|---|---|---|
-| Switch to XInput backend via Cargo feature | Reliable, proven, simple | Bevy doesn't expose the feature; gilrs `wgi` and `xinput` are mutually exclusive and require patching gilrs locally |
-| Debounce connection events in application code | No dependency changes | Adds complexity, introduces delay, and doesn't fix the startup case (no event to debounce) |
-| Upgrade gilrs when a fix lands upstream | Proper fix at the right layer | Not available yet |
-| **Bypass gilrs entirely, call XInput directly via FFI** | Zero new dependencies, reliable, simple | Max 4 controllers, Xbox-only, Windows-only |
+| Approach                                                | Pros                                    | Cons                                                                                                                |
+| ------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Switch to XInput backend via Cargo feature              | Reliable, proven, simple                | Bevy doesn't expose the feature; gilrs `wgi` and `xinput` are mutually exclusive and require patching gilrs locally |
+| Debounce connection events in application code          | No dependency changes                   | Adds complexity, introduces delay, and doesn't fix the startup case (no event to debounce)                          |
+| Upgrade gilrs when a fix lands upstream                 | Proper fix at the right layer           | Not available yet                                                                                                   |
+| **Bypass gilrs entirely, call XInput directly via FFI** | Zero new dependencies, reliable, simple | Max 4 controllers, Xbox-only, Windows-only                                                                          |
 
 ### Why Debouncing Doesn't Work
 

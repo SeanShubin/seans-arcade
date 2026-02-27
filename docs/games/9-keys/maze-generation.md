@@ -53,19 +53,19 @@ The generator must simulate reachability at each stage of key acquisition. Speci
 
 ## Difficulty Breakdown
 
-| Aspect | Difficulty |
-|---|---|
-| Basic maze generation on a grid | Easy — well-known algorithms (recursive backtracking, Kruskal's, Prim's, etc.) |
-| Linear key chain (keys 1-3) | Easy — gated corridor |
-| Branching keys (4-6) | Moderate — multi-branch placement |
-| Convergence keys (7-9) | Moderate — multi-gate path placement and reachability verification |
-| Hard gate verification | Moderate — must confirm complete topological cuts on the torus |
-| Toroidal topology | Moderate — wrap-around adjacency throughout, coordinate arithmetic |
-| "Always solvable" guarantee | Easy if built by construction |
-| Ariadne's Thread placement | Easy — any early-reachable space |
-| Argus's Eye placement | Easy — constrained to phase transitions and final space |
-| Cooperative tuning (branch depth, key hiding, gate spread) | Moderate — balancing solo fairness with cooperative reward |
-| Small but unpredictable mazes | Moderate — tuning problem |
+| Aspect                                                     | Difficulty                                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Basic maze generation on a grid                            | Easy — well-known algorithms (recursive backtracking, Kruskal's, Prim's, etc.) |
+| Linear key chain (keys 1-3)                                | Easy — gated corridor                                                          |
+| Branching keys (4-6)                                       | Moderate — multi-branch placement                                              |
+| Convergence keys (7-9)                                     | Moderate — multi-gate path placement and reachability verification             |
+| Hard gate verification                                     | Moderate — must confirm complete topological cuts on the torus                 |
+| Toroidal topology                                          | Moderate — wrap-around adjacency throughout, coordinate arithmetic             |
+| "Always solvable" guarantee                                | Easy if built by construction                                                  |
+| Ariadne's Thread placement                                 | Easy — any early-reachable space                                               |
+| Argus's Eye placement                                      | Easy — constrained to phase transitions and final space                        |
+| Cooperative tuning (branch depth, key hiding, gate spread) | Moderate — balancing solo fairness with cooperative reward                     |
+| Small but unpredictable mazes                              | Moderate — tuning problem                                                      |
 
 ## Cooperative Play Incentives
 

@@ -28,13 +28,13 @@ Goals 4 and 5 are not in tension with each other or with most other goals — th
 
 Frame-by-frame animation from sprite sheets. The classic approach for 2D games.
 
-| Goal | Status |
-|------|--------|
-| Zelda-like aesthetic | Yes — this is the Zelda look |
-| Camera flexibility | No — sprites are drawn for one viewing angle |
-| Resolution independence | No — pixel art is fixed resolution |
+| Goal                    | Status                                                |
+| ----------------------- | ----------------------------------------------------- |
+| Zelda-like aesthetic    | Yes — this is the Zelda look                          |
+| Camera flexibility      | No — sprites are drawn for one viewing angle          |
+| Resolution independence | No — pixel art is fixed resolution                    |
 | No art skill investment | Yes — large free asset library (itch.io, OpenGameArt) |
-| Parallax and depth | Partial — manual layer separation, faked depth |
+| Parallax and depth      | Partial — manual layer separation, faked depth        |
 
 **Tools:** Aseprite (sprite authoring), Bevy `TextureAtlas` + `AnimationIndices` (runtime).
 
@@ -42,13 +42,13 @@ Frame-by-frame animation from sprite sheets. The classic approach for 2D games.
 
 Polygonal 3D models viewed from above. Camera angle is a runtime parameter.
 
-| Goal | Status |
-|------|--------|
-| Zelda-like aesthetic | No — reads as a 3D game, not a Zelda-like |
-| Camera flexibility | Yes — camera angle is just a transform |
-| Resolution independence | Yes — 3D renders at native resolution |
+| Goal                    | Status                                                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Zelda-like aesthetic    | No — reads as a 3D game, not a Zelda-like                                                                                                                     |
+| Camera flexibility      | Yes — camera angle is just a transform                                                                                                                        |
+| Resolution independence | Yes — 3D renders at native resolution                                                                                                                         |
 | No art skill investment | Partial — free low-poly packs exist (Kaykit, Kenney, Quaternius) but selection is limited for Zelda-like characters; Mixamo provides free humanoid animations |
-| Parallax and depth | Yes — real 3D depth, parallax is free |
+| Parallax and depth      | Yes — real 3D depth, parallax is free                                                                                                                         |
 
 **Tools:** Blender (modeling), Mixamo (animation), Bevy `Scene` + `AnimationPlayer` (runtime).
 
@@ -58,13 +58,13 @@ Polygonal 3D models viewed from above. Camera angle is a runtime parameter.
 
 3D geometry rendered through a shader that produces a pixel art aesthetic. Used by Octopath Traveler, Triangle Strategy.
 
-| Goal | Status |
-|------|--------|
-| Zelda-like aesthetic | Partial — evokes retro feel but reads as its own style, not classic Zelda |
-| Camera flexibility | Yes — underlying geometry is 3D |
-| Resolution independence | Yes — shader output resolution is a parameter |
+| Goal                    | Status                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| Zelda-like aesthetic    | Partial — evokes retro feel but reads as its own style, not classic Zelda                      |
+| Camera flexibility      | Yes — underlying geometry is 3D                                                                |
+| Resolution independence | Yes — shader output resolution is a parameter                                                  |
 | No art skill investment | No — requires custom shader development and 3D models authored to look good through the shader |
-| Parallax and depth | Yes — real 3D |
+| Parallax and depth      | Yes — real 3D                                                                                  |
 
 **Tools:** Blender (modeling), custom Bevy shader (rendering). Few off-the-shelf solutions exist.
 
@@ -74,13 +74,13 @@ Polygonal 3D models viewed from above. Camera angle is a runtime parameter.
 
 3D models built from voxels (3D pixels). Essentially pixel art extended into three dimensions.
 
-| Goal | Status |
-|------|--------|
-| Zelda-like aesthetic | No — reads as a voxel game (Crossy Road, Minecraft-adjacent) |
-| Camera flexibility | Yes — voxel models are 3D |
-| Resolution independence | Yes — rendered as 3D geometry |
+| Goal                    | Status                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Zelda-like aesthetic    | No — reads as a voxel game (Crossy Road, Minecraft-adjacent)                                                                    |
+| Camera flexibility      | Yes — voxel models are 3D                                                                                                       |
+| Resolution independence | Yes — rendered as 3D geometry                                                                                                   |
 | No art skill investment | Yes — MagicaVoxel is free and approachable for non-artists; voxel art is more forgiving than polygon modeling or hand-drawn art |
-| Parallax and depth | Yes — real 3D |
+| Parallax and depth      | Yes — real 3D                                                                                                                   |
 
 **Tools:** MagicaVoxel (authoring, free), bevy_vox_scene or similar (runtime).
 
@@ -90,24 +90,24 @@ Polygonal 3D models viewed from above. Camera angle is a runtime parameter.
 
 A character is a hierarchy of 2D art pieces (torso, arms, legs, head) rigged to bones and animated by transforming the bones.
 
-| Goal | Status |
-|------|--------|
-| Zelda-like aesthetic | No — reads as paper-cutout animation (Hollow Knight, Dead Cells) |
-| Camera flexibility | No — art pieces are drawn for one viewing angle |
-| Resolution independence | Yes — if source art is high-res, scales smoothly |
+| Goal                    | Status                                                                    |
+| ----------------------- | ------------------------------------------------------------------------- |
+| Zelda-like aesthetic    | No — reads as paper-cutout animation (Hollow Knight, Dead Cells)          |
+| Camera flexibility      | No — art pieces are drawn for one viewing angle                           |
+| Resolution independence | Yes — if source art is high-res, scales smoothly                          |
 | No art skill investment | Partial — fewer free assets than sprite sheets; requires learning rigging |
-| Parallax and depth | Partial — depth via layer ordering, not real 3D |
+| Parallax and depth      | Partial — depth via layer ordering, not real 3D                           |
 
 **Tools:** Spine ($70+, proprietary), DragonBones (free), bevy_spine or similar (runtime).
 
 ## Summary
 
-| Approach | Zelda | Camera | Resolution | No Art Skill | Parallax |
-|----------|-------|--------|------------|-------------|----------|
-| A: Sprite sheets | Yes | No | No | Yes | Partial |
-| B: 3D models | No | Yes | Yes | Partial | Yes |
-| C: HD-2D shader | Partial | Yes | Yes | No | Yes |
-| D: Voxel models | No | Yes | Yes | Yes | Yes |
-| E: Skeletal 2D | No | No | Yes | Partial | Partial |
+| Approach         | Zelda   | Camera | Resolution | No Art Skill | Parallax |
+| ---------------- | ------- | ------ | ---------- | ------------ | -------- |
+| A: Sprite sheets | Yes     | No     | No         | Yes          | Partial  |
+| B: 3D models     | No      | Yes    | Yes        | Partial      | Yes      |
+| C: HD-2D shader  | Partial | Yes    | Yes        | No           | Yes      |
+| D: Voxel models  | No      | Yes    | Yes        | Yes          | Yes      |
+| E: Skeletal 2D   | No      | No     | Yes        | Partial      | Partial  |
 
 No approach satisfies all five goals. The tensions between Zelda aesthetic, camera flexibility, and resolution independence prevent a single solution from covering everything. Prototyping is needed to evaluate which tradeoffs are acceptable in practice.

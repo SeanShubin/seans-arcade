@@ -17,24 +17,24 @@ commands.spawn(Text2d::new("hello"));     // TextLayout, Transform auto-inserted
 
 **Current constructors — pick based on what you need:**
 
-| Need | Constructor |
-|---|---|
-| Specific color (matches hex) | `Color::srgb()` / `srgba()` |
-| Tweak hue/saturation/lightness | `Color::hsl()` / `hsla()` |
+| Need                           | Constructor                                            |
+| ------------------------------ | ------------------------------------------------------ |
+| Specific color (matches hex)   | `Color::srgb()` / `srgba()`                            |
+| Tweak hue/saturation/lightness | `Color::hsl()` / `hsla()`                              |
 | Perceptual palettes, gradients | `Color::oklch()` / `oklcha()` / `oklab()` / `oklaba()` |
-| Shader math, lighting | `Color::linear_rgb()` / `linear_rgba()` |
+| Shader math, lighting          | `Color::linear_rgb()` / `linear_rgba()`                |
 
 **Avoid:**
 
-| Old | Replaced by | Why |
-|---|---|---|
-| `Color::rgb()` / `rgba()` | `Color::srgb()` / `srgba()` | Renamed in 0.14 for explicit color space |
-| `Color::rgb_linear()` | `Color::linear_rgb()` | Renamed in 0.14 |
-| `Color::lab()` / `laba()` | `Color::oklab()` / `oklaba()` | Oklab is more perceptually accurate |
-| `Color::lch()` / `lcha()` | `Color::oklch()` / `oklcha()` | Same improvement |
-| `Color::hsv()` / `hsva()` | `Color::hsl()` / `hsla()` | HSL's lightness is more intuitive than HSV's value |
-| `Color::hwb()` / `hwba()` | `Color::hsl()` / `hsla()` | HWB is niche, HSL is more widely understood |
-| `Color::xyz()` / `xyza()` | (don't use) | Reference color space, not for picking colors |
+| Old                       | Replaced by                   | Why                                                |
+| ------------------------- | ----------------------------- | -------------------------------------------------- |
+| `Color::rgb()` / `rgba()` | `Color::srgb()` / `srgba()`   | Renamed in 0.14 for explicit color space           |
+| `Color::rgb_linear()`     | `Color::linear_rgb()`         | Renamed in 0.14                                    |
+| `Color::lab()` / `laba()` | `Color::oklab()` / `oklaba()` | Oklab is more perceptually accurate                |
+| `Color::lch()` / `lcha()` | `Color::oklch()` / `oklcha()` | Same improvement                                   |
+| `Color::hsv()` / `hsva()` | `Color::hsl()` / `hsla()`     | HSL's lightness is more intuitive than HSV's value |
+| `Color::hwb()` / `hwba()` | `Color::hsl()` / `hsla()`     | HWB is niche, HSL is more widely understood        |
+| `Color::xyz()` / `xyza()` | (don't use)                   | Reference color space, not for picking colors      |
 
 ## 3. Events / Messages
 
@@ -69,11 +69,11 @@ let transform = query.single()?;
 
 These components are computed by Bevy. Never set them manually.
 
-| Component | Set by | You should use |
-|---|---|---|
-| `GlobalTransform` | Bevy's transform propagation | Write `Transform`, read `GlobalTransform` |
-| `InheritedVisibility` | Bevy's visibility propagation | Set `Visibility` only |
-| `ViewVisibility` | Bevy's rendering | Set `Visibility` only |
+| Component             | Set by                        | You should use                            |
+| --------------------- | ----------------------------- | ----------------------------------------- |
+| `GlobalTransform`     | Bevy's transform propagation  | Write `Transform`, read `GlobalTransform` |
+| `InheritedVisibility` | Bevy's visibility propagation | Set `Visibility` only                     |
+| `ViewVisibility`      | Bevy's rendering              | Set `Visibility` only                     |
 
 ## 7. Audio Volume
 

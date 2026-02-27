@@ -4,13 +4,13 @@ A multiplayer arcade application built with Bevy, distributed as a single Rust b
 
 ## Documentation Structure
 
-| Folder | Purpose |
-|--------|---------|
-| [`docs/decisions.md`](docs/decisions.md) | **Decision register** — terse "what was decided" bullets with links to rationale |
-| [`docs/project-overview.md`](docs/project-overview.md) | **Plan** — evolution path, current phase, full document index |
-| [`docs/architecture-decisions.md`](docs/architecture-decisions.md) | **Decision rationale** — analysis, alternatives considered, justifications |
-| [`docs/architecture/`](docs/architecture/) | **Architecture** — how things work (networking, distribution, engine) |
-| [`docs/research/`](docs/research/) | **Research** — game design studies, technical investigations, learning notes |
+| Folder                                                             | Purpose                                                                          |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [`docs/decisions.md`](docs/decisions.md)                           | **Decision register** — terse "what was decided" bullets with links to rationale |
+| [`docs/project-overview.md`](docs/project-overview.md)             | **Plan** — evolution path, current phase, full document index                    |
+| [`docs/architecture-decisions.md`](docs/architecture-decisions.md) | **Decision rationale** — analysis, alternatives considered, justifications       |
+| [`docs/architecture/`](docs/architecture/)                         | **Architecture** — how things work (networking, distribution, engine)            |
+| [`docs/research/`](docs/research/)                                 | **Research** — game design studies, technical investigations, learning notes     |
 
 ## Where to Start
 

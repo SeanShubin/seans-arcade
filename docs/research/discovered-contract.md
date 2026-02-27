@@ -25,12 +25,12 @@ In a typical game, the player learns the rules during a tutorial, then applies t
 
 This is the design choice that makes hidden costs tolerable. Consider the alternatives:
 
-| Actions can fail | Actions always succeed |
-|-----------------|----------------------|
-| Hidden cost + failure = feels capricious | Hidden cost + success = feels exploratory |
-| "I gambled, I lost, I learned nothing" | "I paid a price, I got something, I learned the price" |
-| Player becomes risk-averse (stops exploring) | Player stays curious (every action teaches) |
-| Fairness contract feels broken | Fairness contract feels different but valid |
+| Actions can fail                             | Actions always succeed                                 |
+| -------------------------------------------- | ------------------------------------------------------ |
+| Hidden cost + failure = feels capricious     | Hidden cost + success = feels exploratory              |
+| "I gambled, I lost, I learned nothing"       | "I paid a price, I got something, I learned the price" |
+| Player becomes risk-averse (stops exploring) | Player stays curious (every action teaches)            |
+| Fairness contract feels broken               | Fairness contract feels different but valid            |
 
 If actions could fail AND have hidden costs, the game punishes exploration. Because actions always succeed, every action has three outputs: the success (always), the cost (discovered), and the rule (learned). The player always comes away with more than they started, even if the cost was high — because the knowledge of the cost is itself a permanent gain.
 
@@ -38,11 +38,11 @@ If actions could fail AND have hidden costs, the game punishes exploration. Beca
 
 The standard fairness contract (see [design philosophy #6](design-philosophy.md)) says: "The player must be able to reason about outcomes before committing." The discovered contract deliberately violates this early on, but does so fairly:
 
-| Phase | What you know | What you risk | Fairness mechanism |
-|-------|--------------|---------------|-------------------|
-| Early game | Almost nothing | Unknown costs | Difficulty setting = error budget; visual cues = partial reasoning; every action teaches |
-| Mid game | Some rules, some costs | Calculated risks | Growing knowledge enables better decisions; discovered rules are consistent |
-| Late game | Most rules, most costs | Informed decisions | Full reasoning is now possible; knowledge replaces the difficulty buffer |
+| Phase      | What you know          | What you risk      | Fairness mechanism                                                                       |
+| ---------- | ---------------------- | ------------------ | ---------------------------------------------------------------------------------------- |
+| Early game | Almost nothing         | Unknown costs      | Difficulty setting = error budget; visual cues = partial reasoning; every action teaches |
+| Mid game   | Some rules, some costs | Calculated risks   | Growing knowledge enables better decisions; discovered rules are consistent              |
+| Late game  | Most rules, most costs | Informed decisions | Full reasoning is now possible; knowledge replaces the difficulty buffer                 |
 
 The contract tightens as the stakes rise. Early, when the player can't reason fully, the game doesn't ask for precise decisions — it asks for exploration. Late, when a bad decision could be catastrophic, the player has learned enough to reason effectively. The game is hardest to reason about when reasoning matters least, and easiest to reason about when reasoning matters most.
 
@@ -75,11 +75,11 @@ The [emergent gameplay](emergent-gameplay-and-progression.md) doc defines knowle
 
 This creates a distinct form of progression:
 
-| Knowledge type | Example | Effect on gameplay |
-|---------------|---------|-------------------|
-| Knowledge of world | "There's a secret passage behind the waterfall" | Player can now access that passage |
-| Knowledge of mechanics | "Fire beats ice" | Player can now exploit that interaction |
-| Knowledge of rules | "Actions have costs, and visual cues predict cost character" | Player can now evaluate ALL future actions differently |
+| Knowledge type         | Example                                                      | Effect on gameplay                                     |
+| ---------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
+| Knowledge of world     | "There's a secret passage behind the waterfall"              | Player can now access that passage                     |
+| Knowledge of mechanics | "Fire beats ice"                                             | Player can now exploit that interaction                |
+| Knowledge of rules     | "Actions have costs, and visual cues predict cost character" | Player can now evaluate ALL future actions differently |
 
 Knowledge of rules is the most powerful because it's transferable. Learning one specific cost teaches you something about ALL costs. Learning one visual cue teaches you how to read ALL visual cues. Each discovery has compound returns because it calibrates your judgment, not just your map.
 
@@ -107,11 +107,11 @@ The BG3 analysis describes "predictable in tone, surprising in specifics" — th
 
 ## Connection to Other Principles
 
-| Principle | How the discovered contract relates |
-|-----------|-------------------------------------|
-| [Pain before relief](pain-before-relief.md) | Early ignorance IS the pain. Rule discovery IS the relief. Each rule learned transforms the game the way a Factorio upgrade transforms the factory. |
-| [Discovery as achievement](design-philosophy.md) | Taken to its deepest form — the player doesn't just discover secrets within the rules, they discover the rules themselves. |
-| [Fairness contract](design-philosophy.md) | The contract evolves rather than being fixed. Fairness is maintained by matching information to stakes, not by providing full information upfront. |
-| [Meaningful choice](meaningful-choice-analysis.md) | Choices are irrevocable and consequential from the start. The twist: the player evaluates fairness retrospectively as they learn what their choices actually cost. |
+| Principle                                                         | How the discovered contract relates                                                                                                                                                |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Pain before relief](pain-before-relief.md)                       | Early ignorance IS the pain. Rule discovery IS the relief. Each rule learned transforms the game the way a Factorio upgrade transforms the factory.                                |
+| [Discovery as achievement](design-philosophy.md)                  | Taken to its deepest form — the player doesn't just discover secrets within the rules, they discover the rules themselves.                                                         |
+| [Fairness contract](design-philosophy.md)                         | The contract evolves rather than being fixed. Fairness is maintained by matching information to stakes, not by providing full information upfront.                                 |
+| [Meaningful choice](meaningful-choice-analysis.md)                | Choices are irrevocable and consequential from the start. The twist: the player evaluates fairness retrospectively as they learn what their choices actually cost.                 |
 | [Multiple progression axes](emergent-gameplay-and-progression.md) | Knowledge becomes the PRIMARY axis for early game, not just one of three parallel options. Power and skill become relevant once the player knows enough to use them strategically. |
-| [Difficulty spectrum](progression-and-difficulty-design.md) | Adds a new category: difficulty as error budget during discovery, not as challenge scaling. |
+| [Difficulty spectrum](progression-and-difficulty-design.md)       | Adds a new category: difficulty as error budget during discovery, not as challenge scaling.                                                                                        |

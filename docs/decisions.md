@@ -101,22 +101,22 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ## Documentation
 
-| Document | Contents |
-|----------|----------|
-| [project-overview.md](project-overview.md) | Entry-point overview, evolution path, document index |
-| [network-architecture.md](architecture/network-architecture.md) | Lockstep relay networking model, determinism, latency hiding |
-| [network-operations.md](architecture/network-operations.md) | Diagnostics, debugging, deployment, AWS infrastructure, cost estimates |
-| [distribution.md](architecture/distribution.md) | Distribution, versioning, CI pipeline, auto-update |
-| [architecture-decisions.md](architecture-decisions.md) | Formalized technical decisions with rationale |
-| [design-philosophy.md](research/design-philosophy.md) | Game design principles that motivate technical decisions |
-| [game-engine-anatomy.md](architecture/game-engine-anatomy.md) | High-level engine pipeline overview |
-| [session-architecture.md](architecture/session-architecture.md) | Session architecture decision: unified world state, not multiplexed sessions |
-| [bevy-vs-recoil-rts-scale.md](research/bevy-vs-recoil-rts-scale.md) | Bevy ECS vs Recoil engine for large-scale RTS |
-| [classic-game-candidates.md](research/classic-game-candidates.md) | Candidate classic games for the arcade |
-| [zelda-case-study.md](research/zelda-case-study.md) | Zelda design analysis |
-| [logical-design.md](games/9-keys/logical-design.md) | 9 Keys — logical design specification |
-| [design-analysis.md](games/9-keys/design-analysis.md) | 9 Keys — game design reasoning |
-| [maze-generation.md](games/9-keys/maze-generation.md) | 9 Keys — maze generation theory |
-| [mythology-and-naming.md](games/9-keys/mythology-and-naming.md) | 9 Keys — Greek mythology behind item names |
-| [bevy-modern-api.md](research/bevy-modern-api.md) | Bevy modern API reference: current patterns vs deprecated ones |
-| [randomness-in-bevy.md](research/randomness-in-bevy.md) | Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking |
+| Document                                                            | Contents                                                                         |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [project-overview.md](project-overview.md)                          | Entry-point overview, evolution path, document index                             |
+| [network-architecture.md](architecture/network-architecture.md)     | Lockstep relay networking model, determinism, latency hiding                     |
+| [network-operations.md](architecture/network-operations.md)         | Diagnostics, debugging, deployment, AWS infrastructure, cost estimates           |
+| [distribution.md](architecture/distribution.md)                     | Distribution, versioning, CI pipeline, auto-update                               |
+| [architecture-decisions.md](architecture-decisions.md)              | Formalized technical decisions with rationale                                    |
+| [design-philosophy.md](research/design-philosophy.md)               | Game design principles that motivate technical decisions                         |
+| [game-engine-anatomy.md](architecture/game-engine-anatomy.md)       | High-level engine pipeline overview                                              |
+| [session-architecture.md](architecture/session-architecture.md)     | Session architecture decision: unified world state, not multiplexed sessions     |
+| [bevy-vs-recoil-rts-scale.md](research/bevy-vs-recoil-rts-scale.md) | Bevy ECS vs Recoil engine for large-scale RTS                                    |
+| [classic-game-candidates.md](research/classic-game-candidates.md)   | Candidate classic games for the arcade                                           |
+| [zelda-case-study.md](research/zelda-case-study.md)                 | Zelda design analysis                                                            |
+| [logical-design.md](games/9-keys/logical-design.md)                 | 9 Keys — logical design specification                                            |
+| [design-analysis.md](games/9-keys/design-analysis.md)               | 9 Keys — game design reasoning                                                   |
+| [maze-generation.md](games/9-keys/maze-generation.md)               | 9 Keys — maze generation theory                                                  |
+| [mythology-and-naming.md](games/9-keys/mythology-and-naming.md)     | 9 Keys — Greek mythology behind item names                                       |
+| [bevy-modern-api.md](research/bevy-modern-api.md)                   | Bevy modern API reference: current patterns vs deprecated ones                   |
+| [randomness-in-bevy.md](research/randomness-in-bevy.md)             | Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking |

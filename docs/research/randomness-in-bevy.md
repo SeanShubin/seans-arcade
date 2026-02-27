@@ -18,12 +18,12 @@ Bevy has no built-in RNG. The community standard is **`bevy_rand`**, a third-par
 
 ### Algorithm Selection
 
-| Algorithm | Speed | When to Use |
-|---|---|---|
-| **WyRand** | Fastest | General game logic — spawning, AI, damage rolls, proc-gen. Right choice for almost everything. |
-| **ChaCha8Rng** | Fast | Competitive multiplayer where players might try to predict RNG. |
-| **ChaCha20Rng** | Moderate | Maximum PRNG unpredictability. Still not cryptographic. |
-| **OsRng** (raw `rand` crate) | Slowest | Actual cryptographic needs — tokens, auth, keys. Use directly, not through `bevy_rand`. |
+| Algorithm                    | Speed    | When to Use                                                                                    |
+| ---------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| **WyRand**                   | Fastest  | General game logic — spawning, AI, damage rolls, proc-gen. Right choice for almost everything. |
+| **ChaCha8Rng**               | Fast     | Competitive multiplayer where players might try to predict RNG.                                |
+| **ChaCha20Rng**              | Moderate | Maximum PRNG unpredictability. Still not cryptographic.                                        |
+| **OsRng** (raw `rand` crate) | Slowest  | Actual cryptographic needs — tokens, auth, keys. Use directly, not through `bevy_rand`.        |
 
 ### Key Types
 
@@ -94,9 +94,9 @@ fn random_spawn_point(mut rng: Single<&mut WyRand, With<GlobalRng>>) {
 
 ### Version Compatibility
 
-| Bevy | bevy_rand |
-|---|---|
+| Bevy | bevy_rand   |
+| ---- | ----------- |
 | 0.18 | 0.13 – 0.14 |
-| 0.17 | 0.12 |
+| 0.17 | 0.12        |
 | 0.16 | 0.10 – 0.11 |
-| 0.15 | 0.8 – 0.9 |
+| 0.15 | 0.8 – 0.9   |

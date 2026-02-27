@@ -18,26 +18,26 @@ The camera defines how world units map to screen pixels. With a default `Camera2
 
 Change the camera's transform or projection and the mapping changes:
 
-| Camera change | Effect |
-|---|---|
-| `Transform::from_xyz(100, 0, 0)` | World origin appears 100 pixels left of screen center |
-| `OrthographicProjection { scale: 2.0, .. }` | 1 world unit = 0.5 screen pixels (zoomed out) |
-| `OrthographicProjection { scale: 0.5, .. }` | 1 world unit = 2 screen pixels (zoomed in) |
+| Camera change                               | Effect                                                |
+| ------------------------------------------- | ----------------------------------------------------- |
+| `Transform::from_xyz(100, 0, 0)`            | World origin appears 100 pixels left of screen center |
+| `OrthographicProjection { scale: 2.0, .. }` | 1 world unit = 0.5 screen pixels (zoomed out)         |
+| `OrthographicProjection { scale: 0.5, .. }` | 1 world unit = 2 screen pixels (zoomed in)            |
 
 The formula: `screen_pixels = world_units / projection_scale`
 
 ## What Lives in Which Coordinate System
 
-| Thing | Coordinate system | Notes |
-|---|---|---|
-| `Transform` position | World units | Where an entity is in the game world |
-| `Transform` scale | Multiplier on world size | `scale: 2.0` doubles the entity's world size |
-| `Sprite` with `custom_size` | World units | `Vec2::new(15.0, 80.0)` = 15x80 world units |
-| `Sprite` with no `custom_size` | World units (1 texel = 1 world unit) | A 16x16 texture occupies 16x16 world units |
-| `Viewport` position/size | Physical pixels | Defines a sub-rectangle of the window |
-| UI nodes (`Node`) | Logical pixels | Bevy UI layout, independent of game camera |
-| Gizmo positions | World units | Where the gizmo appears in the world |
-| Gizmo line width | Screen pixels | Constant width regardless of zoom |
+| Thing                          | Coordinate system                    | Notes                                        |
+| ------------------------------ | ------------------------------------ | -------------------------------------------- |
+| `Transform` position           | World units                          | Where an entity is in the game world         |
+| `Transform` scale              | Multiplier on world size             | `scale: 2.0` doubles the entity's world size |
+| `Sprite` with `custom_size`    | World units                          | `Vec2::new(15.0, 80.0)` = 15x80 world units  |
+| `Sprite` with no `custom_size` | World units (1 texel = 1 world unit) | A 16x16 texture occupies 16x16 world units   |
+| `Viewport` position/size       | Physical pixels                      | Defines a sub-rectangle of the window        |
+| UI nodes (`Node`)              | Logical pixels                       | Bevy UI layout, independent of game camera   |
+| Gizmo positions                | World units                          | Where the gizmo appears in the world         |
+| Gizmo line width               | Screen pixels                        | Constant width regardless of zoom            |
 
 ## Sprites: Textures vs. World Size
 
@@ -101,13 +101,13 @@ Because rasterization happens at the physical pixel size (not logical size scale
 
 Problems appear when `font_size * scale_factor` produces a non-integer physical pixel size, or when glyph positions land between physical pixels:
 
-| Scale factor | Font size (logical) | Physical pixels | Result |
-|---|---|---|---|
-| 1.25 (125%) | 20.0 | 25.0 | Clean |
-| 1.25 (125%) | 14.0 | 17.5 | Fractional — blurry |
-| 1.5 (150%) | 20.0 | 30.0 | Clean |
-| 1.5 (150%) | 14.0 | 21.0 | Clean (lucky) |
-| 2.0 (200%) | any | always integer | Always clean |
+| Scale factor | Font size (logical) | Physical pixels | Result              |
+| ------------ | ------------------- | --------------- | ------------------- |
+| 1.25 (125%)  | 20.0                | 25.0            | Clean               |
+| 1.25 (125%)  | 14.0                | 17.5            | Fractional — blurry |
+| 1.5 (150%)   | 20.0                | 30.0            | Clean               |
+| 1.5 (150%)   | 14.0                | 21.0            | Clean (lucky)       |
+| 2.0 (200%)   | any                 | always integer  | Always clean        |
 
 Even when the font size produces an integer physical size, individual glyph X/Y positions within a line of text can be fractional. This is **subpixel glyph positioning** — cosmic-text uses it for accurate character spacing, but it means some glyphs may straddle pixel boundaries.
 
@@ -119,10 +119,10 @@ TrueType fonts contain **hinting instructions** that adjust glyph outlines to sn
 
 There are two ways to make text bigger — they produce very different results:
 
-| Method | What happens | Quality |
-|---|---|---|
-| `TextFont::from_font_size(48.0)` | Re-rasterizes glyphs at 48px | Sharp — new outlines at target size |
-| `Transform { scale: Vec3::splat(2.0), .. }` on a 24px text | Stretches the 24px atlas texture to 2x | Blurry — magnified bitmap |
+| Method                                                     | What happens                           | Quality                             |
+| ---------------------------------------------------------- | -------------------------------------- | ----------------------------------- |
+| `TextFont::from_font_size(48.0)`                           | Re-rasterizes glyphs at 48px           | Sharp — new outlines at target size |
+| `Transform { scale: Vec3::splat(2.0), .. }` on a 24px text | Stretches the 24px atlas texture to 2x | Blurry — magnified bitmap           |
 
 Always use `font_size` to control text size. Never scale text with `Transform`.
 

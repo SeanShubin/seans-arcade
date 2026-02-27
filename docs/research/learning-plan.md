@@ -59,10 +59,10 @@ ECS is essentially a relational data model with reactive query functions. This m
 
 Learning and setup decisions are tracked here. Architectural decisions are tracked in [decisions.md](../decisions.md).
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-02-14 | Created sandbox repository | Dedicated space for game dev experimentation |
-| 2026-02-14 | Plan: Rust fundamentals before Bevy | Ownership errors in Bevy code are confusing without borrow checker familiarity |
-| 2026-02-14 | Example-driven learning over sequential docs | Matches learning style; Rust by Example preferred over Rust Book cover-to-cover |
+| Date       | Decision                                       | Rationale                                                                                                         |
+| ---------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-02-14 | Created sandbox repository                     | Dedicated space for game dev experimentation                                                                      |
+| 2026-02-14 | Plan: Rust fundamentals before Bevy            | Ownership errors in Bevy code are confusing without borrow checker familiarity                                    |
+| 2026-02-14 | Example-driven learning over sequential docs   | Matches learning style; Rust by Example preferred over Rust Book cover-to-cover                                   |
 | 2026-02-14 | Accept ECS as a different paradigm from OOP DI | ECS optimizes for throughput with different composition mechanisms; some architectural rules don't apply directly |
-| 2026-02-14 | Plan to port code-structure analysis to Rust | Start with `syn` crate for AST-based dependency extraction |
+| 2026-02-14 | Plan to port code-structure analysis to Rust   | Start with `syn` crate for AST-based dependency extraction                                                        |

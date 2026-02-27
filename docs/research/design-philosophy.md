@@ -18,12 +18,12 @@ No axis invalidates the others. The grinder and the shortcut-finder both earned 
 
 **Evaluation test:** For any challenge - can it be solved through power, skill, or knowledge independently? Does each path feel earned? Does any path make the others feel wrong?
 
-| Situation | Power | Skill | Knowledge |
-|-----------|-------|-------|-----------|
-| Hard boss | Out-stat it | Learn the pattern | Find the hidden weakness item |
-| Locked area | Main progression key | Sequence break | Hidden back entrance |
-| Resource scarcity | Farm drops | Play flawlessly | Find the hidden stash |
-| Dangerous path | Level up to survive | Navigate without getting hit | Find the shortcut |
+| Situation         | Power                | Skill                        | Knowledge                     |
+| ----------------- | -------------------- | ---------------------------- | ----------------------------- |
+| Hard boss         | Out-stat it          | Learn the pattern            | Find the hidden weakness item |
+| Locked area       | Main progression key | Sequence break               | Hidden back entrance          |
+| Resource scarcity | Farm drops           | Play flawlessly              | Find the hidden stash         |
+| Dangerous path    | Level up to survive  | Navigate without getting hit | Find the shortcut             |
 
 ---
 
@@ -213,22 +213,22 @@ Games may have adversarial mechanics (competition, PvP, territory control), but 
 
 ## Design Decision Checklist
 
-| Question | Violated principle |
-|----------|--------------------|
-| Does the player have meaningful choice? | Player control |
-| Can this be solved through power, skill, or knowledge? | Multiple axes |
-| Does the control scheme translate intention? | Avatar responsiveness |
-| Will the player feel clever figuring this out? | Discovery |
-| Has the player felt the problem before getting the solution? | Pain before relief |
-| Does this element have rules that interact with existing systems? | Systems have rules |
-| Is the reward proportional to the effort? | Fairness |
-| Does the world acknowledge what the player did? | World reactivity |
-| Does this moment complement what came before? | Pacing |
-| Does this choice have visible, irrevocable, remembered consequences? | Meaningful choice |
-| Is every second spent here worthwhile? | Time respect |
-| Can this interaction happen through the avatar instead of a menu? | Diegetic design |
-| Are we paying any technical cost to prevent cheating? | Player trust |
-| If rules are hidden, do stakes match the player's current knowledge? | Discovered contract |
+| Question                                                             | Violated principle    |
+| -------------------------------------------------------------------- | --------------------- |
+| Does the player have meaningful choice?                              | Player control        |
+| Can this be solved through power, skill, or knowledge?               | Multiple axes         |
+| Does the control scheme translate intention?                         | Avatar responsiveness |
+| Will the player feel clever figuring this out?                       | Discovery             |
+| Has the player felt the problem before getting the solution?         | Pain before relief    |
+| Does this element have rules that interact with existing systems?    | Systems have rules    |
+| Is the reward proportional to the effort?                            | Fairness              |
+| Does the world acknowledge what the player did?                      | World reactivity      |
+| Does this moment complement what came before?                        | Pacing                |
+| Does this choice have visible, irrevocable, remembered consequences? | Meaningful choice     |
+| Is every second spent here worthwhile?                               | Time respect          |
+| Can this interaction happen through the avatar instead of a menu?    | Diegetic design       |
+| Are we paying any technical cost to prevent cheating?                | Player trust          |
+| If rules are hidden, do stakes match the player's current knowledge? | Discovered contract   |
 
 ---
 

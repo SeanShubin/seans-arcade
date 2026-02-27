@@ -21,11 +21,11 @@ JVM bytecode provides actual runtime dependencies (method calls, field access) i
 
 ### Options for Dependency Extraction
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Parse `use` statements + AST via `syn` crate** | Simple, Rust-native, covers majority of real dependencies | Misses some implicit dependencies (trait method calls without explicit import) |
-| **Use `rust-analyzer` programmatically** | Full name resolution, closest to bytecode accuracy | Complex integration, slower |
-| **Parse compiler metadata** (`cargo metadata`, `cargo check --message-format=json`) | Easy to invoke, crate-level structure | Too coarse for module-level analysis |
+| Approach                                                                            | Pros                                                      | Cons                                                                           |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Parse `use` statements + AST via `syn` crate**                                    | Simple, Rust-native, covers majority of real dependencies | Misses some implicit dependencies (trait method calls without explicit import) |
+| **Use `rust-analyzer` programmatically**                                            | Full name resolution, closest to bytecode accuracy        | Complex integration, slower                                                    |
+| **Parse compiler metadata** (`cargo metadata`, `cargo check --message-format=json`) | Easy to invoke, crate-level structure                     | Too coarse for module-level analysis                                           |
 
 ### Recommendation
 
@@ -33,14 +33,14 @@ Start with `syn` crate for name extraction and `use`-statement-based dependency 
 
 ## Mapping code-structure Concepts to Rust
 
-| code-structure (JVM) | Rust Equivalent |
-|-----------------------|-----------------|
-| Package (e.g., `com.example.login`) | Module path (e.g., `crate::login`) |
-| Class / top-level declaration | `struct`, `enum`, `fn`, `trait` within a module |
-| `.class` file constant pool | `use` statements + AST type references |
+| code-structure (JVM)                         | Rust Equivalent                                      |
+| -------------------------------------------- | ---------------------------------------------------- |
+| Package (e.g., `com.example.login`)          | Module path (e.g., `crate::login`)                   |
+| Class / top-level declaration                | `struct`, `enum`, `fn`, `trait` within a module      |
+| `.class` file constant pool                  | `use` statements + AST type references               |
 | `$` truncation (inner classes fold to outer) | Not needed; Rust modules are explicit separate units |
-| Maven module boundary | Cargo crate boundary |
-| Package within module | Module within crate |
+| Maven module boundary                        | Cargo crate boundary                                 |
+| Package within module                        | Module within crate                                  |
 
 ## Core Algorithm (Reusable As-Is)
 

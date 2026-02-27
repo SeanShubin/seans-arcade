@@ -41,18 +41,18 @@ Multiplexed sessions would mean each game is a separate lockstep session with it
 
 ## Comparison
 
-| Dimension | Multiplexed Sessions | Unified World State |
-|-----------|---------------------|---------------------|
-| Relay complexity | Session management, routing | Unchanged from v1 |
-| Protocol changes | Session ID envelope, join/leave messages | None |
-| Client CPU | Scales with games joined | Scales with total arcade activity |
-| Tick rate flexibility | Per-session | Single rate for all games |
-| Spectating | Join session as observer | Free (already simulating) |
-| Fault isolation | Per-session | None (shared simulation) |
-| Adding new game types | Relay-transparent (payload only) | Relay-transparent (payload only) |
-| Persistence | Per-session saves | One save for whole arcade |
-| Determinism blast radius | Contained to session | Entire arcade |
-| Infrastructure reuse from v1/v2 | Relay requires changes | Relay unchanged |
+| Dimension                       | Multiplexed Sessions                     | Unified World State               |
+| ------------------------------- | ---------------------------------------- | --------------------------------- |
+| Relay complexity                | Session management, routing              | Unchanged from v1                 |
+| Protocol changes                | Session ID envelope, join/leave messages | None                              |
+| Client CPU                      | Scales with games joined                 | Scales with total arcade activity |
+| Tick rate flexibility           | Per-session                              | Single rate for all games         |
+| Spectating                      | Join session as observer                 | Free (already simulating)         |
+| Fault isolation                 | Per-session                              | None (shared simulation)          |
+| Adding new game types           | Relay-transparent (payload only)         | Relay-transparent (payload only)  |
+| Persistence                     | Per-session saves                        | One save for whole arcade         |
+| Determinism blast radius        | Contained to session                     | Entire arcade                     |
+| Infrastructure reuse from v1/v2 | Relay requires changes                   | Relay unchanged                   |
 
 ## Remaining Questions
 

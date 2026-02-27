@@ -24,14 +24,14 @@ This is analogous to how functional programming doesn't need constructor injecti
 
 **Dependency Injection** - The concept applies but the mechanism is fundamentally different.
 
-| OOP DI Concept | Bevy ECS Equivalent |
-|----------------|-------------------|
-| Constructor injection | System function parameters (Query, Res, EventReader, etc.) |
-| Interface / trait object | The component/resource types themselves (concrete, not abstracted) |
-| Composition root | `App::new().add_plugins().add_systems()` builder |
-| Staged DI | Bevy States + startup systems + run conditions |
-| Integrations boundary | Bevy owns the boundary (window, input, rendering); you configure, not inject |
-| Faking for tests | `World::new()` lets you construct a minimal world with only the components/resources a system needs |
+| OOP DI Concept           | Bevy ECS Equivalent                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------- |
+| Constructor injection    | System function parameters (Query, Res, EventReader, etc.)                                          |
+| Interface / trait object | The component/resource types themselves (concrete, not abstracted)                                  |
+| Composition root         | `App::new().add_plugins().add_systems()` builder                                                    |
+| Staged DI                | Bevy States + startup systems + run conditions                                                      |
+| Integrations boundary    | Bevy owns the boundary (window, input, rendering); you configure, not inject                        |
+| Faking for tests         | `World::new()` lets you construct a minimal world with only the components/resources a system needs |
 
 Key insight: Bevy's system parameter declaration IS the dependency declaration. When you write `fn move_player(query: Query<&mut Transform, With<Player>>, time: Res<Time>)`, you've declared that this system depends on Transform components of Player entities and the Time resource. The scheduler provides them. This is inversion of control, just not via constructors.
 
@@ -52,13 +52,13 @@ Key insight: Bevy's system parameter declaration IS the dependency declaration. 
 
 ECS has its own set of maintainability problems:
 
-| Problem | Symptom | Solution |
-|---------|---------|----------|
-| **System ordering bugs** | Behavior depends on which system runs first | Use explicit system ordering (.before/.after) or system sets |
+| Problem                    | Symptom                                                                | Solution                                                              |
+| -------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **System ordering bugs**   | Behavior depends on which system runs first                            | Use explicit system ordering (.before/.after) or system sets          |
 | **Implicit data coupling** | Two systems modify the same component without knowing about each other | Use events for cross-domain communication; document shared components |
-| **God resources** | A single Resource struct that everything reads/writes | Split into focused resources per domain |
-| **Component soup** | Entity has 20 components with no logical grouping | Use marker components and bundles to group related components |
-| **Plugin bloat** | One plugin with 30 systems | Split plugins by subdomain, same as splitting large packages |
+| **God resources**          | A single Resource struct that everything reads/writes                  | Split into focused resources per domain                               |
+| **Component soup**         | Entity has 20 components with no logical grouping                      | Use marker components and bundles to group related components         |
+| **Plugin bloat**           | One plugin with 30 systems                                             | Split plugins by subdomain, same as splitting large packages          |
 
 ### Parallelism Dimensions
 
@@ -83,11 +83,11 @@ fn my_system(
 
 This dimension only exists for components. Resources are global singletons — there is no "which resource instance" to partition on.
 
-| Dimension | Resources | Components |
-|---|---|---|
-| By type | Yes | Yes |
-| By read vs write | Yes | Yes |
-| By entity set | No (singletons) | Within a system only |
+| Dimension        | Resources       | Components           |
+| ---------------- | --------------- | -------------------- |
+| By type          | Yes             | Yes                  |
+| By read vs write | Yes             | Yes                  |
+| By entity set    | No (singletons) | Within a system only |
 
 **Cross-system caveat.** The entity-set dimension only works within a single function signature — where Bevy can statically verify that queries are disjoint. Between separate systems, the scheduler is conservative: it looks at component-level access, not filter-level access.
 
@@ -197,12 +197,12 @@ The worst case: your "parallel" game loop is effectively single-threaded. But it
 - *Global mutable state outside ECS* — `static mut`, lazy statics with interior mutability, thread-local state. The scheduler can't see it, can't protect it.
 - *`Mutex`/`RwLock` inside components or resources* — Technically safe Rust (no UB), but reintroduces runtime contention that the ECS was designed to eliminate. Lock contention, potential deadlocks, and non-deterministic ordering — the exact problems Bevy's type-driven scheduling exists to avoid.
 
-| Approach | What breaks | Symptom |
-|---|---|---|
-| Unnecessary `mut` | Performance | Systems serialize, underused cores |
-| God resources/components | Performance | Everything waits in line |
-| Exclusive systems | Performance | Full schedule stall |
-| `unsafe` / global state | **Correctness** | Data races, UB, heisenbugs |
+| Approach                      | What breaks     | Symptom                                     |
+| ----------------------------- | --------------- | ------------------------------------------- |
+| Unnecessary `mut`             | Performance     | Systems serialize, underused cores          |
+| God resources/components      | Performance     | Everything waits in line                    |
+| Exclusive systems             | Performance     | Full schedule stall                         |
+| `unsafe` / global state       | **Correctness** | Data races, UB, heisenbugs                  |
 | Interior mutability (`Mutex`) | **Determinism** | Lock contention, non-deterministic ordering |
 
 ### Parallelism, Ordering, and Determinism

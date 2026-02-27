@@ -25,11 +25,11 @@ Think of a physical arcade — everyone can hear each other, and players wander 
 
 ## Project Binaries
 
-| Binary | Purpose | Where it runs |
-|--------|---------|---------------|
-| **`arcade`** | Game client — the Bevy application players download and run | Player machines |
-| **`relay`** | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM |
-| **`arcade-cli`** | Operator tooling — deploy, monitor, debug, manage saves | Developer machine |
+| Binary           | Purpose                                                         | Where it runs     |
+| ---------------- | --------------------------------------------------------------- | ----------------- |
+| **`arcade`**     | Game client — the Bevy application players download and run     | Player machines   |
+| **`relay`**      | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM            |
+| **`arcade-cli`** | Operator tooling — deploy, monitor, debug, manage saves         | Developer machine |
 
 The game client and relay are the runtime system. The CLI is the operator's interface to everything else: deploying the relay (`deploy`), checking its health (`status`), tailing logs (`logs`), investigating desyncs (`desync-check`), and managing S3 saves (`save push`, `save pull`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer.
 
@@ -45,12 +45,12 @@ The game client is built with Bevy from the start, including v1 chat. Bevy's ECS
 
 ## Evolution Path
 
-| Phase | What's added | What it exercises |
-|-------|-------------|-------------------|
-| **v1: Chat** | Drop-in text chat | Relay connection, peer discovery, message forwarding, AWS coordination |
-| **v2: Chat + Pong** | Pong playable within the chat interface. Two peers can start a match while others watch or chat. | Game sub-session within the arcade, spectating, deterministic lockstep, latency hiding |
-| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups. | Unified world state (all games in one simulation), concurrent games, modular game loading |
-| **v4: Persistence** | Game state saved to S3 between sessions | Cloud storage, tick-based sync protocol |
+| Phase                | What's added                                                                                     | What it exercises                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **v1: Chat**         | Drop-in text chat                                                                                | Relay connection, peer discovery, message forwarding, AWS coordination                    |
+| **v2: Chat + Pong**  | Pong playable within the chat interface. Two peers can start a match while others watch or chat. | Game sub-session within the arcade, spectating, deterministic lockstep, latency hiding    |
+| **v3: Game library** | Multiple game types. Multiple simultaneous games with different player groups.                   | Unified world state (all games in one simulation), concurrent games, modular game loading |
+| **v4: Persistence**  | Game state saved to S3 between sessions                                                          | Cloud storage, tick-based sync protocol                                                   |
 
 Each phase builds on the previous infrastructure. Chat is the always-on social layer — it doesn't persist "across" games so much as games exist within it. The chat is the arcade; games are what you do there.
 

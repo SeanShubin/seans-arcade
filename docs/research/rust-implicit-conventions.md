@@ -10,17 +10,17 @@ A reference for developers who prefer explicit configuration over magic. Rust, C
 
 Cargo auto-discovers targets based on file locations relative to a package's `Cargo.toml`. None of these directories are configurable without explicit `[[target]]` declarations.
 
-| File/Directory | What Cargo sees | Run with |
-|---------------|----------------|----------|
-| `src/main.rs` | Binary target (named after package) | `cargo run` |
-| `src/lib.rs` | Library target | Used as dependency |
-| `src/bin/*.rs` | Additional binary targets | `cargo run --bin name` |
-| `src/bin/name/main.rs` | Multi-file binary target | `cargo run --bin name` |
-| `examples/*.rs` | Example targets | `cargo run --example name` |
-| `examples/name/main.rs` | Multi-file example target | `cargo run --example name` |
-| `tests/*.rs` | Integration test targets | `cargo test --test name` |
-| `benches/*.rs` | Benchmark targets | `cargo bench --bench name` |
-| `build.rs` | Build script — **runs automatically before compilation** | Automatic |
+| File/Directory          | What Cargo sees                                          | Run with                   |
+| ----------------------- | -------------------------------------------------------- | -------------------------- |
+| `src/main.rs`           | Binary target (named after package)                      | `cargo run`                |
+| `src/lib.rs`            | Library target                                           | Used as dependency         |
+| `src/bin/*.rs`          | Additional binary targets                                | `cargo run --bin name`     |
+| `src/bin/name/main.rs`  | Multi-file binary target                                 | `cargo run --bin name`     |
+| `examples/*.rs`         | Example targets                                          | `cargo run --example name` |
+| `examples/name/main.rs` | Multi-file example target                                | `cargo run --example name` |
+| `tests/*.rs`            | Integration test targets                                 | `cargo test --test name`   |
+| `benches/*.rs`          | Benchmark targets                                        | `cargo bench --bench name` |
+| `build.rs`              | Build script — **runs automatically before compilation** | Automatic                  |
 
 **The burn:** `build.rs` at the crate root runs code at compile time with no declaration. If you see a `build.rs` in a project, it is executing during every build. It can generate source files, set environment variables, link native libraries, and print `cargo:` directives that change compilation behavior.
 
@@ -197,15 +197,15 @@ This generates `impl Debug for Foo`, `impl Clone for Foo`, and `impl PartialEq f
 
 **Common derives and what they silently add:**
 
-| Derive | What it generates |
-|--------|------------------|
-| `Debug` | `fmt::Debug` implementation for `{:?}` printing |
-| `Clone` | `.clone()` method |
-| `Copy` | Implicit copy on assignment (value is duplicated, not moved) |
-| `Default` | `Default::default()` constructor |
-| `PartialEq` / `Eq` | `==` operator |
-| `Hash` | Makes type usable as HashMap key |
-| `Serialize` / `Deserialize` | Serde: automatic serialization to JSON, postcard, etc. |
+| Derive                      | What it generates                                            |
+| --------------------------- | ------------------------------------------------------------ |
+| `Debug`                     | `fmt::Debug` implementation for `{:?}` printing              |
+| `Clone`                     | `.clone()` method                                            |
+| `Copy`                      | Implicit copy on assignment (value is duplicated, not moved) |
+| `Default`                   | `Default::default()` constructor                             |
+| `PartialEq` / `Eq`          | `==` operator                                                |
+| `Hash`                      | Makes type usable as HashMap key                             |
+| `Serialize` / `Deserialize` | Serde: automatic serialization to JSON, postcard, etc.       |
 
 **The burn:** `#[derive(Copy)]` silently changes the semantics of assignment from move to copy. If you're debugging why a value is still available after being "moved," check if the type derives `Copy`.
 
@@ -313,14 +313,14 @@ let closure = || { drop(name); };     // captures name by move
 
 ## Cargo: Commands with Hidden Behavior
 
-| Command | Hidden behavior |
-|---------|----------------|
-| `cargo build` | Creates/updates `Cargo.lock`, creates `target/` directory, runs `build.rs` |
-| `cargo test` | Compiles with `cfg(test)` enabled, runs `#[test]` functions it auto-discovers, also runs doc-tests found in `///` comments |
-| `cargo doc` | Extracts `///` and `//!` comments as documentation, renders as HTML |
-| `cargo clippy` | Runs the compiler plus extra lint passes — can catch different things than `cargo build` |
-| `cargo fmt` | Reads `rustfmt.toml` if present (another implicit config file) |
-| `cargo publish` | Reads `Cargo.toml` metadata, packages based on `.gitignore` and include/exclude rules |
+| Command         | Hidden behavior                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `cargo build`   | Creates/updates `Cargo.lock`, creates `target/` directory, runs `build.rs`                                                 |
+| `cargo test`    | Compiles with `cfg(test)` enabled, runs `#[test]` functions it auto-discovers, also runs doc-tests found in `///` comments |
+| `cargo doc`     | Extracts `///` and `//!` comments as documentation, renders as HTML                                                        |
+| `cargo clippy`  | Runs the compiler plus extra lint passes — can catch different things than `cargo build`                                   |
+| `cargo fmt`     | Reads `rustfmt.toml` if present (another implicit config file)                                                             |
+| `cargo publish` | Reads `Cargo.toml` metadata, packages based on `.gitignore` and include/exclude rules                                      |
 
 ### `cfg(test)` Conditional Compilation
 
@@ -338,15 +338,15 @@ mod tests {
 
 ## Summary: Where to Look When Something is "Magic"
 
-| Symptom | Likely convention |
-|---------|------------------|
-| "Where does this target come from?" | Hardcoded directory: `src/`, `examples/`, `tests/`, `benches/` |
-| "Where does this type/method come from?" | Prelude import or trait in scope |
-| "Why does this method exist on this type?" | Deref coercion or auto-referencing |
-| "Why did adding a semicolon break everything?" | Implicit return |
-| "Where is this trait implementation?" | `#[derive(...)]` macro |
-| "Why does this code run at compile time?" | `build.rs` |
-| "Why is my code missing from the binary?" | `#[cfg(test)]` |
-| "Why can't I use this type in a Query?" | Missing `#[derive(Component)]` |
-| "What does `DefaultPlugins` include?" | ~20 plugins; check Bevy docs |
-| "Why does assignment not move?" | Type derives `Copy` |
+| Symptom                                        | Likely convention                                              |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| "Where does this target come from?"            | Hardcoded directory: `src/`, `examples/`, `tests/`, `benches/` |
+| "Where does this type/method come from?"       | Prelude import or trait in scope                               |
+| "Why does this method exist on this type?"     | Deref coercion or auto-referencing                             |
+| "Why did adding a semicolon break everything?" | Implicit return                                                |
+| "Where is this trait implementation?"          | `#[derive(...)]` macro                                         |
+| "Why does this code run at compile time?"      | `build.rs`                                                     |
+| "Why is my code missing from the binary?"      | `#[cfg(test)]`                                                 |
+| "Why can't I use this type in a Query?"        | Missing `#[derive(Component)]`                                 |
+| "What does `DefaultPlugins` include?"          | ~20 plugins; check Bevy docs                                   |
+| "Why does assignment not move?"                | Type derives `Copy`                                            |

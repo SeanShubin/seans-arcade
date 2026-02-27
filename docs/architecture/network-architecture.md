@@ -6,23 +6,23 @@ Architecture and concepts for the lockstep relay networking model. For the key d
 
 The networking pattern we prefer (see design philosophy #12) is **deterministic lockstep with a relay server**. The pieces:
 
-| Term | Meaning |
-|------|---------|
-| **Deterministic lockstep** | All clients run identical simulation from shared inputs. Same inputs on tick N → same state on every machine. |
-| **Relay server** (thin server) | Lightweight server that forwards inputs without simulating. No game state, no game logic — just a mailbox. |
-| **Input authority** (sequencer) | The role of ordering inputs into a canonical per-tick sequence. The relay server fills this role. |
-| **State-free server** | Server holds no game state. If it crashes, it restarts and clients reconnect — no game state is lost. |
+| Term                            | Meaning                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Deterministic lockstep**      | All clients run identical simulation from shared inputs. Same inputs on tick N → same state on every machine. |
+| **Relay server** (thin server)  | Lightweight server that forwards inputs without simulating. No game state, no game logic — just a mailbox.    |
+| **Input authority** (sequencer) | The role of ordering inputs into a canonical per-tick sequence. The relay server fills this role.             |
+| **State-free server**           | Server holds no game state. If it crashes, it restarts and clients reconnect — no game state is lost.         |
 
 Other terms you'll encounter in networking discussions:
 
-| Term | Meaning |
-|------|---------|
-| **Server-authoritative** | Server runs the simulation and is the source of truth. Clients are thin. (Not our model.) |
+| Term                       | Meaning                                                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Server-authoritative**   | Server runs the simulation and is the source of truth. Clients are thin. (Not our model.)                            |
 | **Client-side prediction** | Client guesses the result of its own input before the server confirms. Used in server-authoritative to hide latency. |
-| **Rollback** | When a prediction was wrong, rewind to the known-good state and re-simulate forward with correct inputs. |
-| **Latency hiding** | Local prediction layer that makes actions feel instant despite round-trip delay. Factorio's term for their approach. |
-| **Input buffering** | Sending inputs a few ticks early so the coordinator has them ready before they're needed. Absorbs jitter. |
-| **Desync** | When two clients' game states diverge. Detected via checksums. Treated as a bug to fix. |
+| **Rollback**               | When a prediction was wrong, rewind to the known-good state and re-simulate forward with correct inputs.             |
+| **Latency hiding**         | Local prediction layer that makes actions feel instant despite round-trip delay. Factorio's term for their approach. |
+| **Input buffering**        | Sending inputs a few ticks early so the coordinator has them ready before they're needed. Absorbs jitter.            |
+| **Desync**                 | When two clients' game states diverge. Detected via checksums. Treated as a bug to fix.                              |
 
 ## Bevy Has No Built-In Networking
 
@@ -84,10 +84,10 @@ Our strategy uses Factorio's approach, which is distinct from rollback. The diff
 
 **Latency hiding** (our model) never lets the authoritative state be wrong. Instead, each client maintains two separate states:
 
-| State | What it is | What it's for |
-|-------|-----------|---------------|
+| State                   | What it is                                                                | What it's for                                     |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------------------- |
 | **Authoritative state** | The simulation using only confirmed inputs (received back from the relay) | The "real" game state — identical on every client |
-| **Latency state** | Authoritative state + unconfirmed local inputs replayed on top | What the player sees on screen — feels responsive |
+| **Latency state**       | Authoritative state + unconfirmed local inputs replayed on top            | What the player sees on screen — feels responsive |
 
 Each tick:
 1. Advance the authoritative state using the latest confirmed input package from the relay
@@ -157,13 +157,13 @@ If tick 200 diverges by 0.001 on one client, by tick 500 the worlds can be compl
 
 ### Architecture Comparison
 
-| Factor | P2P (input sharing) | Server-authoritative |
-|--------|---------------------|---------------------|
-| Bandwidth | Low (inputs only) | Higher (state updates) |
-| Determinism required | Yes, perfectly | No |
-| Cheat resistance | Low (each client can lie) | High (server validates) |
-| Complexity | Determinism is hard | Prediction/reconciliation is hard |
-| Best for | Fighting games, small player count, same platform | Shooters, RPGs, mixed platforms, competitive |
+| Factor               | P2P (input sharing)                               | Server-authoritative                         |
+| -------------------- | ------------------------------------------------- | -------------------------------------------- |
+| Bandwidth            | Low (inputs only)                                 | Higher (state updates)                       |
+| Determinism required | Yes, perfectly                                    | No                                           |
+| Cheat resistance     | Low (each client can lie)                         | High (server validates)                      |
+| Complexity           | Determinism is hard                               | Prediction/reconciliation is hard            |
+| Best for             | Fighting games, small player count, same platform | Shooters, RPGs, mixed platforms, competitive |
 
 ### For Bevy Specifically
 
@@ -360,10 +360,10 @@ The signaling server is like a matchmaking lobby — it introduces players but d
 
 ### Coordination Summary
 
-| Approach | Server needed? | Scales to | Complexity |
-|----------|---------------|-----------|------------|
-| Full mesh P2P | Only signaling for discovery | 2-8 players | Low |
-| Host-as-relay | No server, one player relays | 2-16 players | Medium (host migration) |
+| Approach            | Server needed?                 | Scales to        | Complexity                            |
+| ------------------- | ------------------------------ | ---------------- | ------------------------------------- |
+| Full mesh P2P       | Only signaling for discovery   | 2-8 players      | Low                                   |
+| Host-as-relay       | No server, one player relays   | 2-16 players     | Medium (host migration)               |
 | **Dedicated relay** | **Lightweight, no simulation** | **Many players** | **Low (but requires infrastructure)** |
 
 **Our choice: Dedicated relay on AWS (Option A).** A single Rust binary on a cheap cloud VM (e.g., AWS Lightsail at ~$3.50/month). All clients make outbound connections to the relay — no client ever accepts incoming connections, no player hosts the relay, and NAT traversal is a non-issue. See [network-operations.md](network-operations.md) — How Clients Connect.
@@ -402,15 +402,15 @@ This change took them from ~24 players to 400+.
 
 ### Comparison with Server-Authoritative
 
-| Dimension | Factorio (Lockstep) | Minecraft (Server-Auth) |
-|-----------|-------------------|----------------------|
-| Bandwidth | Scales with **players**, not entities | Scales with **entities near players** |
-| Server CPU | Server does NO simulation | Server does ALL simulation |
-| Join time | Must download entire world state | Only downloads nearby chunks |
-| Determinism burden | Extreme — bit-identical everywhere | None — server is truth |
-| Player scaling | 500+ in one simulation | 20-100 per server, shard for more |
-| Cheat resistance | Excellent (invalid inputs = self-desync) | Moderate (needs anti-cheat plugins) |
-| Mod compatibility | Mods must maintain determinism | Server-side mods work freely |
+| Dimension          | Factorio (Lockstep)                      | Minecraft (Server-Auth)               |
+| ------------------ | ---------------------------------------- | ------------------------------------- |
+| Bandwidth          | Scales with **players**, not entities    | Scales with **entities near players** |
+| Server CPU         | Server does NO simulation                | Server does ALL simulation            |
+| Join time          | Must download entire world state         | Only downloads nearby chunks          |
+| Determinism burden | Extreme — bit-identical everywhere       | None — server is truth                |
+| Player scaling     | 500+ in one simulation                   | 20-100 per server, shard for more     |
+| Cheat resistance   | Excellent (invalid inputs = self-desync) | Moderate (needs anti-cheat plugins)   |
+| Mod compatibility  | Mods must maintain determinism           | Server-side mods work freely          |
 
 ### The Architecture Follows the Game Design
 
@@ -476,11 +476,11 @@ All peers exchange inputs each tick; simulation only advances when all inputs ar
 
 ### Bevy Networking Crates
 
-| Crate | Architecture | Notes |
-|-------|-------------|-------|
-| **lightyear** | Server-authoritative | Most feature-complete. Built-in prediction, rollback, interpolation, lag compensation. UDP/WebTransport/Steam transports. |
-| **bevy_replicon** | Server-authoritative | Simpler, modular. Automatic component replication via Bevy's change detection. Bring-your-own transport (renet, quinnet). |
-| **bevy_ggrs** + **matchbox** | P2P rollback | GGRS is a Rust GGPO reimagination. Matchbox provides WebRTC transport (works in browsers). |
+| Crate                        | Architecture         | Notes                                                                                                                     |
+| ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **lightyear**                | Server-authoritative | Most feature-complete. Built-in prediction, rollback, interpolation, lag compensation. UDP/WebTransport/Steam transports. |
+| **bevy_replicon**            | Server-authoritative | Simpler, modular. Automatic component replication via Bevy's change detection. Bring-your-own transport (renet, quinnet). |
+| **bevy_ggrs** + **matchbox** | P2P rollback         | GGRS is a Rust GGPO reimagination. Matchbox provides WebRTC transport (works in browsers).                                |
 
 **Transport layers** (used standalone or under replicon): **renet** (UDP), **bevy_quinnet** (QUIC).
 
@@ -517,14 +517,14 @@ Clients don't need to be on the same frame at the same time. Each architecture h
 
 #### Key Concepts
 
-| Concept | Purpose |
-|---------|---------|
-| **Tick numbering** | Shared frame identity — everyone agrees tick 150 means the same game state |
-| **RTT measurement** | Clients know how far ahead to run so inputs arrive on time |
-| **Input buffering** | Absorbs jitter — send inputs a few ticks early, server buffers them |
-| **Input delay** | Buys time for slow connections |
-| **Prediction + rollback** | Don't wait — guess and correct later |
-| **Catch-up** | Lagging client processes multiple ticks in one frame to get back on track |
+| Concept                   | Purpose                                                                    |
+| ------------------------- | -------------------------------------------------------------------------- |
+| **Tick numbering**        | Shared frame identity — everyone agrees tick 150 means the same game state |
+| **RTT measurement**       | Clients know how far ahead to run so inputs arrive on time                 |
+| **Input buffering**       | Absorbs jitter — send inputs a few ticks early, server buffers them        |
+| **Input delay**           | Buys time for slow connections                                             |
+| **Prediction + rollback** | Don't wait — guess and correct later                                       |
+| **Catch-up**              | Lagging client processes multiple ticks in one frame to get back on track  |
 
 The fundamental insight: **tick number is a logical clock, not a wall clock.** All peers agree on what tick 150 means in terms of game state, but they don't need to process tick 150 at the same real-world moment.
 
