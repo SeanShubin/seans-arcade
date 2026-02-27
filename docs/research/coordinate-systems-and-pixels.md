@@ -84,6 +84,56 @@ High-DPI displays (Retina, 4K) have a **scale factor** — e.g., 2.0 means each 
 
 If you're creating a texture to fill the window pixel-for-pixel, use `physical_width/height`. If you're doing UI layout, use logical size.
 
+## Text Rendering and Fractional Scaling
+
+Bevy uses **cosmic-text** for text shaping and layout. Glyphs are rasterized into texture atlases, then sampled when drawn to screen. Understanding the pipeline explains why some font sizes look crisp and others look blurry.
+
+### The Rasterization Pipeline
+
+1. You specify `font_size` in logical pixels (e.g., `TextFont::from_font_size(20.0)`).
+2. Bevy multiplies by the window's scale factor to get the physical pixel size.
+3. Glyphs are rasterized at that physical pixel size into a font atlas texture.
+4. The atlas texture is sampled when rendering to screen.
+
+Because rasterization happens at the physical pixel size (not logical size scaled up), text is generally sharp — there's no blurry upscale step.
+
+### When Text Gets Blurry
+
+Problems appear when `font_size * scale_factor` produces a non-integer physical pixel size, or when glyph positions land between physical pixels:
+
+| Scale factor | Font size (logical) | Physical pixels | Result |
+|---|---|---|---|
+| 1.25 (125%) | 20.0 | 25.0 | Clean |
+| 1.25 (125%) | 14.0 | 17.5 | Fractional — blurry |
+| 1.5 (150%) | 20.0 | 30.0 | Clean |
+| 1.5 (150%) | 14.0 | 21.0 | Clean (lucky) |
+| 2.0 (200%) | any | always integer | Always clean |
+
+Even when the font size produces an integer physical size, individual glyph X/Y positions within a line of text can be fractional. This is **subpixel glyph positioning** — cosmic-text uses it for accurate character spacing, but it means some glyphs may straddle pixel boundaries.
+
+### Font Hinting
+
+TrueType fonts contain **hinting instructions** that adjust glyph outlines to snap to the pixel grid. Hinting matters most at small sizes (below ~24px physical) where a single pixel of drift is visible. Well-hinted fonts (like FiraMono) produce noticeably crisper text than unhinted ones.
+
+### Sizing Text: `font_size` vs. `Transform` Scale
+
+There are two ways to make text bigger — they produce very different results:
+
+| Method | What happens | Quality |
+|---|---|---|
+| `TextFont::from_font_size(48.0)` | Re-rasterizes glyphs at 48px | Sharp — new outlines at target size |
+| `Transform { scale: Vec3::splat(2.0), .. }` on a 24px text | Stretches the 24px atlas texture to 2x | Blurry — magnified bitmap |
+
+Always use `font_size` to control text size. Never scale text with `Transform`.
+
+### Practical Rules for Crisp Text
+
+- **Choose font sizes that multiply cleanly** at your target scale factor. At 1.25x, use multiples of 4 (12, 16, 20, 24). At 1.5x, use even numbers (12, 14, 16, 18, 20).
+- **Use well-hinted fonts** — monospace fonts like FiraMono tend to hint well.
+- **Snap text container positions** to values that land on physical pixel boundaries if crispness matters. At 1.5x scale, `Val::Px(20.0)` = 30.0 physical (clean), `Val::Px(15.0)` = 22.5 physical (baseline between pixels).
+- **Size text with `font_size`, not `Transform`** — `font_size` re-rasterizes; `Transform` stretches a bitmap.
+- **Integer scale factors (2x, 3x) sidestep all of this** — every logical pixel maps to a whole number of physical pixels.
+
 ## Direct Pixel Manipulation
 
 You can bypass sprites entirely and write pixels directly to a texture:
