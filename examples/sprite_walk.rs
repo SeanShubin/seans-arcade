@@ -1,8 +1,9 @@
 //! Sprite walk animation prototype.
 //!
 //! Loads Time Fantasy character frames, displays a character on screen,
-//! and plays the correct walk animation based on keyboard input direction.
-//! Q/E cycles through available characters.
+//! and plays the correct walk animation based on keyboard or gamepad input.
+//! Q/E (or bumpers) cycles through available characters.
+//! Movement via arrow keys, WASD, d-pad, or left stick.
 //!
 //! Run with: `cargo run --example sprite_walk`
 
@@ -13,14 +14,151 @@ const MOVE_SPEED: f32 = 400.0;
 const FRAME_DURATION: f32 = 0.15;
 const SPRITE_SCALE: f32 = 4.0;
 const ASSET_ROOT: &str = "external/timefantasy";
+const STICK_DEADZONE: f32 = 0.2;
+
+// ---------------------------------------------------------------------------
+// XInput FFI — bypasses Bevy's gilrs (see docs/gilrs-dual-gamepad-bug.md)
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+struct XInputGamepad {
+    buttons: u16,
+    left_trigger: u8,
+    right_trigger: u8,
+    thumb_lx: i16,
+    thumb_ly: i16,
+    thumb_rx: i16,
+    thumb_ry: i16,
+}
+
+#[repr(C)]
+struct XInputState {
+    packet_number: u32,
+    gamepad: XInputGamepad,
+}
+
+const XINPUT_GAMEPAD_DPAD_UP: u16 = 0x0001;
+const XINPUT_GAMEPAD_DPAD_DOWN: u16 = 0x0002;
+const XINPUT_GAMEPAD_DPAD_LEFT: u16 = 0x0004;
+const XINPUT_GAMEPAD_DPAD_RIGHT: u16 = 0x0008;
+const XINPUT_GAMEPAD_LEFT_SHOULDER: u16 = 0x0100;
+const XINPUT_GAMEPAD_RIGHT_SHOULDER: u16 = 0x0200;
+
+const ERROR_SUCCESS: u32 = 0;
+
+type XInputGetStateFn = unsafe extern "system" fn(u32, *mut XInputState) -> u32;
+
+fn load_xinput() -> Option<XInputGetStateFn> {
+    use std::ffi::CString;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(name: *const u8) -> *mut std::ffi::c_void;
+        fn GetProcAddress(
+            module: *mut std::ffi::c_void,
+            name: *const u8,
+        ) -> *mut std::ffi::c_void;
+    }
+
+    for dll in &[b"xinput1_4.dll\0" as &[u8], b"xinput9_1_0.dll\0"] {
+        let module = unsafe { LoadLibraryA(dll.as_ptr()) };
+        if module.is_null() {
+            continue;
+        }
+        let proc_name = CString::new("XInputGetState").unwrap();
+        let proc = unsafe { GetProcAddress(module, proc_name.as_ptr() as *const u8) };
+        if !proc.is_null() {
+            return Some(unsafe { std::mem::transmute(proc) });
+        }
+    }
+    None
+}
+
+fn normalize_thumb(value: i16) -> f32 {
+    if value >= 0 {
+        value as f32 / 32767.0
+    } else {
+        value as f32 / 32768.0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gamepad state resource (player 1 only)
+// ---------------------------------------------------------------------------
+
+#[derive(Resource, Default)]
+struct GamepadState {
+    connected: bool,
+    left_stick: Vec2,
+    dpad_up: bool,
+    dpad_down: bool,
+    dpad_left: bool,
+    dpad_right: bool,
+    left_bumper_just_pressed: bool,
+    right_bumper_just_pressed: bool,
+    prev_left_bumper: bool,
+    prev_right_bumper: bool,
+}
+
+fn read_gamepad_input(
+    mut state: ResMut<GamepadState>,
+    mut xinput_fn: Local<Option<Option<XInputGetStateFn>>>,
+) {
+    let get_state = match *xinput_fn {
+        Some(Some(f)) => f,
+        Some(None) => return,
+        None => {
+            let loaded = load_xinput();
+            if loaded.is_none() {
+                warn!("Failed to load XInput DLL — gamepad input unavailable");
+            }
+            *xinput_fn = Some(loaded);
+            match loaded {
+                Some(f) => f,
+                None => return,
+            }
+        }
+    };
+
+    let mut xinput_state = std::mem::MaybeUninit::<XInputState>::uninit();
+    let result = unsafe { get_state(0, xinput_state.as_mut_ptr()) };
+
+    if result != ERROR_SUCCESS {
+        let prev_lb = state.prev_left_bumper;
+        let prev_rb = state.prev_right_bumper;
+        *state = GamepadState::default();
+        state.prev_left_bumper = prev_lb;
+        state.prev_right_bumper = prev_rb;
+        return;
+    }
+
+    let xs = unsafe { xinput_state.assume_init() };
+    let gp = &xs.gamepad;
+    let btn = |mask: u16| gp.buttons & mask != 0;
+
+    let left_bumper = btn(XINPUT_GAMEPAD_LEFT_SHOULDER);
+    let right_bumper = btn(XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
+    state.connected = true;
+    state.left_stick = Vec2::new(normalize_thumb(gp.thumb_lx), normalize_thumb(gp.thumb_ly));
+    state.dpad_up = btn(XINPUT_GAMEPAD_DPAD_UP);
+    state.dpad_down = btn(XINPUT_GAMEPAD_DPAD_DOWN);
+    state.dpad_left = btn(XINPUT_GAMEPAD_DPAD_LEFT);
+    state.dpad_right = btn(XINPUT_GAMEPAD_DPAD_RIGHT);
+    state.left_bumper_just_pressed = left_bumper && !state.prev_left_bumper;
+    state.right_bumper_just_pressed = right_bumper && !state.prev_right_bumper;
+    state.prev_left_bumper = left_bumper;
+    state.prev_right_bumper = right_bumper;
+}
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .init_resource::<GamepadState>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (switch_character, player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
+            (read_gamepad_input, switch_character, player_movement, wrap_position, animate_sprite, sync_ghosts).chain(),
         )
         .run();
 }
@@ -182,16 +320,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn switch_character(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepad: Res<GamepadState>,
     mut assets: ResMut<CharacterAssets>,
     mut query: Query<(&Facing, &mut WalkAnimation, &mut Sprite), With<Player>>,
 ) {
     let count = assets.groups.len();
     let prev = assets.current;
 
-    if keyboard.just_pressed(KeyCode::KeyQ) {
+    if keyboard.just_pressed(KeyCode::KeyQ) || gamepad.left_bumper_just_pressed {
         assets.current = (assets.current + count - 1) % count;
     }
-    if keyboard.just_pressed(KeyCode::KeyE) {
+    if keyboard.just_pressed(KeyCode::KeyE) || gamepad.right_bumper_just_pressed {
         assets.current = (assets.current + 1) % count;
     }
 
@@ -212,12 +351,14 @@ fn switch_character(
 
 fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
+    gamepad: Res<GamepadState>,
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut Facing, &mut WalkAnimation), With<Player>>,
 ) {
     let mut direction = Vec2::ZERO;
     let mut new_facing: Option<Direction> = None;
 
+    // Keyboard
     if keyboard.pressed(KeyCode::ArrowUp) || keyboard.pressed(KeyCode::KeyW) {
         direction.y += 1.0;
         new_facing = Some(Direction::Up);
@@ -233,6 +374,42 @@ fn player_movement(
     if keyboard.pressed(KeyCode::ArrowRight) || keyboard.pressed(KeyCode::KeyD) {
         direction.x += 1.0;
         new_facing = Some(Direction::Right);
+    }
+
+    // Gamepad d-pad
+    if gamepad.dpad_up {
+        direction.y += 1.0;
+        new_facing = Some(Direction::Up);
+    }
+    if gamepad.dpad_down {
+        direction.y -= 1.0;
+        new_facing = Some(Direction::Down);
+    }
+    if gamepad.dpad_left {
+        direction.x -= 1.0;
+        new_facing = Some(Direction::Left);
+    }
+    if gamepad.dpad_right {
+        direction.x += 1.0;
+        new_facing = Some(Direction::Right);
+    }
+
+    // Gamepad left stick
+    if gamepad.left_stick.length() > STICK_DEADZONE {
+        direction += gamepad.left_stick;
+        if gamepad.left_stick.x.abs() > gamepad.left_stick.y.abs() {
+            new_facing = Some(if gamepad.left_stick.x > 0.0 {
+                Direction::Right
+            } else {
+                Direction::Left
+            });
+        } else {
+            new_facing = Some(if gamepad.left_stick.y > 0.0 {
+                Direction::Up
+            } else {
+                Direction::Down
+            });
+        }
     }
 
     for (mut transform, mut facing, mut anim) in &mut query {
