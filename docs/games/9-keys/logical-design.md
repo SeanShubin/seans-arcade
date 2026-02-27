@@ -10,7 +10,8 @@ This specification covers the logical design of the game only. Visuals will be i
 - Each square has four transitions: up, down, left, right.
 - Each transition connects two squares.
 - Each transition between a grid square is either passable, gated, or impassable.
-- Impassable transitions are arranged to make the maze finite.
+- The maze is toroidal — edges wrap to opposite edges, forming a closed surface with no boundaries.
+- The maze is finite by topology.
 - Maze size should favor smaller, but not so constrained that the ways the maze can be generated are predictable to a human.
 
 ## Keys and Gates
@@ -24,6 +25,10 @@ This specification covers the logical design of the game only. Visuals will be i
 - Each key has a unique color.
 - Each key has a unique name.
 - Gates are passable when the player has the corresponding key, impassable otherwise.
+- Gates are classified as either hard or soft.
+- Hard gates form complete topological cuts across the torus. There is no path around them — the player must have the corresponding key.
+- Soft gates block the shortest path but can be bypassed by wrapping around the torus. Finding the key unlocks the short path and any associated shortcuts.
+- Progression gates (those enforcing the key dependency order) are always hard.
 - Individual players are prevented from moving through a gate they don't have a key for.
 - Keys are never lost once acquired.
 
@@ -37,8 +42,11 @@ This specification covers the logical design of the game only. Visuals will be i
 
 ## Ariadne's Thread
 
-- Ariadne's Thread will indicate if there are accessible unexplored spaces down that path.
+- Ariadne's Thread lights up the direction(s) of the shortest route to the nearest unexplored accessible space.
 - What is "accessible" is determined by what keys the player currently has.
+- If multiple directions tie for shortest route, all tied directions light up.
+- Ariadne's Thread can be upgraded once. The upgrade causes Thread to show the number of steps to the nearest unexplored accessible space in all four directions.
+- The Thread upgrade is placed mid-Phase 2 (between keys 4-6), separate from Argus's Eye upgrades.
 - Picking up Ariadne's Thread is optional.
 - Ariadne's Thread can be acquired before any keys.
 
@@ -80,9 +88,10 @@ This specification covers the logical design of the game only. Visuals will be i
 - The second key cannot be reached without the first key.
 - The third key cannot be reached without the second key.
 - The next 3 keys can be gathered in any order, but the maze topology will require the first 3 keys be gathered first.
-- The final 3 keys will require backtracking to previously visited areas, meaning the maze topology will have required the player to pass gates these keys were locked behind at the time.
+- The final 3 keys each require passing through gates needing two or more earlier keys to reach, creating convergence paths that reward route planning.
 - Each key unlocks a shortcut gate near it that provides a short return path to previously visited areas.
-- The player cannot obtain the final gate key without obtaining all other keys first.
+- The player cannot obtain the final key without obtaining all other keys first.
+- The final gate is a hard gate.
 
 ## Maze Generation
 

@@ -10,7 +10,7 @@ The key progression creates a scaffolded difficulty curve across three phases:
 
 **Phase 2 — Branching (keys 4-6):** Training wheels off. The player makes real decisions — which branch first? This phase teaches route planning and spatial awareness in a forgiving context, since any order works and no choice is wrong.
 
-**Phase 3 — Backtracking (keys 7-9):** The mastery test. The player must re-evaluate spaces they already dismissed, remember where locked gates were, and plan efficient routes back. This rewards spatial memory and punishes mindless wandering.
+**Phase 3 — Convergence (keys 7-9):** The mastery test. Each key requires multiple earlier keys to reach, creating route-planning challenges. The player must reason about which keys they have, which gates they can pass, and — on a toroidal maze — whether wrapping around a soft gate is faster than finding the key for it. This rewards spatial reasoning and efficient route planning.
 
 The phase sizes being equal (3-3-3) gives each phase proportional weight. 9 total is the smallest number that divides into three meaningful phases — fewer keys would make phases too brief, more would risk the game dragging.
 
@@ -39,7 +39,7 @@ Argus's Eye upgrades are placed at phase transitions (after keys 3, 6, and at th
 
 - **1x1 during Phase 1:** The linear section is navigated blind. This reinforces the tutorial — there's only one path, so limited vision doesn't create decision paralysis, but it does teach the player to pay attention to what they've seen.
 - **3x3 during Phase 2:** When branching begins and real decisions matter, the player can now see adjacent spaces. Route planning becomes possible rather than pure guessing.
-- **5x5 during Phase 3:** Backtracking through previously visited areas is less tedious when you can see more of the surrounding maze. The wider view helps the player identify where they need to go.
+- **5x5 during Phase 3:** Navigating convergence paths across the torus is less tedious when you can see more of the surrounding maze. The wider view helps the player identify which gates they can pass and plan efficient routes.
 - **7x7 after winning:** A reward for completion. The post-win maze feels like a different experience with wide visibility.
 
 The activation level toggle adds a subtle competitive layer. Skilled players who've memorized the maze layout might turn the eye off to reduce visual noise. In multiplayer, keeping your eye off means other players can't infer your location from your behavior — you're navigating confidently through spaces they'd expect you to stumble through.
@@ -99,11 +99,13 @@ Each key unlocks a shortcut gate near itself that provides a quick return path t
 
 This decoupling means the generator can make keys genuinely hard to *find* (deep in branching sub-paths with dead ends) without making the solo experience tedious. The cooperative advantage comes purely from search parallelization, not from avoiding return-trip punishment. Solo players are rewarded with satisfying shortcuts; cooperative players are rewarded with speed. Neither is punished.
 
+On a toroidal maze, shortcuts gain additional power. A shortcut gate can wrap around the torus and connect regions that would be far apart by normal traversal. Finding a key doesn't just save backtracking — it can topologically collapse the maze, making previously distant areas immediately adjacent. This makes key discovery feel more impactful than on a flat grid.
+
 ## Small Maze Size Preference
 
 This directly mitigates the two main design risks:
 
-1. **Backtracking tedium.** Phase 3 asks players to retread old ground. In a small maze, backtracks are short enough to feel strategic rather than like padding.
+1. **Traversal tedium.** Phase 3 asks players to navigate convergence paths requiring multiple keys. In a small maze — especially a toroidal one where wrapping shortens distances — these paths feel strategic rather than like padding.
 2. **Linear start slog.** On repeated plays, the forced-order first 3 keys could feel slow in a large maze. Small mazes keep this phase brief.
 
 ## Item Pickup as a Choice
