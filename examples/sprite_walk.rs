@@ -17,6 +17,10 @@ const CANVAS_W: f32 = 320.0;
 const CANVAS_H: f32 = 180.0;
 const ASSET_ROOT: &str = "external/timefantasy";
 const STICK_DEADZONE: f32 = 0.2;
+const TILE_SIZE: f32 = 16.0;
+const GROUND_SHEET: &str = "external/timefantasy_tiles/world.png";
+const GROUND_TILE_COL: f32 = 2.0;
+const GROUND_TILE_ROW: f32 = 1.0;
 
 // ---------------------------------------------------------------------------
 // XInput FFI — bypasses Bevy's gilrs (see docs/gilrs-dual-gamepad-bug.md)
@@ -160,13 +164,24 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (read_gamepad_input, switch_character, player_movement, update_camera_scale, wrap_position, animate_sprite, sync_ghosts, update_window_title).chain(),
+            (read_gamepad_input, switch_character, player_movement, update_camera_scale, resize_ground, wrap_position, animate_sprite, sync_ghosts, update_window_title).chain(),
         )
         .run();
 }
 
 #[derive(Component)]
 struct Player;
+
+#[derive(Component)]
+struct GroundTile;
+
+#[derive(Resource)]
+struct GroundConfig {
+    image: Handle<Image>,
+    rect: Rect,
+    last_cols: i32,
+    last_rows: i32,
+}
 
 #[derive(Component)]
 struct Ghost;
@@ -323,6 +338,22 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             Visibility::Hidden,
         ));
     }
+
+    // Ground config — tiles are spawned/resized dynamically by resize_ground
+    let ground_image: Handle<Image> = asset_server.load(GROUND_SHEET);
+    let inset = 0.1;
+    let tile_rect = Rect::new(
+        GROUND_TILE_COL * TILE_SIZE + inset,
+        GROUND_TILE_ROW * TILE_SIZE + inset,
+        (GROUND_TILE_COL + 1.0) * TILE_SIZE - inset,
+        (GROUND_TILE_ROW + 1.0) * TILE_SIZE - inset,
+    );
+    commands.insert_resource(GroundConfig {
+        image: ground_image,
+        rect: tile_rect,
+        last_cols: 0,
+        last_rows: 0,
+    });
 }
 
 fn switch_character(
@@ -483,6 +514,57 @@ fn update_camera_scale(
     if (ortho.scale - new_scale).abs() > f32::EPSILON {
         ortho.scale = new_scale;
     }
+}
+
+fn resize_ground(
+    mut commands: Commands,
+    windows: Query<&Window>,
+    projection_query: Query<&Projection, With<Camera2d>>,
+    mut ground_config: ResMut<GroundConfig>,
+    ground_tiles: Query<Entity, With<GroundTile>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(projection) = projection_query.single() else {
+        return;
+    };
+    let Projection::Orthographic(ref ortho) = *projection else {
+        return;
+    };
+
+    let world_w = window.width() * ortho.scale;
+    let world_h = window.height() * ortho.scale;
+    let cols = ((world_w + 2.0 * TILE_SIZE) / TILE_SIZE).ceil() as i32;
+    let rows = ((world_h + 2.0 * TILE_SIZE) / TILE_SIZE).ceil() as i32;
+
+    if cols == ground_config.last_cols && rows == ground_config.last_rows {
+        return;
+    }
+
+    for entity in &ground_tiles {
+        commands.entity(entity).despawn();
+    }
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = (col - cols / 2) as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            let y = (row - rows / 2) as f32 * TILE_SIZE + TILE_SIZE / 2.0;
+            commands.spawn((
+                GroundTile,
+                Sprite {
+                    image: ground_config.image.clone(),
+                    rect: Some(ground_config.rect),
+                    custom_size: Some(Vec2::splat(TILE_SIZE)),
+                    ..default()
+                },
+                Transform::from_xyz(x, y, -1.0),
+            ));
+        }
+    }
+
+    ground_config.last_cols = cols;
+    ground_config.last_rows = rows;
 }
 
 fn wrap_position(

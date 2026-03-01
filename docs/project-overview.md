@@ -128,6 +128,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [design-topics-to-explore.md](research/design-topics-to-explore.md) — Design topics for future research
 - [character-rendering.md](research/character-rendering.md) — Character rendering approaches: goals, tensions, and tradeoffs (open question)
 - [third-party-assets.md](research/third-party-assets.md) — Free asset packs and tools for prototyping
+- [sprite-metadata-formats.md](research/sprite-metadata-formats.md) — Sprite and spritesheet metadata formats: what they contain, who uses them
 
 ### Game Design — 9 Keys
 - [logical-design.md](games/9-keys/logical-design.md) — Logical design specification
