@@ -8,19 +8,34 @@
 //! Run with: `cargo run --example sprite_walk`
 
 use bevy::{camera::ScalingMode, prelude::*};
-use std::fs;
 
 const MOVE_SPEED: f32 = 125.0;
 const STRIDE: f32 = 12.5;
 const FRAME_DURATION: f32 = STRIDE / MOVE_SPEED;
 const CANVAS_W: f32 = 320.0;
 const CANVAS_H: f32 = 180.0;
-const ASSET_ROOT: &str = "external/timefantasy";
 const STICK_DEADZONE: f32 = 0.2;
 const TILE_SIZE: f32 = 16.0;
-const GROUND_SHEET: &str = "external/timefantasy_tiles/world.png";
-const GROUND_TILE_COL: f32 = 2.0;
+const GROUND_SHEET: &str = "external/time-fantasy-tiles/TILESETS/castle.png";
+const GROUND_TILE_COL: f32 = 7.0;
 const GROUND_TILE_ROW: f32 = 1.0;
+const CHAR_CELL_W: f32 = 26.0;
+const CHAR_CELL_H: f32 = 36.0;
+
+const CHAR_SHEETS: &[(&str, &str)] = &[
+    ("bonus1", "external/time-fantasy-characters/sheets/bonus1.png"),
+    ("chara2", "external/time-fantasy-characters/sheets/chara2.png"),
+    ("chara3", "external/time-fantasy-characters/sheets/chara3.png"),
+    ("chara4", "external/time-fantasy-characters/sheets/chara4.png"),
+    ("chara5", "external/time-fantasy-characters/sheets/chara5.png"),
+    ("military1", "external/time-fantasy-characters/sheets/military1.png"),
+    ("military2", "external/time-fantasy-characters/sheets/military2.png"),
+    ("military3", "external/time-fantasy-characters/sheets/military3.png"),
+    ("npc1", "external/time-fantasy-characters/sheets/npc1.png"),
+    ("npc2", "external/time-fantasy-characters/sheets/npc2.png"),
+    ("npc3", "external/time-fantasy-characters/sheets/npc3.png"),
+    ("npc4", "external/time-fantasy-characters/sheets/npc4.png"),
+];
 
 // ---------------------------------------------------------------------------
 // XInput FFI — bypasses Bevy's gilrs (see docs/gilrs-dual-gamepad-bug.md)
@@ -197,7 +212,13 @@ enum Direction {
 #[derive(Component)]
 struct Facing(Direction);
 
-type FrameSet = [[Handle<Image>; 3]; 4]; // [direction][stand, walk1, walk2]
+#[derive(Clone)]
+struct FrameRef {
+    image: Handle<Image>,
+    rect: Rect,
+}
+
+type FrameSet = [[FrameRef; 3]; 4]; // [direction][stand, walk1, walk2]
 
 #[derive(Resource)]
 struct CharacterAssets {
@@ -221,75 +242,57 @@ fn direction_row(direction: Direction) -> usize {
     }
 }
 
-fn load_frame_set(asset_server: &AssetServer, path: &str) -> FrameSet {
-    [
-        [
-            asset_server.load(format!("{path}/down_stand.png")),
-            asset_server.load(format!("{path}/down_walk1.png")),
-            asset_server.load(format!("{path}/down_walk2.png")),
-        ],
-        [
-            asset_server.load(format!("{path}/up_stand.png")),
-            asset_server.load(format!("{path}/up_walk1.png")),
-            asset_server.load(format!("{path}/up_walk2.png")),
-        ],
-        [
-            asset_server.load(format!("{path}/left_stand.png")),
-            asset_server.load(format!("{path}/left_walk1.png")),
-            asset_server.load(format!("{path}/left_walk2.png")),
-        ],
-        [
-            asset_server.load(format!("{path}/right_stand.png")),
-            asset_server.load(format!("{path}/right_walk1.png")),
-            asset_server.load(format!("{path}/right_walk2.png")),
-        ],
-    ]
+/// Sheet row for each direction within a character block.
+fn sheet_dir_row(direction: Direction) -> f32 {
+    match direction {
+        Direction::Down => 0.0,
+        Direction::Left => 1.0,
+        Direction::Right => 2.0,
+        Direction::Up => 3.0,
+    }
 }
 
-/// Scans the asset directory for character folders that have the full 12-frame walk set.
-fn discover_character_paths() -> Vec<String> {
-    let base = std::path::Path::new("assets").join(ASSET_ROOT);
-    let required = [
-        "down_stand.png", "down_walk1.png", "down_walk2.png",
-        "up_stand.png", "up_walk1.png", "up_walk2.png",
-        "left_stand.png", "left_walk1.png", "left_walk2.png",
-        "right_stand.png", "right_walk1.png", "right_walk2.png",
-    ];
+/// Pixel rect for a character/direction/frame on a sprite sheet.
+///
+/// Sheet layout: 4 characters across × 2 down, each block 3 cols × 4 rows.
+/// Columns within a block: 0 = walk1, 1 = idle, 2 = walk2.
+/// Rows within a block: 0 = down, 1 = left, 2 = right, 3 = up.
+fn char_frame_rect(char_index: usize, direction: Direction, frame: usize) -> Rect {
+    let col_block = (char_index % 4) as f32;
+    let row_block = (char_index / 4) as f32;
 
-    let mut paths = Vec::new();
-
-    let Ok(categories) = fs::read_dir(&base) else {
-        return paths;
+    let frame_col = match frame {
+        0 => 1.0, // idle/stand
+        1 => 0.0, // walk1
+        _ => 2.0, // walk2
     };
 
-    for category in categories.flatten() {
-        if !category.file_type().map_or(false, |ft| ft.is_dir()) {
-            continue;
-        }
-        let Ok(entries) = fs::read_dir(category.path()) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            if !entry.file_type().map_or(false, |ft| ft.is_dir()) {
-                continue;
-            }
-            let has_all = required.iter().all(|name| entry.path().join(name).exists());
-            if has_all {
-                // Build the asset path relative to assets/
-                let category_name = category.file_name();
-                let entry_name = entry.file_name();
-                let asset_path = format!(
-                    "{ASSET_ROOT}/{}/{}",
-                    category_name.to_string_lossy(),
-                    entry_name.to_string_lossy()
-                );
-                paths.push(asset_path);
-            }
-        }
-    }
+    let x = (col_block * 3.0 + frame_col) * CHAR_CELL_W;
+    let y = (row_block * 4.0 + sheet_dir_row(direction)) * CHAR_CELL_H;
 
-    paths.sort();
-    paths
+    Rect::new(x, y, x + CHAR_CELL_W, y + CHAR_CELL_H)
+}
+
+/// Loads one sprite sheet and returns 8 (name, FrameSet) entries.
+fn load_sheet_characters(
+    asset_server: &AssetServer,
+    sheet_name: &str,
+    sheet_path: &str,
+) -> Vec<(String, FrameSet)> {
+    let image: Handle<Image> = asset_server.load(sheet_path.to_string());
+    (0..8)
+        .map(|i| {
+            let name = format!("{sheet_name}_{i}");
+            let frames = [Direction::Down, Direction::Up, Direction::Left, Direction::Right]
+                .map(|dir| {
+                    [0, 1, 2].map(|f| FrameRef {
+                        image: image.clone(),
+                        rect: char_frame_rect(i, dir, f),
+                    })
+                });
+            (name, frames)
+        })
+        .collect()
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -302,18 +305,15 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         }),
     ));
 
-    let paths = discover_character_paths();
-    assert!(!paths.is_empty(), "No character assets found. Run setup-assets.sh first.");
+    let mut groups = Vec::new();
+    for &(name, path) in CHAR_SHEETS {
+        groups.extend(load_sheet_characters(&asset_server, name, path));
+    }
+    assert!(!groups.is_empty(), "No character sheets configured.");
 
-    let groups: Vec<(String, FrameSet)> = paths
-        .into_iter()
-        .map(|path| {
-            let frames = load_frame_set(&asset_server, &path);
-            (path, frames)
-        })
-        .collect();
-
-    let initial_sprite = groups[0].1[0][0].clone();
+    let initial = &groups[0].1[0][0]; // down, stand
+    let initial_image = initial.image.clone();
+    let initial_rect = initial.rect;
 
     commands.insert_resource(CharacterAssets {
         groups,
@@ -328,13 +328,21 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             timer: Timer::from_seconds(FRAME_DURATION, TimerMode::Repeating),
             moving: false,
         },
-        Sprite::from_image(initial_sprite.clone()),
+        Sprite {
+            image: initial_image.clone(),
+            rect: Some(initial_rect),
+            ..default()
+        },
     ));
 
     for _ in 0..3 {
         commands.spawn((
             Ghost,
-            Sprite::from_image(initial_sprite.clone()),
+            Sprite {
+                image: initial_image.clone(),
+                rect: Some(initial_rect),
+                ..default()
+            },
             Visibility::Hidden,
         ));
     }
@@ -380,10 +388,11 @@ fn switch_character(
 
     for (facing, mut anim, mut sprite) in &mut query {
         let row = direction_row(facing.0);
-        let frames = &assets.groups[assets.current].1;
+        let frame = &assets.groups[assets.current].1[row][0];
         anim.frame_index = 0;
         anim.timer.reset();
-        sprite.image = frames[row][0].clone();
+        sprite.image = frame.image.clone();
+        sprite.rect = Some(frame.rect);
     }
 }
 
@@ -478,7 +487,9 @@ fn animate_sprite(
         if !anim.moving {
             anim.frame_index = 0;
             anim.timer.reset();
-            sprite.image = frames[row][0].clone();
+            let frame = &frames[row][0];
+            sprite.image = frame.image.clone();
+            sprite.rect = Some(frame.rect);
             continue;
         }
 
@@ -487,7 +498,9 @@ fn animate_sprite(
             anim.frame_index = if anim.frame_index == 1 { 2 } else { 1 };
         }
 
-        sprite.image = frames[row][anim.frame_index].clone();
+        let frame = &frames[row][anim.frame_index];
+        sprite.image = frame.image.clone();
+        sprite.rect = Some(frame.rect);
     }
 }
 
@@ -641,6 +654,7 @@ fn sync_ghosts(
         };
         ghost_tf.translation = player_tf.translation + offset;
         ghost_sprite.image = player_sprite.image.clone();
+        ghost_sprite.rect = player_sprite.rect;
 
         let near_x = px.abs() > w / 2.0 - 20.0;
         let near_y = py.abs() > h / 2.0 - 20.0;
@@ -659,7 +673,6 @@ fn update_window_title(
     mut windows: Query<&mut Window>,
     projection_query: Query<&Projection, With<Camera2d>>,
     player_query: Query<(&Transform, &Sprite), With<Player>>,
-    images: Res<Assets<Image>>,
     assets: Res<CharacterAssets>,
 ) {
     let Ok(mut window) = windows.single_mut() else {
@@ -683,9 +696,9 @@ fn update_window_title(
     let px = player_tf.translation.x as i32;
     let py = player_tf.translation.y as i32;
 
-    let sprite_size = images
-        .get(&player_sprite.image)
-        .map(|img| format!("{}x{}", img.width(), img.height()))
+    let sprite_size = player_sprite
+        .rect
+        .map(|r| format!("{}x{}", r.width() as i32, r.height() as i32))
         .unwrap_or_else(|| "?x?".into());
 
     let char_path = &assets.groups[assets.current].0;

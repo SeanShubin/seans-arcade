@@ -1,6 +1,6 @@
 asset_root = "D:/keep/assets/unzipped"
 output_dir = "sprite-metadata"
-export_dir = "assets"
+export_dir = "assets/external"
 
 [[packs]]
 name = "time-fantasy-tiles"
