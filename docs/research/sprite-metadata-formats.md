@@ -180,7 +180,7 @@ Open-source alternative to Spine. Same concept — 2D skeletal animation with bo
 | Smooth skeletal 2D animation (commercial)    | Spine                     |
 | Smooth skeletal 2D animation (free)          | DragonBones               |
 
-For this project's current needs (pixel art sprite sheets from asset packs), the no-metadata grid approach or Aseprite JSON export are the most relevant. Tiled becomes relevant when building tilemaps with collision data.
+This project built a custom TOML-based format for sprite sheet metadata — see the [format spec](../architecture/sprite-metadata-format.md) and [pipeline workflow](../architecture/sprite-pipeline.md). Tiled becomes relevant when building tilemaps with collision data.
 
 ## Appendix: Time Fantasy Asset Pack Layout
 

@@ -1,0 +1,22 @@
+asset_root = "D:/keep/assets/unzipped"
+output_dir = "sprite-metadata"
+export_dir = "assets"
+
+[[packs]]
+name = "time-fantasy-tiles"
+dir = "TimeFantasy_TILES_6.24.17"
+exclude = ["guide.png"]
+
+[[packs]]
+name = "time-fantasy-characters"
+dir = "timefantasy_characters"
+
+[[packs]]
+name = "time-fantasy-icons1"
+dir = "icons_8.13.20"
+exclude = ["quick_guide.png"]
+
+[[packs]]
+name = "time-fantasy-icons2"
+dir = "icons_12.26.19"
+exclude = ["quick_guide.png"]

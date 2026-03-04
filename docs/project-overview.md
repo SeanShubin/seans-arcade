@@ -112,6 +112,8 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [distribution.md](architecture/distribution.md) — Distribution, versioning, CI pipeline, and auto-update
 - [game-engine-anatomy.md](architecture/game-engine-anatomy.md) — How a game engine is structured
 - [session-architecture.md](architecture/session-architecture.md) — Session architecture decision: unified world state, not multiplexed sessions
+- [sprite-pipeline.md](architecture/sprite-pipeline.md) — Sprite pipeline workflow: discover → grid → export
+- [sprite-metadata-format.md](architecture/sprite-metadata-format.md) — Sprite metadata TOML format specification
 
 ### Research — Game Design
 - [design-philosophy.md](research/design-philosophy.md) — Core game design principles

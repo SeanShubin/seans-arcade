@@ -17,11 +17,16 @@
 //! Run with: `cargo run --example asset_browser`
 //! Or:       `cargo run --example asset_browser -- D:\keep\assets`
 
+#[path = "shared/scan_config.rs"]
+mod scan_config;
+
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::camera::visibility::NoFrustumCulling;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use scan_config::{BrowserConfig, load_config};
 use std::path::{Path, PathBuf};
 
 const DEFAULT_ROOT: &str = "assets";
@@ -138,8 +143,6 @@ fn read_gamepad_input(
 #[derive(Resource)]
 struct ImageList {
     paths: Vec<PathBuf>,
-    /// Paths relative to the asset root, usable with AssetServer.
-    asset_paths: Vec<String>,
     current: usize,
 }
 
@@ -182,21 +185,30 @@ struct HudText;
 // Directory scanning
 // ---------------------------------------------------------------------------
 
-fn discover_pngs(root: &Path) -> Vec<PathBuf> {
+fn discover_pngs(root: &Path, config: &BrowserConfig) -> Vec<PathBuf> {
     let mut results = Vec::new();
-    scan_dir(root, &mut results);
+    scan_dir(root, &config.skip_directories, &mut results);
     results.sort();
     results
 }
 
-fn scan_dir(dir: &Path, out: &mut Vec<PathBuf>) {
+fn scan_dir(dir: &Path, skip: &[String], out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            scan_dir(&path, out);
+            let dominated = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| {
+                    let lower = name.to_ascii_lowercase();
+                    skip.iter().any(|s| lower == *s)
+                });
+            if !dominated {
+                scan_dir(&path, skip, out);
+            }
         } else if path.extension().and_then(|e| e.to_str()) == Some("png") {
             out.push(path);
         }
@@ -213,31 +225,43 @@ fn get_root_path() -> PathBuf {
     }
 }
 
-/// Try to make `path` relative to `base`. Returns the relative portion as a
-/// forward-slash string suitable for Bevy's AssetServer.
-fn make_asset_path(path: &Path, asset_root: &Path) -> Option<String> {
-    let canon_path = path.canonicalize().ok()?;
-    let canon_root = asset_root.canonicalize().ok()?;
-    let rel = canon_path.strip_prefix(&canon_root).ok()?;
-    Some(rel.to_string_lossy().replace('\\', "/"))
+/// Load a PNG from disk and insert it into the Bevy image store.
+fn load_png_from_disk(path: &Path, images: &mut Assets<Image>) -> Handle<Image> {
+    let bytes = std::fs::read(path).expect("failed to read PNG file");
+    let dyn_img = image::load_from_memory(&bytes).expect("failed to decode PNG");
+    let rgba = dyn_img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let bevy_image = Image::new(
+        Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        rgba.into_raw(),
+        TextureFormat::Rgba8UnormSrgb,
+        default(),
+    );
+    images.add(bevy_image)
 }
 
 // ---------------------------------------------------------------------------
 // Systems
 // ---------------------------------------------------------------------------
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, images: Res<ImageList>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    image_list: Res<ImageList>,
+    mut image_assets: ResMut<Assets<Image>>,
+) {
     commands.spawn(Camera2d);
 
     // Spawn sprite for current image
-    let handle: Handle<Image> = asset_server.load(&images.asset_paths[images.current]);
+    let handle = load_png_from_disk(&image_list.paths[image_list.current], &mut image_assets);
     commands.spawn((BrowserSprite, Sprite::from_image(handle), NoFrustumCulling));
 
     // HUD text
     let mono_font: Handle<Font> = asset_server.load("local/fonts/FiraMono-Regular.ttf");
     commands.spawn((
         HudText,
-        Text::new(format_hud(&images, None, 0, 0, false)),
+        Text::new(format_hud(&image_list, None, 0, 0, false)),
         TextFont {
             font: mono_font,
             font_size: HUD_FONT_SIZE,
@@ -257,31 +281,31 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, images: Res<Ima
 fn navigate_images(
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepad: Res<GamepadNav>,
-    mut images: ResMut<ImageList>,
+    mut image_list: ResMut<ImageList>,
     mut browser: ResMut<BrowserState>,
-    asset_server: Res<AssetServer>,
+    mut image_assets: ResMut<Assets<Image>>,
     mut sprite_q: Query<&mut Sprite, With<BrowserSprite>>,
 ) {
-    let count = images.paths.len();
+    let count = image_list.paths.len();
     if count == 0 {
         return;
     }
 
-    let prev = images.current;
+    let prev = image_list.current;
 
     if keyboard.just_pressed(KeyCode::ArrowLeft) || gamepad.lb_just {
-        images.current = (images.current + count - 1) % count;
+        image_list.current = (image_list.current + count - 1) % count;
     }
     if keyboard.just_pressed(KeyCode::ArrowRight) || gamepad.rb_just {
-        images.current = (images.current + 1) % count;
+        image_list.current = (image_list.current + 1) % count;
     }
 
-    if images.current != prev {
+    if image_list.current != prev {
         browser.pan = Vec2::ZERO;
         browser.cell_w = 0;
         browser.cell_h = 0;
 
-        let handle: Handle<Image> = asset_server.load(&images.asset_paths[images.current]);
+        let handle = load_png_from_disk(&image_list.paths[image_list.current], &mut image_assets);
         for mut sprite in &mut sprite_q {
             sprite.image = handle.clone();
         }
@@ -576,12 +600,12 @@ fn update_window_title(
 
 fn scrubber_ui(
     mut contexts: EguiContexts,
-    mut images: ResMut<ImageList>,
+    mut image_list: ResMut<ImageList>,
     mut browser: ResMut<BrowserState>,
-    asset_server: Res<AssetServer>,
+    mut image_assets: ResMut<Assets<Image>>,
     mut sprite_q: Query<&mut Sprite, With<BrowserSprite>>,
 ) {
-    let count = images.paths.len();
+    let count = image_list.paths.len();
     if count == 0 {
         return;
     }
@@ -590,13 +614,13 @@ fn scrubber_ui(
 
     egui::TopBottomPanel::bottom("scrubber").show(ctx, |ui| {
         ui.horizontal(|ui| {
-            let path = &images.paths[images.current];
+            let path = &image_list.paths[image_list.current];
             let label = path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "?".into());
 
-            let mut index = images.current as f32;
+            let mut index = image_list.current as f32;
             let max = (count - 1) as f32;
 
             ui.spacing_mut().slider_width = ui.available_width() - 200.0;
@@ -607,17 +631,19 @@ fn scrubber_ui(
                     .show_value(false),
             );
 
-            ui.label(format!("{}/{} {}", images.current + 1, count, label));
+            ui.label(format!("{}/{} {}", image_list.current + 1, count, label));
 
             if response.changed() {
                 let new_index = index.round() as usize;
-                if new_index != images.current {
-                    images.current = new_index;
+                if new_index != image_list.current {
+                    image_list.current = new_index;
                     browser.pan = Vec2::ZERO;
                     browser.cell_w = 0;
                     browser.cell_h = 0;
-                    let handle: Handle<Image> =
-                        asset_server.load(&images.asset_paths[images.current]);
+                    let handle = load_png_from_disk(
+                        &image_list.paths[image_list.current],
+                        &mut image_assets,
+                    );
                     for mut sprite in &mut sprite_q {
                         sprite.image = handle.clone();
                     }
@@ -634,45 +660,19 @@ fn scrubber_ui(
 fn main() {
     let root = get_root_path();
     let abs_root = std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+    let config = load_config(&abs_root);
     let pngs = if abs_root.is_file() {
         vec![abs_root.clone()]
     } else {
-        discover_pngs(&abs_root)
+        discover_pngs(&abs_root, &config)
     };
 
-    // The Bevy assets/ directory for AssetServer
-    let bevy_asset_root = std::fs::canonicalize("assets").ok();
-
-    let mut asset_paths: Vec<String> = Vec::new();
-    let mut valid_pngs: Vec<PathBuf> = Vec::new();
-
-    for p in &pngs {
-        if let Some(ref ar) = bevy_asset_root {
-            if let Some(rel) = make_asset_path(p, ar) {
-                asset_paths.push(rel);
-                valid_pngs.push(p.clone());
-            }
-        }
-    }
-
-    // If scanning outside assets/, fall back to loading via absolute paths
-    // by symlinking or warn. For now, only support assets under `assets/`.
-    if valid_pngs.is_empty() && !pngs.is_empty() {
-        eprintln!(
-            "Found {} PNGs under {}, but none are under the Bevy `assets/` directory.",
-            pngs.len(),
-            abs_root.display()
-        );
-        eprintln!("Run from the project root or pass a path inside `assets/`.");
-        std::process::exit(1);
-    }
-
-    if valid_pngs.is_empty() {
+    if pngs.is_empty() {
         eprintln!("No PNG files found under {}", abs_root.display());
         std::process::exit(1);
     }
 
-    info!("Asset browser: found {} PNGs", valid_pngs.len());
+    info!("Asset browser: found {} PNGs", pngs.len());
 
     App::new()
         .add_plugins((
@@ -680,8 +680,7 @@ fn main() {
             EguiPlugin::default(),
         ))
         .insert_resource(ImageList {
-            paths: valid_pngs,
-            asset_paths,
+            paths: pngs,
             current: 0,
         })
         .init_resource::<BrowserState>()
