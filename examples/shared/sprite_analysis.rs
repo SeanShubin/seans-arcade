@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Common cell sizes for pixel art sprite sheets.
 pub const COMMON_CELL_SIZES: &[u32] = &[8, 16, 24, 32, 48, 64];
@@ -220,4 +220,74 @@ pub fn occupancy_grid(
     }
 
     (occupied, total)
+}
+
+// ===========================================================================
+// Valid cell sizes
+// ===========================================================================
+
+/// All divisors of `dim` that are >= 8.
+pub fn valid_cell_sizes(dim: u32) -> Vec<u32> {
+    (8..=dim).filter(|&s| dim % s == 0).collect()
+}
+
+// ===========================================================================
+// PNG file collection
+// ===========================================================================
+
+/// Glob `**/*.png` under `dir`, apply exclude patterns and skip-directory
+/// filtering, return paths relative to `dir`.
+pub fn collect_png_files(dir: &Path, exclude: &[String], skip_directories: &[String]) -> Vec<String> {
+    let pattern = dir.join("**/*.png");
+    let pattern_str = pattern.to_string_lossy().replace('\\', "/");
+
+    let mut files: Vec<PathBuf> = glob::glob(&pattern_str)
+        .unwrap_or_else(|e| {
+            eprintln!("Invalid glob pattern: {e}");
+            std::process::exit(1);
+        })
+        .filter_map(|r| r.ok())
+        .filter(|p| p.is_file())
+        .filter(|p| {
+            let rel = p.strip_prefix(dir).unwrap_or(p);
+            !rel.components().any(|c| {
+                if let std::path::Component::Normal(name) = c {
+                    if let Some(name_str) = name.to_str() {
+                        let lower = name_str.to_ascii_lowercase();
+                        return skip_directories.iter().any(|s| lower == *s);
+                    }
+                }
+                false
+            })
+        })
+        .collect();
+
+    // Apply exclude patterns — matched against relative path from dir.
+    let match_options = glob::MatchOptions {
+        case_sensitive: false,
+        ..Default::default()
+    };
+    for exc in exclude {
+        files.retain(|p| {
+            let rel = p
+                .strip_prefix(dir)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .replace('\\', "/");
+            !glob::Pattern::new(exc)
+                .map(|pat| pat.matches_with(&rel, match_options))
+                .unwrap_or(false)
+        });
+    }
+
+    files.sort();
+    files
+        .into_iter()
+        .map(|p| {
+            p.strip_prefix(dir)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect()
 }

@@ -10,7 +10,10 @@
 
 #[path = "shared/sprite_meta.rs"]
 mod sprite_meta;
+#[path = "shared/sprite_analysis.rs"]
+mod sprite_analysis;
 
+use sprite_analysis::*;
 use sprite_meta::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -151,16 +154,6 @@ fn export_pack(
 
     let pack_name = meta.name.clone().unwrap_or_else(|| "(unnamed)".into());
 
-    // Validate
-    let errors = verify(&meta);
-    if !errors.is_empty() {
-        eprintln!("  WARN: Metadata validation errors in {}:", meta_path.display());
-        for err in &errors {
-            eprintln!("    - {err}");
-        }
-        return None;
-    }
-
     // Skip if no sheets (not yet gridded)
     if meta.sheets.is_empty() {
         eprintln!(
@@ -170,70 +163,123 @@ fn export_pack(
         return None;
     }
 
-    // Collect non-empty, non-duplicate catalog entries
-    let catalog_entries: BTreeMap<String, &CatalogEntry> = meta
-        .catalog
-        .iter()
-        .filter(|(_, e)| e.empty != Some(true) && e.duplicate_of.is_none())
-        .map(|(k, v)| (k.clone(), v))
-        .collect();
-
-    if catalog_entries.is_empty() {
-        eprintln!(
-            "  WARN: {} has no non-empty catalog entries — skipping",
-            meta_path.display()
-        );
-        return None;
-    }
-
-    eprintln!(
-        "Exporting {} catalog entries (of {} total)",
-        catalog_entries.len(),
-        meta.catalog.len()
-    );
-
-    // Collect referenced sheets
-    let mut referenced_sheets: BTreeSet<String> = BTreeSet::new();
-    for entry in catalog_entries.values() {
-        for source in &entry.sources {
-            if let Some(ref sheet_id) = source.sheet {
-                referenced_sheets.insert(sheet_id.clone());
-            }
-        }
-    }
-
-    // Build runtime metadata
+    // Build runtime metadata by recomputing catalog from sheets + PNGs
     let mut runtime = RuntimeMetadata {
         name: meta.name.clone(),
         sheets: BTreeMap::new(),
         catalog: BTreeMap::new(),
     };
 
-    // Sheets
-    for sheet_id in &referenced_sheets {
-        if let Some(sheet) = meta.sheets.get(sheet_id) {
-            runtime.sheets.insert(
-                sheet_id.clone(),
-                RuntimeSheet {
-                    file: sheet.file.clone(),
-                    cell_w: sheet.cell_w,
-                    cell_h: sheet.cell_h,
-                    cols: sheet.cols,
-                    rows: sheet.rows,
+    // Global hash dedup across all sheets
+    let mut seen_hashes: BTreeMap<u64, String> = BTreeMap::new();
+
+    for (sheet_id, sheet) in &meta.sheets {
+        let img_path = pack_root.join(&sheet.file);
+        let rgba = load_rgba_image(&img_path);
+        let cols = rgba.width() / sheet.cell_w;
+        let rows = rgba.height() / sheet.cell_h;
+
+        runtime.sheets.insert(
+            sheet_id.clone(),
+            RuntimeSheet {
+                file: sheet.file.clone(),
+                cell_w: sheet.cell_w,
+                cell_h: sheet.cell_h,
+                cols,
+                rows,
+            },
+        );
+
+        // Build a set of cells covered by spans
+        let mut spanned: BTreeSet<(u32, u32)> = BTreeSet::new();
+        for span in &sheet.spans {
+            for r in span.row..(span.row + span.row_span) {
+                for c in span.col..(span.col + span.col_span) {
+                    spanned.insert((c, r));
+                }
+            }
+        }
+
+        // Create catalog entries for spans
+        for span in &sheet.spans {
+            let x = span.col * sheet.cell_w;
+            let y = span.row * sheet.cell_h;
+            let w = span.col_span * sheet.cell_w;
+            let h = span.row_span * sheet.cell_h;
+
+            if !is_cell_occupied(&rgba, x, y, w, h) {
+                continue;
+            }
+
+            let span_img = image::imageops::crop_imm(&rgba, x, y, w, h).to_image();
+            let hash = fnv1a_hash(span_img.as_raw());
+
+            let entry_id = format!("{sheet_id}.{}.{}", span.col, span.row);
+            if let Some(_existing) = seen_hashes.get(&hash) {
+                continue; // skip duplicate
+            }
+            seen_hashes.insert(hash, entry_id.clone());
+
+            runtime.catalog.insert(
+                entry_id,
+                RuntimeCatalogEntry {
+                    sources: vec![Source::sheet_span(
+                        sheet_id,
+                        span.col,
+                        span.row,
+                        span.col_span,
+                        span.row_span,
+                    )],
                 },
             );
         }
+
+        // Create catalog entries for individual occupied, non-spanned cells
+        for row in 0..rows {
+            for col in 0..cols {
+                if spanned.contains(&(col, row)) {
+                    continue;
+                }
+
+                let x = col * sheet.cell_w;
+                let y = row * sheet.cell_h;
+
+                if !is_cell_occupied(&rgba, x, y, sheet.cell_w, sheet.cell_h) {
+                    continue;
+                }
+
+                let cell_img = crop_cell(&rgba, col, row, sheet.cell_w, sheet.cell_h);
+                let hash = fnv1a_hash(cell_img.as_raw());
+
+                let entry_id = format!("{sheet_id}.{col}.{row}");
+                if let Some(_existing) = seen_hashes.get(&hash) {
+                    continue; // skip duplicate
+                }
+                seen_hashes.insert(hash, entry_id.clone());
+
+                runtime.catalog.insert(
+                    entry_id,
+                    RuntimeCatalogEntry {
+                        sources: vec![Source::sheet_cell(sheet_id, col, row)],
+                    },
+                );
+            }
+        }
     }
 
-    // Catalog
-    for (cat_id, entry) in &catalog_entries {
-        runtime.catalog.insert(
-            cat_id.clone(),
-            RuntimeCatalogEntry {
-                sources: entry.sources.clone(),
-            },
+    if runtime.catalog.is_empty() {
+        eprintln!(
+            "  WARN: {} produced no catalog entries — skipping",
+            meta_path.display()
         );
+        return None;
     }
+
+    eprintln!(
+        "Computed {} catalog entries from {} sheets",
+        runtime.catalog.len(),
+        runtime.sheets.len()
+    );
 
     // Create output directory
     std::fs::create_dir_all(output_dir).unwrap_or_else(|e| {

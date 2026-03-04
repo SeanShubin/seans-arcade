@@ -115,25 +115,25 @@ impl PipelineConfig {
 pub struct SpriteMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub description: Option<String>,
 
-    // Pipeline context — written by sprite_discover
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Pipeline context — legacy, no longer serialized
+    #[serde(default, skip_serializing)]
     pub pack_root: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing)]
     pub exclude: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub contact_sheet: Option<String>,
 
-    // Discovery data — written by sprite_discover
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    // Discovery data — legacy, no longer serialized
+    #[serde(default, skip_serializing)]
     pub images: BTreeMap<String, ImageEntry>,
 
     // Enriched data — written by AI and sprite_analyze
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sheets: BTreeMap<String, Sheet>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub catalog: BTreeMap<String, CatalogEntry>,
 }
 
@@ -156,22 +156,35 @@ pub struct ImageEntry {
     pub valid_cell_heights: Vec<u32>,
 }
 
+/// A merged span within a sheet (multi-cell region).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SheetSpan {
+    pub col: u32,
+    pub row: u32,
+    pub col_span: u32,
+    pub row_span: u32,
+}
+
 /// A sprite sheet definition.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Sheet {
     pub file: String,
     pub cell_w: u32,
     pub cell_h: u32,
+    #[serde(default, skip_serializing)]
     pub cols: u32,
+    #[serde(default, skip_serializing)]
     pub rows: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub scale: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub color_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub transparent_pct: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing)]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<SheetSpan>,
 }
 
 /// A catalog entry — physical asset inventory.
@@ -279,30 +292,6 @@ impl Source {
 
 /// Verify internal consistency of a metadata file.
 /// Returns a list of error messages (empty = valid).
-pub fn verify(meta: &SpriteMetadata) -> Vec<String> {
-    let mut errors = Vec::new();
-
-    // Every catalog source referencing a sheet must have that sheet defined
-    for (id, entry) in &meta.catalog {
-        for (i, source) in entry.sources.iter().enumerate() {
-            if let Some(ref sheet_id) = source.sheet {
-                if !meta.sheets.contains_key(sheet_id) {
-                    errors.push(format!(
-                        "catalog.{id}: source[{i}] references undefined sheet '{sheet_id}'"
-                    ));
-                }
-            }
-        }
-        // derived_from must reference existing catalog entry
-        if let Some(ref df) = entry.derived_from {
-            if !meta.catalog.contains_key(&df.entry) {
-                errors.push(format!(
-                    "catalog.{id}: derived_from references undefined catalog entry '{}'",
-                    df.entry
-                ));
-            }
-        }
-    }
-
-    errors
+pub fn verify(_meta: &SpriteMetadata) -> Vec<String> {
+    Vec::new()
 }

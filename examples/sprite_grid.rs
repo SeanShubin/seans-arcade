@@ -17,6 +17,8 @@
 mod sprite_meta;
 #[path = "shared/sprite_analysis.rs"]
 mod sprite_analysis;
+#[path = "shared/scan_config.rs"]
+mod scan_config;
 
 use bevy::camera::visibility::NoFrustumCulling;
 use bevy::input::mouse::MouseWheel;
@@ -24,7 +26,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use sprite_analysis::*;
-use sprite_meta::{CatalogEntry, PipelineConfig, Sheet, Source, SpriteMetadata, verify};
+use sprite_meta::{PipelineConfig, Sheet, SheetSpan, SpriteMetadata, verify};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -215,6 +217,17 @@ struct CurrentRawImage {
     image_key: String,
 }
 
+#[derive(Resource, Default)]
+struct CachedImageStats {
+    image_key: String,
+    width: u32,
+    height: u32,
+    color_count: u32,
+    transparent_pct: u32,
+    valid_cell_widths: Vec<u32>,
+    valid_cell_heights: Vec<u32>,
+}
+
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
@@ -294,21 +307,35 @@ fn load_pipeline_config(path: &std::path::Path) -> PipelineConfig {
 }
 
 /// Build an EditorState from a metadata TOML path and pack root.
-/// Returns None if the TOML file doesn't exist (pack not yet discovered).
+/// Discovers PNGs from disk instead of requiring `images` in the TOML.
+/// Creates a fresh TOML if the file doesn't exist yet.
 fn build_editor_state(
     meta_path: &std::path::Path,
     pack_root: &std::path::Path,
     config_path: Option<&std::path::Path>,
-) -> Option<EditorState> {
-    let meta_text = match std::fs::read_to_string(meta_path) {
-        Ok(t) => t,
-        Err(_) => return None,
-    };
-    let meta: SpriteMetadata = match toml::from_str(&meta_text) {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("Cannot parse {}: {e}", meta_path.display());
-            return None;
+    exclude: &[String],
+    pack_name: &str,
+) -> EditorState {
+    let meta: SpriteMetadata = match std::fs::read_to_string(meta_path) {
+        Ok(text) => match toml::from_str(&text) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("Cannot parse {}: {e} — starting fresh", meta_path.display());
+                SpriteMetadata {
+                    name: Some(pack_name.to_string()),
+                    ..Default::default()
+                }
+            }
+        },
+        Err(_) => {
+            eprintln!(
+                "TOML not found at {} — starting fresh",
+                meta_path.display()
+            );
+            SpriteMetadata {
+                name: Some(pack_name.to_string()),
+                ..Default::default()
+            }
         }
     };
 
@@ -321,16 +348,17 @@ fn build_editor_state(
         eprintln!("Continuing anyway...");
     }
 
-    let image_keys: Vec<String> = meta.images.keys().cloned().collect();
+    // Discover PNGs from disk
+    let scan_cfg = scan_config::load_config(pack_root);
+    let image_keys = collect_png_files(pack_root, exclude, &scan_cfg.skip_directories);
 
     eprintln!(
-        "Loaded: {} images, {} sheets, {} catalog entries",
+        "Loaded: {} images from disk, {} sheets",
         image_keys.len(),
         meta.sheets.len(),
-        meta.catalog.len(),
     );
 
-    Some(EditorState {
+    EditorState {
         meta,
         meta_path: meta_path.to_path_buf(),
         pack_root: pack_root.to_path_buf(),
@@ -339,7 +367,7 @@ fn build_editor_state(
         current_image: 0,
         dirty: false,
         status_message: None,
-    })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -433,108 +461,41 @@ fn prev_valid_size(valid: &[u32], current: u32, dim: u32) -> u32 {
 fn apply_grid_to_image(
     meta: &mut SpriteMetadata,
     image_key: &str,
-    rgba: &image::RgbaImage,
+    _rgba: &image::RgbaImage,
     cell_w: u32,
     cell_h: u32,
-) -> (String, usize) {
-    // Remove existing sheet + catalog for this image if re-gridding
+) -> String {
+    // Remove existing sheet for this image if re-gridding
     if let Some(old_sheet_id) = sheet_for_image(meta, image_key) {
-        let prefix = format!("{old_sheet_id}.");
-        let to_remove: Vec<String> = meta
-            .catalog
-            .keys()
-            .filter(|k| k.starts_with(&prefix) || *k == &old_sheet_id)
-            .cloned()
-            .collect();
-        for id in &to_remove {
-            meta.catalog.remove(id);
-        }
         meta.sheets.remove(&old_sheet_id);
     }
 
     let sheet_id = derive_sheet_id(image_key, &meta.sheets);
-    let cols = rgba.width() / cell_w;
-    let rows = rgba.height() / cell_h;
 
     let sheet = Sheet {
         file: image_key.to_string(),
         cell_w,
         cell_h,
-        cols,
-        rows,
+        cols: 0,
+        rows: 0,
         scale: None,
         color_count: None,
         transparent_pct: None,
         description: None,
+        spans: vec![],
     };
     meta.sheets.insert(sheet_id.clone(), sheet);
 
-    // Create catalog entries for occupied cells
-    let mut new_entries: Vec<(String, CatalogEntry)> = Vec::new();
-
-    for row in 0..rows {
-        for col in 0..cols {
-            let x = col * cell_w;
-            let y = row * cell_h;
-
-            if !is_cell_occupied(rgba, x, y, cell_w, cell_h) {
-                continue;
-            }
-
-            let entry_id = format!("{sheet_id}.{col}.{row}");
-            let cell_img = crop_cell(rgba, col, row, cell_w, cell_h);
-            let analysis = analyze_cell(&cell_img);
-
-            let entry = CatalogEntry {
-                sources: vec![Source::sheet_cell(&sheet_id, col, row)],
-                derived_from: None,
-                empty: Some(analysis.empty),
-                bbox: analysis.bbox,
-                pixels: analysis.pixels,
-                colors: analysis.colors,
-                hash: analysis.hash,
-                duplicate_of: None,
-            };
-
-            new_entries.push((entry_id, entry));
-        }
-    }
-
-    let entry_count = new_entries.len();
-
-    // Hash-based dedup
-    let mut hash_map: BTreeMap<String, String> = BTreeMap::new();
-    for (id, entry) in &meta.catalog {
-        if let Some(ref hash) = entry.hash {
-            if entry.duplicate_of.is_none() {
-                hash_map.entry(hash.clone()).or_insert_with(|| id.clone());
-            }
-        }
-    }
-
-    for (id, mut entry) in new_entries {
-        if let Some(ref hash) = entry.hash {
-            if let Some(existing_id) = hash_map.get(hash) {
-                if existing_id != &id {
-                    entry.duplicate_of = Some(existing_id.clone());
-                }
-            } else {
-                hash_map.insert(hash.clone(), id.clone());
-            }
-        }
-        meta.catalog.insert(id, entry);
-    }
-
-    (sheet_id, entry_count)
+    sheet_id
 }
 
 fn merge_span(
     meta: &mut SpriteMetadata,
-    raw_image: &image::RgbaImage,
+    _raw_image: &image::RgbaImage,
     sheet_id: &str,
     start: (u32, u32),
     end: (u32, u32),
-) -> Option<String> {
+) -> bool {
     let min_col = start.0.min(end.0);
     let max_col = start.0.max(end.0);
     let min_row = start.1.min(end.1);
@@ -544,46 +505,22 @@ fn merge_span(
     let row_span = max_row - min_row + 1;
 
     if col_span <= 1 && row_span <= 1 {
-        return None;
+        return false;
     }
 
-    let sheet = meta.sheets.get(sheet_id)?;
-    let cell_w = sheet.cell_w;
-    let cell_h = sheet.cell_h;
-
-    // Remove individual entries in the span
-    for row in min_row..=max_row {
-        for col in min_col..=max_col {
-            let id = format!("{sheet_id}.{col}.{row}");
-            meta.catalog.remove(&id);
-        }
-    }
-
-    // Create merged entry
-    let merged_id = format!("{sheet_id}.{min_col}.{min_row}");
-    let x = min_col * cell_w;
-    let y = min_row * cell_h;
-    let w = col_span * cell_w;
-    let h = row_span * cell_h;
-
-    let span_img = image::imageops::crop_imm(raw_image, x, y, w, h).to_image();
-    let analysis = analyze_cell(&span_img);
-
-    let entry = CatalogEntry {
-        sources: vec![Source::sheet_span(
-            sheet_id, min_col, min_row, col_span, row_span,
-        )],
-        derived_from: None,
-        empty: Some(analysis.empty),
-        bbox: analysis.bbox,
-        pixels: analysis.pixels,
-        colors: analysis.colors,
-        hash: analysis.hash,
-        duplicate_of: None,
+    let sheet = match meta.sheets.get_mut(sheet_id) {
+        Some(s) => s,
+        None => return false,
     };
 
-    meta.catalog.insert(merged_id.clone(), entry);
-    Some(merged_id)
+    sheet.spans.push(SheetSpan {
+        col: min_col,
+        row: min_row,
+        col_span,
+        row_span,
+    });
+
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +564,24 @@ fn load_grid_display(
     }
 }
 
+fn update_cached_stats(raw_image: &CurrentRawImage, stats: &mut CachedImageStats) {
+    if stats.image_key == raw_image.image_key && !raw_image.image_key.is_empty() {
+        return;
+    }
+    if let Some(ref rgba) = raw_image.rgba {
+        let img_stats = analyze_image(rgba);
+        stats.image_key = raw_image.image_key.clone();
+        stats.width = rgba.width();
+        stats.height = rgba.height();
+        stats.color_count = img_stats.colors;
+        stats.transparent_pct = img_stats.transparent_pct;
+        stats.valid_cell_widths = valid_cell_sizes(rgba.width());
+        stats.valid_cell_heights = valid_cell_sizes(rgba.height());
+    } else {
+        *stats = CachedImageStats::default();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Systems: setup
 // ---------------------------------------------------------------------------
@@ -636,9 +591,14 @@ fn setup(
     editor: Res<EditorState>,
     mut browser: ResMut<BrowserState>,
     mut raw_image: ResMut<CurrentRawImage>,
+    mut stats: ResMut<CachedImageStats>,
     mut images: ResMut<Assets<Image>>,
 ) {
     commands.spawn(Camera2d);
+
+    // Load image first so we can compute cell sizes from it
+    let handle = load_grid_display(&editor, &mut raw_image, &mut images);
+    update_cached_stats(&raw_image, &mut stats);
 
     // Initialize cell size for first image
     if let Some(image_key) = editor.image_keys.first() {
@@ -646,13 +606,12 @@ fn setup(
             let sheet = &editor.meta.sheets[&sheet_id];
             browser.cell_w = sheet.cell_w;
             browser.cell_h = sheet.cell_h;
-        } else if let Some(img_entry) = editor.meta.images.get(image_key) {
-            browser.cell_w = default_cell_size(&img_entry.valid_cell_widths, img_entry.width);
-            browser.cell_h = default_cell_size(&img_entry.valid_cell_heights, img_entry.height);
+        } else {
+            browser.cell_w = default_cell_size(&stats.valid_cell_widths, stats.width);
+            browser.cell_h = default_cell_size(&stats.valid_cell_heights, stats.height);
         }
     }
     browser.grid_visible = true;
-    let handle = load_grid_display(&editor, &mut raw_image, &mut images);
 
     commands.spawn((EditorSprite, Sprite::from_image(handle), NoFrustumCulling));
 }
@@ -667,6 +626,7 @@ fn navigate(
     mut editor: ResMut<EditorState>,
     mut browser: ResMut<BrowserState>,
     mut raw_image: ResMut<CurrentRawImage>,
+    mut stats: ResMut<CachedImageStats>,
     mut selection: ResMut<SpanSelection>,
     mut bevy_images: ResMut<Assets<Image>>,
     mut sprite_q: Query<&mut Sprite, With<EditorSprite>>,
@@ -692,6 +652,7 @@ fn navigate(
         selection.end = None;
 
         let handle = load_grid_display(&editor, &mut raw_image, &mut bevy_images);
+        update_cached_stats(&raw_image, &mut stats);
         for mut sprite in &mut sprite_q {
             sprite.image = handle.clone();
         }
@@ -702,9 +663,9 @@ fn navigate(
             let sheet = &editor.meta.sheets[&sheet_id];
             browser.cell_w = sheet.cell_w;
             browser.cell_h = sheet.cell_h;
-        } else if let Some(img_entry) = editor.meta.images.get(image_key) {
-            browser.cell_w = default_cell_size(&img_entry.valid_cell_widths, img_entry.width);
-            browser.cell_h = default_cell_size(&img_entry.valid_cell_heights, img_entry.height);
+        } else {
+            browser.cell_w = default_cell_size(&stats.valid_cell_widths, stats.width);
+            browser.cell_h = default_cell_size(&stats.valid_cell_heights, stats.height);
         }
         browser.grid_visible = true;
     }
@@ -804,35 +765,19 @@ fn apply_camera(browser: Res<BrowserState>, mut camera_q: Query<&mut Transform, 
 
 fn toggle_grid(
     keyboard: Res<ButtonInput<KeyCode>>,
-    editor: Res<EditorState>,
-    raw_image: Res<CurrentRawImage>,
+    stats: Res<CachedImageStats>,
     mut browser: ResMut<BrowserState>,
 ) {
     if keyboard.just_pressed(KeyCode::KeyG) {
         browser.grid_visible = !browser.grid_visible;
     }
 
-    let img_w = raw_image
-        .rgba
-        .as_ref()
-        .map(|r| r.width())
-        .unwrap_or(0);
-    let img_h = raw_image
-        .rgba
-        .as_ref()
-        .map(|r| r.height())
-        .unwrap_or(0);
-    if img_w == 0 || img_h == 0 {
+    if stats.width == 0 || stats.height == 0 {
         return;
     }
 
-    // Get valid cell sizes for the current image
-    let (valid_w, valid_h) = editor
-        .image_keys
-        .get(editor.current_image)
-        .and_then(|k| editor.meta.images.get(k))
-        .map(|e| (e.valid_cell_widths.as_slice(), e.valid_cell_heights.as_slice()))
-        .unwrap_or((&[], &[]));
+    let valid_w = stats.valid_cell_widths.as_slice();
+    let valid_h = stats.valid_cell_heights.as_slice();
 
     let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
@@ -841,18 +786,18 @@ fn toggle_grid(
 
     if keyboard.just_pressed(KeyCode::Minus) || keyboard.just_pressed(KeyCode::NumpadSubtract) {
         if adjust_w {
-            browser.cell_w = prev_valid_size(valid_w, browser.cell_w, img_w);
+            browser.cell_w = prev_valid_size(valid_w, browser.cell_w, stats.width);
         }
         if adjust_h {
-            browser.cell_h = prev_valid_size(valid_h, browser.cell_h, img_h);
+            browser.cell_h = prev_valid_size(valid_h, browser.cell_h, stats.height);
         }
     }
     if keyboard.just_pressed(KeyCode::Equal) || keyboard.just_pressed(KeyCode::NumpadAdd) {
         if adjust_w {
-            browser.cell_w = next_valid_size(valid_w, browser.cell_w, img_w);
+            browser.cell_w = next_valid_size(valid_w, browser.cell_w, stats.width);
         }
         if adjust_h {
-            browser.cell_h = next_valid_size(valid_h, browser.cell_h, img_h);
+            browser.cell_h = next_valid_size(valid_h, browser.cell_h, stats.height);
         }
     }
 }
@@ -1025,50 +970,40 @@ fn draw_spans(
     let left = -w / 2.0;
     let top = h / 2.0;
 
-    // Find catalog entries for this sheet that have col_span or row_span > 1
-    for entry in editor.meta.catalog.values() {
-        for source in &entry.sources {
-            if source.sheet.as_deref() != Some(&sheet_id) {
-                continue;
-            }
-            let cs = source.col_span.unwrap_or(1);
-            let rs = source.row_span.unwrap_or(1);
-            if cs <= 1 && rs <= 1 {
-                continue;
-            }
+    // Draw spans from sheet.spans
+    let Some(sheet) = editor.meta.sheets.get(&sheet_id) else {
+        return;
+    };
 
-            let col = source.col.unwrap_or(0);
-            let row = source.row.unwrap_or(0);
+    for span in &sheet.spans {
+        let x0 = left + span.col as f32 * cw;
+        let y0 = top - span.row as f32 * ch;
+        let x1 = x0 + span.col_span as f32 * cw;
+        let y1 = y0 - span.row_span as f32 * ch;
 
-            let x0 = left + col as f32 * cw;
-            let y0 = top - row as f32 * ch;
-            let x1 = x0 + cs as f32 * cw;
-            let y1 = y0 - rs as f32 * ch;
-
-            // Draw thick outline (double lines for visibility)
-            for offset in [0.0, 1.0] {
-                let o = offset;
-                gizmos.line_2d(
-                    Vec2::new(x0 + o, y0 - o),
-                    Vec2::new(x1 - o, y0 - o),
-                    SPAN_OUTLINE_COLOR,
-                );
-                gizmos.line_2d(
-                    Vec2::new(x1 - o, y0 - o),
-                    Vec2::new(x1 - o, y1 + o),
-                    SPAN_OUTLINE_COLOR,
-                );
-                gizmos.line_2d(
-                    Vec2::new(x1 - o, y1 + o),
-                    Vec2::new(x0 + o, y1 + o),
-                    SPAN_OUTLINE_COLOR,
-                );
-                gizmos.line_2d(
-                    Vec2::new(x0 + o, y1 + o),
-                    Vec2::new(x0 + o, y0 - o),
-                    SPAN_OUTLINE_COLOR,
-                );
-            }
+        // Draw thick outline (double lines for visibility)
+        for offset in [0.0, 1.0] {
+            let o = offset;
+            gizmos.line_2d(
+                Vec2::new(x0 + o, y0 - o),
+                Vec2::new(x1 - o, y0 - o),
+                SPAN_OUTLINE_COLOR,
+            );
+            gizmos.line_2d(
+                Vec2::new(x1 - o, y0 - o),
+                Vec2::new(x1 - o, y1 + o),
+                SPAN_OUTLINE_COLOR,
+            );
+            gizmos.line_2d(
+                Vec2::new(x1 - o, y1 + o),
+                Vec2::new(x0 + o, y1 + o),
+                SPAN_OUTLINE_COLOR,
+            );
+            gizmos.line_2d(
+                Vec2::new(x0 + o, y1 + o),
+                Vec2::new(x0 + o, y0 - o),
+                SPAN_OUTLINE_COLOR,
+            );
         }
     }
 }
@@ -1283,6 +1218,7 @@ fn editor_ui(
     mut editor: ResMut<EditorState>,
     mut browser: ResMut<BrowserState>,
     mut raw_image: ResMut<CurrentRawImage>,
+    mut stats: ResMut<CachedImageStats>,
     mut selection: ResMut<SpanSelection>,
     mut bevy_images: ResMut<Assets<Image>>,
     mut sprite_q: Query<&mut Sprite, With<EditorSprite>>,
@@ -1338,60 +1274,53 @@ fn editor_ui(
                         let meta_path = pipeline.config.meta_path(pack);
                         let pack_root = pipeline.config.pack_root(pack);
 
-                        if let Some(new_state) = build_editor_state(
+                        let new_state = build_editor_state(
                             &meta_path,
                             &pack_root,
                             Some(&pipeline.config_path),
-                        ) {
-                            *editor = new_state;
-                            pipeline.current_pack = new_pack;
+                            &pack.exclude,
+                            &pack.name,
+                        );
+                        *editor = new_state;
+                        pipeline.current_pack = new_pack;
 
-                            // Reset browser state
-                            browser.pan = Vec2::ZERO;
-                            browser.fit_requested = true;
-                            browser.cell_w = 0;
-                            browser.cell_h = 0;
-                            browser.grid_visible = false;
-                            selection.start = None;
-                            selection.end = None;
-                            raw_image.rgba = None;
-                            raw_image.image_key.clear();
+                        // Reset browser state
+                        browser.pan = Vec2::ZERO;
+                        browser.fit_requested = true;
+                        browser.cell_w = 0;
+                        browser.cell_h = 0;
+                        browser.grid_visible = false;
+                        selection.start = None;
+                        selection.end = None;
+                        raw_image.rgba = None;
+                        raw_image.image_key.clear();
 
-                            // Reload display
-                            if let Some(image_key) = editor.image_keys.first() {
-                                if let Some(sheet_id) =
-                                    sheet_for_image(&editor.meta, image_key)
-                                {
-                                    let sheet = &editor.meta.sheets[&sheet_id];
-                                    browser.cell_w = sheet.cell_w;
-                                    browser.cell_h = sheet.cell_h;
-                                } else if let Some(img_entry) =
-                                    editor.meta.images.get(image_key)
-                                {
-                                    browser.cell_w = default_cell_size(
-                                        &img_entry.valid_cell_widths,
-                                        img_entry.width,
-                                    );
-                                    browser.cell_h = default_cell_size(
-                                        &img_entry.valid_cell_heights,
-                                        img_entry.height,
-                                    );
-                                }
+                        // Reload display
+                        let handle =
+                            load_grid_display(&editor, &mut raw_image, &mut bevy_images);
+                        update_cached_stats(&raw_image, &mut stats);
+
+                        if let Some(image_key) = editor.image_keys.first() {
+                            if let Some(sheet_id) =
+                                sheet_for_image(&editor.meta, image_key)
+                            {
+                                let sheet = &editor.meta.sheets[&sheet_id];
+                                browser.cell_w = sheet.cell_w;
+                                browser.cell_h = sheet.cell_h;
+                            } else {
+                                browser.cell_w = default_cell_size(
+                                    &stats.valid_cell_widths,
+                                    stats.width,
+                                );
+                                browser.cell_h = default_cell_size(
+                                    &stats.valid_cell_heights,
+                                    stats.height,
+                                );
                             }
-                            browser.grid_visible = true;
-                            let handle =
-                                load_grid_display(&editor, &mut raw_image, &mut bevy_images);
-                            for mut sprite in &mut sprite_q {
-                                sprite.image = handle.clone();
-                            }
-                        } else {
-                            editor.status_message = Some((
-                                format!(
-                                    "TOML not found for '{}' — run discover first",
-                                    pack.name
-                                ),
-                                5.0,
-                            ));
+                        }
+                        browser.grid_visible = true;
+                        for mut sprite in &mut sprite_q {
+                            sprite.image = handle.clone();
                         }
                     }
                 });
@@ -1406,9 +1335,8 @@ fn editor_ui(
                             .iter()
                             .filter(|k| sheet_for_image(&editor.meta, k).is_some())
                             .count();
-                        let catalog_count = editor.meta.catalog.len();
                         ui.label(format!(
-                            "{img_count} images, {gridded} gridded, {catalog_count} catalog entries"
+                            "{img_count} images, {gridded} gridded"
                         ));
                     }
                 }
@@ -1427,6 +1355,7 @@ fn editor_ui(
                 &mut editor,
                 &mut browser,
                 &mut raw_image,
+                &mut stats,
                 &mut selection,
                 &mut bevy_images,
                 &mut sprite_q,
@@ -1455,6 +1384,7 @@ fn show_grid_panel(
     editor: &mut ResMut<EditorState>,
     browser: &mut ResMut<BrowserState>,
     raw_image: &mut ResMut<CurrentRawImage>,
+    stats: &mut ResMut<CachedImageStats>,
     selection: &mut ResMut<SpanSelection>,
     bevy_images: &mut ResMut<Assets<Image>>,
     sprite_q: &mut Query<&mut Sprite, With<EditorSprite>>,
@@ -1492,25 +1422,30 @@ fn show_grid_panel(
             .size(14.0),
     );
 
-    if let Some(img_entry) = editor.meta.images.get(&image_key) {
+    if stats.width > 0 {
         ui.label(format!(
             "{}x{} px, {} colors, {}% transparent",
-            img_entry.width, img_entry.height, img_entry.color_count, img_entry.transparent_pct
+            stats.width, stats.height, stats.color_count, stats.transparent_pct
         ));
     }
 
     // Sheet status
     let existing_sheet = sheet_for_image(&editor.meta, &image_key);
     if let Some(ref sid) = existing_sheet {
-        let entry_count = editor
+        let span_count = editor
             .meta
-            .catalog
-            .keys()
-            .filter(|k| k.starts_with(&format!("{sid}.")))
-            .count();
+            .sheets
+            .get(sid.as_str())
+            .map(|s| s.spans.len())
+            .unwrap_or(0);
+        let span_info = if span_count > 0 {
+            format!(", {span_count} spans")
+        } else {
+            String::new()
+        };
         ui.colored_label(
             egui::Color32::from_rgb(100, 200, 100),
-            format!("Gridded: sheet \"{sid}\", {entry_count} catalog entries"),
+            format!("Gridded: sheet \"{sid}\"{span_info}"),
         );
     } else {
         ui.colored_label(
@@ -1527,17 +1462,8 @@ fn show_grid_panel(
     let img_w = raw_image.rgba.as_ref().map(|r| r.width()).unwrap_or(0);
     let img_h = raw_image.rgba.as_ref().map(|r| r.height()).unwrap_or(0);
 
-    let (valid_w, valid_h) = editor
-        .meta
-        .images
-        .get(&image_key)
-        .map(|e| {
-            (
-                e.valid_cell_widths.as_slice(),
-                e.valid_cell_heights.as_slice(),
-            )
-        })
-        .unwrap_or((&[], &[]));
+    let valid_w = stats.valid_cell_widths.as_slice();
+    let valid_h = stats.valid_cell_heights.as_slice();
 
     ui.horizontal(|ui| {
         ui.label("Width:");
@@ -1598,7 +1524,7 @@ fn show_grid_panel(
         };
         if ui.button(label).clicked() {
             if let Some(ref rgba) = raw_image.rgba.clone() {
-                let (sheet_id, count) = apply_grid_to_image(
+                let sheet_id = apply_grid_to_image(
                     &mut editor.meta,
                     &image_key,
                     rgba,
@@ -1607,7 +1533,7 @@ fn show_grid_panel(
                 );
                 editor.dirty = true;
                 editor.status_message = Some((
-                    format!("Applied grid \"{sheet_id}\": {count} occupied cells"),
+                    format!("Applied grid \"{sheet_id}\""),
                     4.0,
                 ));
             }
@@ -1617,17 +1543,6 @@ fn show_grid_panel(
     // Clear Grid button
     if let Some(ref sid) = existing_sheet {
         if ui.button("Clear Grid").clicked() {
-            let prefix = format!("{sid}.");
-            let to_remove: Vec<String> = editor
-                .meta
-                .catalog
-                .keys()
-                .filter(|k| k.starts_with(&prefix) || *k == sid)
-                .cloned()
-                .collect();
-            for id in &to_remove {
-                editor.meta.catalog.remove(id);
-            }
             editor.meta.sheets.remove(sid.as_str());
             editor.dirty = true;
             editor.status_message = Some(("Grid cleared.".into(), 3.0));
@@ -1657,12 +1572,10 @@ fn show_grid_panel(
             if let Some(ref sid) = existing_sheet {
                 if ui.button("Merge into Span").clicked() {
                     if let Some(ref rgba) = raw_image.rgba.clone() {
-                        if let Some(merged_id) =
-                            merge_span(&mut editor.meta, rgba, sid, start, end)
-                        {
+                        if merge_span(&mut editor.meta, rgba, sid, start, end) {
                             editor.dirty = true;
                             editor.status_message = Some((
-                                format!("Merged {col_span}x{row_span} cells → {merged_id}"),
+                                format!("Merged {col_span}x{row_span} cells into span"),
                                 4.0,
                             ));
                         }
@@ -1707,6 +1620,7 @@ fn show_grid_panel(
                 selection.end = None;
 
                 let handle = load_grid_display(editor, raw_image, bevy_images);
+                update_cached_stats(raw_image, stats);
                 for mut sprite in &mut *sprite_q {
                     sprite.image = handle.clone();
                 }
@@ -1716,11 +1630,11 @@ fn show_grid_panel(
                     let sheet = &editor.meta.sheets[&sheet_id];
                     browser.cell_w = sheet.cell_w;
                     browser.cell_h = sheet.cell_h;
-                } else if let Some(img_entry) = editor.meta.images.get(image_key) {
+                } else {
                     browser.cell_w =
-                        default_cell_size(&img_entry.valid_cell_widths, img_entry.width);
+                        default_cell_size(&stats.valid_cell_widths, stats.width);
                     browser.cell_h =
-                        default_cell_size(&img_entry.valid_cell_heights, img_entry.height);
+                        default_cell_size(&stats.valid_cell_heights, stats.height);
                 }
             }
         }
@@ -1738,38 +1652,22 @@ fn main() {
         CliMode::Config { config_path } => {
             let config = load_pipeline_config(&config_path);
 
-            // Find first pack with an existing TOML
-            let mut initial_pack = 0;
-            for (i, pack) in config.packs.iter().enumerate() {
-                if config.meta_path(pack).exists() {
-                    initial_pack = i;
-                    break;
-                }
-            }
-
-            let pack = &config.packs[initial_pack];
+            let pack = &config.packs[0];
             let meta_path = config.meta_path(pack);
             let pack_root = config.pack_root(pack);
 
-            let state = build_editor_state(&meta_path, &pack_root, Some(&config_path))
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "Cannot load pack '{}' — TOML not found at {}",
-                        pack.name,
-                        meta_path.display()
-                    );
-                    eprintln!("Run sprite_discover first:");
-                    eprintln!(
-                        "  cargo run --example sprite_discover -- --config {}",
-                        config_path.display()
-                    );
-                    std::process::exit(1);
-                });
+            let state = build_editor_state(
+                &meta_path,
+                &pack_root,
+                Some(&config_path),
+                &pack.exclude,
+                &pack.name,
+            );
 
             let pipeline = PipelineInfo {
                 config,
                 config_path,
-                current_pack: initial_pack,
+                current_pack: 0,
             };
 
             (state, Some(pipeline))
@@ -1778,10 +1676,12 @@ fn main() {
             meta_path,
             pack_root,
         } => {
-            let state = build_editor_state(&meta_path, &pack_root, None).unwrap_or_else(|| {
-                eprintln!("Cannot load {}", meta_path.display());
-                std::process::exit(1);
-            });
+            let pack_name = meta_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let state = build_editor_state(&meta_path, &pack_root, None, &[], &pack_name);
             (state, None)
         }
     };
@@ -1798,6 +1698,7 @@ fn main() {
     .init_resource::<SpanSelection>()
     .init_resource::<HoveredCell>()
     .init_resource::<CurrentRawImage>()
+    .init_resource::<CachedImageStats>()
     .add_systems(Startup, setup)
     .add_systems(
         Update,
