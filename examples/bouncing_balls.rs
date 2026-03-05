@@ -5,7 +5,9 @@
 use std::collections::VecDeque;
 
 use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin};
+use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use noise::{NoiseFn, Perlin};
@@ -128,14 +130,41 @@ struct BaseHue(f32);
 struct PanelWidth(f32);
 
 #[derive(Resource)]
-struct BallAssets {
-    mesh: Handle<Mesh>,
-}
+struct CircleTexture(Handle<Image>);
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn(Camera2d);
-    let mesh = meshes.add(Circle::new(1.0));
-    commands.insert_resource(BallAssets { mesh });
+
+    // Generate a white circle texture using distance-from-center for alpha.
+    const SIZE: u32 = 32;
+    let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+    let center = (SIZE - 1) as f32 / 2.0;
+    let radius = SIZE as f32 / 2.0;
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let alpha = if dist <= radius { 255 } else { 0 };
+            let i = ((y * SIZE + x) * 4) as usize;
+            pixels[i] = 255;
+            pixels[i + 1] = 255;
+            pixels[i + 2] = 255;
+            pixels[i + 3] = alpha;
+        }
+    }
+    let image = images.add(Image::new(
+        Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        pixels,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+    ));
+    commands.insert_resource(CircleTexture(image));
 }
 
 fn manage_balls(
@@ -143,8 +172,7 @@ fn manage_balls(
     config: Res<BounceConfig>,
     balls: Query<(Entity, &TrailEntities), With<Ball>>,
     window: Query<&Window, With<PrimaryWindow>>,
-    ball_assets: Res<BallAssets>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    circle_tex: Res<CircleTexture>,
 ) {
     let target = config.ball_count();
     let current = balls.iter().count();
@@ -170,13 +198,16 @@ fn manage_balls(
             for i in 0..trail_count {
                 let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
                 let trail_color = Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
-                let trail_material = materials.add(ColorMaterial::from_color(trail_color));
                 let trail_entity = commands
                     .spawn((
                         TrailDot,
-                        Mesh2d(ball_assets.mesh.clone()),
-                        MeshMaterial2d(trail_material),
-                        Transform::from_xyz(x, y, -(i as f32)).with_scale(Vec3::splat(size)),
+                        Sprite {
+                            image: circle_tex.0.clone(),
+                            color: trail_color,
+                            custom_size: Some(Vec2::splat(size)),
+                            ..default()
+                        },
+                        Transform::from_xyz(x, y, -(i as f32)),
                     ))
                     .id();
                 trail_entities.push(trail_entity);
@@ -187,12 +218,15 @@ fn manage_balls(
                 direction: rng.random_range(0.0..1000.0),
             };
 
-            let material = materials.add(ColorMaterial::from_color(color));
             commands.spawn((
                 Ball,
-                Mesh2d(ball_assets.mesh.clone()),
-                MeshMaterial2d(material),
-                Transform::from_xyz(x, y, 100.0).with_scale(Vec3::splat(size)),
+                Sprite {
+                    image: circle_tex.0.clone(),
+                    color,
+                    custom_size: Some(Vec2::splat(size)),
+                    ..default()
+                },
+                Transform::from_xyz(x, y, 100.0),
                 Velocity(vel),
                 TrailHistory(VecDeque::new()),
                 BallColor(color),
@@ -215,9 +249,8 @@ fn sync_trail_entities(
     mut commands: Commands,
     config: Res<BounceConfig>,
     mut balls: Query<(&Transform, &BallColor, &mut TrailEntities), With<Ball>>,
-    trail_dots: Query<&MeshMaterial2d<ColorMaterial>, With<TrailDot>>,
-    ball_assets: Res<BallAssets>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut trail_dots: Query<&mut Sprite, (With<TrailDot>, Without<Ball>)>,
+    circle_tex: Res<CircleTexture>,
 ) {
     if !config.is_changed() {
         return;
@@ -241,14 +274,16 @@ fn sync_trail_entities(
                 let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
                 let trail_color =
                     Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
-                let trail_material = materials.add(ColorMaterial::from_color(trail_color));
                 let trail_entity = commands
                     .spawn((
                         TrailDot,
-                        Mesh2d(ball_assets.mesh.clone()),
-                        MeshMaterial2d(trail_material),
-                        Transform::from_xyz(pos.x, pos.y, -(i as f32))
-                            .with_scale(Vec3::splat(size)),
+                        Sprite {
+                            image: circle_tex.0.clone(),
+                            color: trail_color,
+                            custom_size: Some(Vec2::splat(size)),
+                            ..default()
+                        },
+                        Transform::from_xyz(pos.x, pos.y, -(i as f32)),
                     ))
                     .id();
                 trail_ents.0.push(trail_entity);
@@ -256,12 +291,10 @@ fn sync_trail_entities(
         }
 
         for (i, &entity) in trail_ents.0.iter().enumerate().take(trail_count) {
-            if let Ok(mat_handle) = trail_dots.get(entity) {
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
-                    mat.color =
-                        Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
-                }
+            if let Ok(mut sprite) = trail_dots.get_mut(entity) {
+                let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                sprite.color =
+                    Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
             }
         }
     }
@@ -269,14 +302,14 @@ fn sync_trail_entities(
 
 fn sync_ball_size(
     config: Res<BounceConfig>,
-    mut entities: Query<&mut Transform, Or<(With<Ball>, With<TrailDot>)>>,
+    mut entities: Query<&mut Sprite, Or<(With<Ball>, With<TrailDot>)>>,
 ) {
     if !config.is_changed() {
         return;
     }
     let size = config.ball_size();
-    for mut transform in &mut entities {
-        transform.scale = Vec3::splat(size);
+    for mut sprite in &mut entities {
+        sprite.custom_size = Some(Vec2::splat(size));
     }
 }
 
@@ -324,13 +357,12 @@ fn apply_noise(
             &BaseHue,
             &mut Velocity,
             &mut BallColor,
-            &MeshMaterial2d<ColorMaterial>,
+            &mut Sprite,
             &TrailEntities,
         ),
         With<Ball>,
     >,
-    trail_dots: Query<&MeshMaterial2d<ColorMaterial>, (With<TrailDot>, Without<Ball>)>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut trail_dots: Query<&mut Sprite, (With<TrailDot>, Without<Ball>)>,
 ) {
     let perlin = Perlin::new(0);
     let elapsed_secs = time.elapsed_secs_f64();
@@ -338,7 +370,7 @@ fn apply_noise(
     let hue_rate = config.hue_cycles_per_sec();
     let trail_count = config.trail_count();
 
-    for (seeds, base_hue, mut vel, mut ball_color, ball_mat, trail_ents) in &mut balls {
+    for (seeds, base_hue, mut vel, mut ball_color, mut ball_sprite, trail_ents) in &mut balls {
         // Direction noise: rotate velocity
         let dir_noise = perlin.get([elapsed_secs * dir_rate, seeds.direction]);
         let angle = dir_noise * 0.05;
@@ -352,20 +384,16 @@ fn apply_noise(
         let new_color = Color::oklcha(0.5, 0.4, new_hue, 1.0);
         ball_color.0 = new_color;
 
-        // Update ball material
-        if let Some(mat) = materials.get_mut(&ball_mat.0) {
-            mat.color = new_color;
-        }
+        // Update ball sprite color
+        ball_sprite.color = new_color;
 
-        // Update trail materials (preserve per-dot alpha)
+        // Update trail sprite colors (preserve per-dot alpha)
         let base_srgba = new_color.to_srgba();
         for (i, &entity) in trail_ents.0.iter().enumerate() {
-            if let Ok(trail_mat_handle) = trail_dots.get(entity) {
-                if let Some(mat) = materials.get_mut(&trail_mat_handle.0) {
-                    let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
-                    mat.color =
-                        Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
-                }
+            if let Ok(mut sprite) = trail_dots.get_mut(entity) {
+                let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                sprite.color =
+                    Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
             }
         }
     }
