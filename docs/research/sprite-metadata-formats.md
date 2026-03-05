@@ -4,14 +4,14 @@ How sprite sheets describe their frames, regions, and animations. Ranges from "n
 
 ## The Spectrum
 
-| Approach                  | Metadata file          | Who uses it                         | Complexity |
-| ------------------------- | ---------------------- | ----------------------------------- | ---------- |
-| Hardcoded grid offsets    | None                   | Programmers with uniform sheets     | Lowest     |
-| RPG Maker conventions     | None (filename-based)  | RPG Maker asset artists             | Low        |
-| TexturePacker JSON/XML    | Frame rects + names    | Artists handing off to programmers  | Low        |
-| Aseprite JSON export      | Frames + tags + timing | Pixel artists                       | Low        |
-| Tiled TSX/TMX             | Tile properties + anim | Level designers                     | Medium     |
-| Spine / DragonBones       | Bones + meshes + keys  | Animators doing skeletal 2D         | High       |
+| Approach               | Metadata file          | Who uses it                        | Complexity |
+| ---------------------- | ---------------------- | ---------------------------------- | ---------- |
+| Hardcoded grid offsets | None                   | Programmers with uniform sheets    | Lowest     |
+| RPG Maker conventions  | None (filename-based)  | RPG Maker asset artists            | Low        |
+| TexturePacker JSON/XML | Frame rects + names    | Artists handing off to programmers | Low        |
+| Aseprite JSON export   | Frames + tags + timing | Pixel artists                      | Low        |
+| Tiled TSX/TMX          | Tile properties + anim | Level designers                    | Medium     |
+| Spine / DragonBones    | Bones + meshes + keys  | Animators doing skeletal 2D        | High       |
 
 ## No Metadata (Uniform Grid)
 
@@ -44,17 +44,17 @@ Each character has a 3-column x 4-row grid of frames (3 walk frames x 4 directio
 
 RPG Maker MV/MZ uses a lettered tile-slot system. Each slot expects a specific image size and layout:
 
-| Slot   | Purpose                      | Layout                                                       |
-| ------ | ---------------------------- | ------------------------------------------------------------ |
-| **A1** | Animated tiles (water, lava) | Autotile sub-tiles arranged for 3-frame animation            |
+| Slot   | Purpose                      | Layout                                                                                                 |
+| ------ | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **A1** | Animated tiles (water, lava) | Autotile sub-tiles arranged for 3-frame animation                                                      |
 | **A2** | Ground tiles                 | Autotile format — each terrain is a block of sub-tiles the engine combines based on neighbor adjacency |
-| **A3** | Wall top autotiles           | Autotile format for top-down wall edges                      |
-| **A4** | Wall face autotiles          | Autotile format for wall faces (side view)                   |
-| **A5** | Normal tiles (no autotile)   | Simple 16x16 grid — flowers, rocks, decorations on a ground  |
-| **B**  | Object tiles layer 1         | Simple grid — fences, barrels, furniture, trees               |
-| **C**  | Object tiles layer 2         | Simple grid — building walls, structures                      |
-| **D**  | Object tiles layer 3         | Simple grid — rooftops, overlays                              |
-| **E**  | Object tiles layer 4         | Simple grid — additional overlay objects                      |
+| **A3** | Wall top autotiles           | Autotile format for top-down wall edges                                                                |
+| **A4** | Wall face autotiles          | Autotile format for wall faces (side view)                                                             |
+| **A5** | Normal tiles (no autotile)   | Simple 16x16 grid — flowers, rocks, decorations on a ground                                            |
+| **B**  | Object tiles layer 1         | Simple grid — fences, barrels, furniture, trees                                                        |
+| **C**  | Object tiles layer 2         | Simple grid — building walls, structures                                                               |
+| **D**  | Object tiles layer 3         | Simple grid — rooftops, overlays                                                                       |
+| **E**  | Object tiles layer 4         | Simple grid — additional overlay objects                                                               |
 
 **Autotile** means the engine automatically selects which sub-tile to draw based on neighboring tiles. The artist provides a block of sub-tile variations; the engine composes them. Slots A1–A4 use this system. Slots A5 and B–E are simple grids where each cell is one complete tile.
 
@@ -170,15 +170,15 @@ Open-source alternative to Spine. Same concept — 2D skeletal animation with bo
 
 ## Summary: What to Choose
 
-| Situation                                    | Format                    |
-| -------------------------------------------- | ------------------------- |
-| Uniform grid sheet, programmer-driven        | No metadata (grid math)   |
-| Asset pack made for RPG Maker                | RPG Maker conventions     |
-| Pixel artist using Aseprite                  | Aseprite JSON export      |
-| Many individual images to pack efficiently   | TexturePacker JSON        |
-| Tilemap with per-tile collision and animation | Tiled TSX/TMX             |
-| Smooth skeletal 2D animation (commercial)    | Spine                     |
-| Smooth skeletal 2D animation (free)          | DragonBones               |
+| Situation                                     | Format                  |
+| --------------------------------------------- | ----------------------- |
+| Uniform grid sheet, programmer-driven         | No metadata (grid math) |
+| Asset pack made for RPG Maker                 | RPG Maker conventions   |
+| Pixel artist using Aseprite                   | Aseprite JSON export    |
+| Many individual images to pack efficiently    | TexturePacker JSON      |
+| Tilemap with per-tile collision and animation | Tiled TSX/TMX           |
+| Smooth skeletal 2D animation (commercial)     | Spine                   |
+| Smooth skeletal 2D animation (free)           | DragonBones             |
 
 This project built a custom TOML-based format for sprite sheet metadata — see the [format spec](../architecture/sprite-metadata-format.md) and [pipeline workflow](../architecture/sprite-pipeline.md). Tiled becomes relevant when building tilemaps with collision data.
 
@@ -296,11 +296,11 @@ updated_layout/        ← Reorganized sheets with buff/debuff icons in RPG Make
 
 The project copies into `assets/external/`:
 
-| Project path                    | Source                               | Format used        |
-| ------------------------------- | ------------------------------------ | ------------------ |
-| `external/timefantasy/`         | `timefantasy_characters/frames/`     | Individual PNGs    |
-| `external/timefantasy_tiles/`   | `TimeFantasy_TILES_6.24.17/TILESETS/` | Generic 16x16 grid |
-| `external/timefantasy_icons1/`  | `icons_12.26.19/`                    | Both sheets and individual |
-| `external/timefantasy_icons2/`  | `icons_8.13.20/`                     | Both sheets and individual |
+| Project path                   | Source                                | Format used                |
+| ------------------------------ | ------------------------------------- | -------------------------- |
+| `external/timefantasy/`        | `timefantasy_characters/frames/`      | Individual PNGs            |
+| `external/timefantasy_tiles/`  | `TimeFantasy_TILES_6.24.17/TILESETS/` | Generic 16x16 grid         |
+| `external/timefantasy_icons1/` | `icons_12.26.19/`                     | Both sheets and individual |
+| `external/timefantasy_icons2/` | `icons_8.13.20/`                      | Both sheets and individual |
 
 The project uses the non-RPG-Maker formats exclusively — individual character frames and generic tilesheets. The RPG Maker formatted sheets and autotile images are not used.

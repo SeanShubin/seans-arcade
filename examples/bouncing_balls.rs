@@ -1,0 +1,551 @@
+//! Bouncing balls visual toy with egui controls.
+//!
+//! Run with: `cargo run --example bouncing_balls`
+
+use std::collections::VecDeque;
+
+use bevy::diagnostic::{DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin};
+use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use noise::{NoiseFn, Perlin};
+use rand::RngExt;
+
+fn main() {
+    App::new()
+        .add_plugins((
+            DefaultPlugins,
+            EguiPlugin::default(),
+            FrameTimeDiagnosticsPlugin::default(),
+            EntityCountDiagnosticsPlugin::default(),
+        ))
+        .init_resource::<BounceConfig>()
+        .init_resource::<PanelWidth>()
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms)
+                .chain()
+                .run_if(|config: Res<BounceConfig>| !config.use_fixed_update),
+        )
+        .add_systems(
+            FixedUpdate,
+            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms)
+                .chain()
+                .run_if(|config: Res<BounceConfig>| config.use_fixed_update),
+        )
+        .add_systems(EguiPrimaryContextPass, ui_system)
+        .run();
+}
+
+#[derive(Resource)]
+struct BounceConfig {
+    ball_count_exp: i32,
+    ball_size_exp: i32,
+    trail_count_exp: i32,
+    speed_exp: i32,
+    trail_gap_exp: i32,
+    hue_noise_exp: i32,
+    direction_noise_exp: i32,
+    use_fixed_update: bool,
+}
+
+impl Default for BounceConfig {
+    fn default() -> Self {
+        Self {
+            ball_count_exp: 0,
+            ball_size_exp: 0,
+            trail_count_exp: 0,
+            speed_exp: 0,
+            trail_gap_exp: 0,
+            hue_noise_exp: 0,
+            direction_noise_exp: 0,
+            use_fixed_update: false,
+        }
+    }
+}
+
+impl BounceConfig {
+    fn ball_count(&self) -> usize {
+        2_usize.pow(self.ball_count_exp as u32)
+    }
+
+    fn ball_size(&self) -> f32 {
+        2_f32.powi(self.ball_size_exp)
+    }
+
+    fn trail_count(&self) -> usize {
+        2_usize.pow(self.trail_count_exp as u32)
+    }
+
+    fn speed(&self) -> f32 {
+        2_f32.powi(self.speed_exp)
+    }
+
+    fn trail_gap(&self) -> usize {
+        2_usize.pow(self.trail_gap_exp as u32)
+    }
+
+    /// Hue noise rate in cycles per second.
+    fn hue_cycles_per_sec(&self) -> f64 {
+        2_f64.powi(self.hue_noise_exp)
+    }
+
+    /// Direction noise rate in cycles per second.
+    fn direction_cycles_per_sec(&self) -> f64 {
+        2_f64.powi(self.direction_noise_exp)
+    }
+}
+
+#[derive(Component)]
+struct Ball;
+
+#[derive(Component)]
+struct TrailDot;
+
+#[derive(Component)]
+struct Velocity(Vec2);
+
+#[derive(Component)]
+struct TrailHistory(VecDeque<Vec2>);
+
+#[derive(Component)]
+struct BallColor(Color);
+
+#[derive(Component)]
+struct TrailEntities(Vec<Entity>);
+
+#[derive(Component)]
+struct NoiseSeeds {
+    hue: f64,
+    direction: f64,
+}
+
+#[derive(Component)]
+struct BaseHue(f32);
+
+#[derive(Resource, Default)]
+struct PanelWidth(f32);
+
+#[derive(Resource)]
+struct BallAssets {
+    mesh: Handle<Mesh>,
+}
+
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
+    commands.spawn(Camera2d);
+    let mesh = meshes.add(Circle::new(1.0));
+    commands.insert_resource(BallAssets { mesh });
+}
+
+fn manage_balls(
+    mut commands: Commands,
+    config: Res<BounceConfig>,
+    balls: Query<(Entity, &TrailEntities), With<Ball>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    ball_assets: Res<BallAssets>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let target = config.ball_count();
+    let current = balls.iter().count();
+
+    if current < target {
+        let Ok(win) = window.single() else { return };
+        let half_w = win.width() / 2.0;
+        let half_h = win.height() / 2.0;
+        let size = config.ball_size();
+        let trail_count = config.trail_count();
+        let mut rng = rand::rng();
+
+        for _ in 0..(target - current) {
+            let x = rng.random_range(-half_w..half_w);
+            let y = rng.random_range(-half_h..half_h);
+            let angle: f32 = rng.random_range(0.0..std::f32::consts::TAU);
+            let vel = Vec2::new(angle.cos(), angle.sin());
+            let hue = rng.random_range(0.0..360.0);
+            let color = Color::oklcha(0.5, 0.4, hue, 1.0);
+            let base_srgba = color.to_srgba();
+
+            let mut trail_entities = Vec::with_capacity(trail_count);
+            for i in 0..trail_count {
+                let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                let trail_color = Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+                let trail_material = materials.add(ColorMaterial::from_color(trail_color));
+                let trail_entity = commands
+                    .spawn((
+                        TrailDot,
+                        Mesh2d(ball_assets.mesh.clone()),
+                        MeshMaterial2d(trail_material),
+                        Transform::from_xyz(x, y, -(i as f32)).with_scale(Vec3::splat(size)),
+                    ))
+                    .id();
+                trail_entities.push(trail_entity);
+            }
+
+            let noise_seeds = NoiseSeeds {
+                hue: rng.random_range(0.0..1000.0),
+                direction: rng.random_range(0.0..1000.0),
+            };
+
+            let material = materials.add(ColorMaterial::from_color(color));
+            commands.spawn((
+                Ball,
+                Mesh2d(ball_assets.mesh.clone()),
+                MeshMaterial2d(material),
+                Transform::from_xyz(x, y, 100.0).with_scale(Vec3::splat(size)),
+                Velocity(vel),
+                TrailHistory(VecDeque::new()),
+                BallColor(color),
+                TrailEntities(trail_entities),
+                noise_seeds,
+                BaseHue(hue),
+            ));
+        }
+    } else if current > target {
+        for (entity, trail_ents) in balls.iter().take(current - target) {
+            for &trail_entity in &trail_ents.0 {
+                commands.entity(trail_entity).despawn();
+            }
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn sync_trail_entities(
+    mut commands: Commands,
+    config: Res<BounceConfig>,
+    mut balls: Query<(&Transform, &BallColor, &mut TrailEntities), With<Ball>>,
+    trail_dots: Query<&MeshMaterial2d<ColorMaterial>, With<TrailDot>>,
+    ball_assets: Res<BallAssets>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    if !config.is_changed() {
+        return;
+    }
+    let trail_count = config.trail_count();
+    let size = config.ball_size();
+
+    for (transform, ball_color, mut trail_ents) in &mut balls {
+        let base_srgba = ball_color.0.to_srgba();
+        let current_count = trail_ents.0.len();
+
+        if current_count > trail_count {
+            for entity in trail_ents.0.drain(trail_count..) {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        if current_count < trail_count {
+            let pos = transform.translation;
+            for i in current_count..trail_count {
+                let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                let trail_color =
+                    Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+                let trail_material = materials.add(ColorMaterial::from_color(trail_color));
+                let trail_entity = commands
+                    .spawn((
+                        TrailDot,
+                        Mesh2d(ball_assets.mesh.clone()),
+                        MeshMaterial2d(trail_material),
+                        Transform::from_xyz(pos.x, pos.y, -(i as f32))
+                            .with_scale(Vec3::splat(size)),
+                    ))
+                    .id();
+                trail_ents.0.push(trail_entity);
+            }
+        }
+
+        for (i, &entity) in trail_ents.0.iter().enumerate().take(trail_count) {
+            if let Ok(mat_handle) = trail_dots.get(entity) {
+                if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                    let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                    mat.color =
+                        Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+                }
+            }
+        }
+    }
+}
+
+fn sync_ball_size(
+    config: Res<BounceConfig>,
+    mut entities: Query<&mut Transform, Or<(With<Ball>, With<TrailDot>)>>,
+) {
+    if !config.is_changed() {
+        return;
+    }
+    let size = config.ball_size();
+    for mut transform in &mut entities {
+        transform.scale = Vec3::splat(size);
+    }
+}
+
+fn move_balls(
+    config: Res<BounceConfig>,
+    panel: Res<PanelWidth>,
+    mut balls: Query<(&mut Transform, &mut Velocity), With<Ball>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+) {
+    let Ok(win) = window.single() else { return };
+    let half_w = win.width() / 2.0;
+    let half_h = win.height() / 2.0;
+    let left_edge = -half_w + panel.0;
+    let speed = config.speed();
+
+    for (mut transform, mut vel) in &mut balls {
+        let pos = &mut transform.translation;
+        pos.x += vel.0.x * speed;
+        pos.y += vel.0.y * speed;
+
+        if pos.x < left_edge {
+            pos.x = left_edge;
+            vel.0.x = vel.0.x.abs();
+        } else if pos.x > half_w {
+            pos.x = half_w;
+            vel.0.x = -vel.0.x.abs();
+        }
+
+        if pos.y < -half_h {
+            pos.y = -half_h;
+            vel.0.y = vel.0.y.abs();
+        } else if pos.y > half_h {
+            pos.y = half_h;
+            vel.0.y = -vel.0.y.abs();
+        }
+    }
+}
+
+fn apply_noise(
+    config: Res<BounceConfig>,
+    time: Res<Time>,
+    mut balls: Query<
+        (
+            &NoiseSeeds,
+            &BaseHue,
+            &mut Velocity,
+            &mut BallColor,
+            &MeshMaterial2d<ColorMaterial>,
+            &TrailEntities,
+        ),
+        With<Ball>,
+    >,
+    trail_dots: Query<&MeshMaterial2d<ColorMaterial>, (With<TrailDot>, Without<Ball>)>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let perlin = Perlin::new(0);
+    let elapsed_secs = time.elapsed_secs_f64();
+    let dir_rate = config.direction_cycles_per_sec();
+    let hue_rate = config.hue_cycles_per_sec();
+    let trail_count = config.trail_count();
+
+    for (seeds, base_hue, mut vel, mut ball_color, ball_mat, trail_ents) in &mut balls {
+        // Direction noise: rotate velocity
+        let dir_noise = perlin.get([elapsed_secs * dir_rate, seeds.direction]);
+        let angle = dir_noise * 0.05;
+        let (sin, cos) = (angle as f32).sin_cos();
+        let v = vel.0;
+        vel.0 = Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+
+        // Hue noise: shift color
+        let hue_noise = perlin.get([elapsed_secs * hue_rate, seeds.hue]);
+        let new_hue = (base_hue.0 + hue_noise as f32 * 180.0).rem_euclid(360.0);
+        let new_color = Color::oklcha(0.5, 0.4, new_hue, 1.0);
+        ball_color.0 = new_color;
+
+        // Update ball material
+        if let Some(mat) = materials.get_mut(&ball_mat.0) {
+            mat.color = new_color;
+        }
+
+        // Update trail materials (preserve per-dot alpha)
+        let base_srgba = new_color.to_srgba();
+        for (i, &entity) in trail_ents.0.iter().enumerate() {
+            if let Ok(trail_mat_handle) = trail_dots.get(entity) {
+                if let Some(mat) = materials.get_mut(&trail_mat_handle.0) {
+                    let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                    mat.color =
+                        Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+                }
+            }
+        }
+    }
+}
+
+fn update_trails(
+    config: Res<BounceConfig>,
+    mut balls: Query<(&Transform, &mut TrailHistory), With<Ball>>,
+) {
+    let max = config.trail_count() * config.trail_gap();
+    for (transform, mut trail) in &mut balls {
+        trail.0.push_front(transform.translation.truncate());
+        while trail.0.len() > max {
+            trail.0.pop_back();
+        }
+    }
+}
+
+fn sync_trail_transforms(
+    config: Res<BounceConfig>,
+    balls: Query<(&TrailHistory, &TrailEntities, &Transform), With<Ball>>,
+    mut trail_dots: Query<&mut Transform, (With<TrailDot>, Without<Ball>)>,
+) {
+    let gap = config.trail_gap();
+    for (trail, trail_ents, ball_transform) in &balls {
+        for (i, &entity) in trail_ents.0.iter().enumerate() {
+            if let Ok(mut dot_transform) = trail_dots.get_mut(entity) {
+                let history_index = i * gap;
+                if let Some(pos) = trail.0.get(history_index) {
+                    dot_transform.translation.x = pos.x;
+                    dot_transform.translation.y = pos.y;
+                } else {
+                    dot_transform.translation.x = ball_transform.translation.x;
+                    dot_transform.translation.y = ball_transform.translation.y;
+                }
+            }
+        }
+    }
+}
+
+fn ui_system(
+    mut contexts: EguiContexts,
+    mut config: ResMut<BounceConfig>,
+    mut panel_width: ResMut<PanelWidth>,
+    diagnostics: Res<DiagnosticsStore>,
+    time: Res<Time>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let response = egui::SidePanel::left("controls").show(ctx, |ui| {
+        ui.heading("Bouncing Balls");
+        ui.separator();
+
+        // Balls
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() && config.ball_count_exp > 0 {
+                config.ball_count_exp -= 1;
+            }
+            ui.label(format!("{}", config.ball_count()));
+            if ui.button("+").clicked() {
+                config.ball_count_exp += 1;
+            }
+            ui.label("Balls");
+        });
+
+        // Size
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.ball_size_exp -= 1;
+            }
+            ui.label(format!("{:.2} px", config.ball_size()));
+            if ui.button("+").clicked() {
+                config.ball_size_exp += 1;
+            }
+            ui.label("Size");
+        });
+
+        // Trail
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() && config.trail_count_exp > 0 {
+                config.trail_count_exp -= 1;
+            }
+            ui.label(format!("{}", config.trail_count()));
+            if ui.button("+").clicked() {
+                config.trail_count_exp += 1;
+            }
+            ui.label("Trail");
+        });
+
+        // Trail gap
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() && config.trail_gap_exp > 0 {
+                config.trail_gap_exp -= 1;
+            }
+            ui.label(format!("{} frames", config.trail_gap()));
+            if ui.button("+").clicked() {
+                config.trail_gap_exp += 1;
+            }
+            ui.label("Trail gap");
+        });
+
+        // Speed
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.speed_exp -= 1;
+            }
+            ui.label(format!("{:.2} px/f", config.speed()));
+            if ui.button("+").clicked() {
+                config.speed_exp += 1;
+            }
+            ui.label("Speed");
+        });
+
+        // Hue drift
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.hue_noise_exp -= 1;
+            }
+            ui.label(format!("{:.2} /sec", config.hue_cycles_per_sec()));
+            if ui.button("+").clicked() {
+                config.hue_noise_exp += 1;
+            }
+            ui.label("Hue drift");
+        });
+
+        // Direction drift
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.direction_noise_exp -= 1;
+            }
+            ui.label(format!("{:.2} /sec", config.direction_cycles_per_sec()));
+            if ui.button("+").clicked() {
+                config.direction_noise_exp += 1;
+            }
+            ui.label("Dir drift");
+        });
+
+        // Fixed update toggle
+        ui.checkbox(&mut config.use_fixed_update, "Use FixedUpdate (64 Hz)");
+
+        ui.separator();
+        ui.heading("Diagnostics");
+
+        // FPS
+        if let Some(fps) = diagnostics
+            .get(&FrameTimeDiagnosticsPlugin::FPS)
+            .and_then(|d| d.smoothed())
+        {
+            let color = if fps >= 55.0 {
+                egui::Color32::GREEN
+            } else if fps >= 30.0 {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::RED
+            };
+            ui.colored_label(color, format!("FPS: {fps:.0}"));
+        }
+
+        // Frame time
+        if let Some(frame_time) = diagnostics
+            .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+            .and_then(|d| d.smoothed())
+        {
+            ui.label(format!("Frame time: {frame_time:.2} ms"));
+        }
+
+        // Entity count
+        if let Some(entities) = diagnostics
+            .get(&EntityCountDiagnosticsPlugin::ENTITY_COUNT)
+            .and_then(|d| d.value())
+        {
+            ui.label(format!("Entities: {entities:.0}"));
+        }
+
+        // Delta
+        ui.label(format!("Delta: {:.2} ms", time.delta_secs() * 1000.0));
+
+        // Trail meshes
+        let trail_meshes = config.ball_count() * config.trail_count();
+        ui.label(format!("Trail meshes: {trail_meshes}"));
+    });
+    panel_width.0 = response.response.rect.width();
+}

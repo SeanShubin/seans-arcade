@@ -34,16 +34,16 @@ contact_sheet = "generated/pack-contact.png"
 # ... per-cell entry ...
 ```
 
-| Field           | Type     | Required | Written by       | Description                              |
-|-----------------|----------|----------|------------------|------------------------------------------|
-| `name`          | string   | no       | sprite_discover  | Asset pack name                          |
-| `description`   | string   | no       | human            | Human-readable description               |
-| `pack_root`     | string   | no       | sprite_discover  | Absolute path to the asset directory     |
-| `exclude`       | string[] | no       | sprite_discover  | Glob patterns that were excluded (file-level; directory-level filtering uses `asset_browser.toml`) |
-| `contact_sheet` | string   | no       | sprite_discover  | Path to generated contact sheet PNG      |
-| `images`        | table    | no       | sprite_discover  | Per-image mechanical facts               |
-| `sheets`        | table    | no       | sprite_grid    | Sheet definitions, keyed by sheet ID     |
-| `catalog`       | table    | **yes**  | sprite_grid    | Physical asset inventory, keyed by ID    |
+| Field           | Type     | Required | Written by      | Description                                                                                        |
+| --------------- | -------- | -------- | --------------- | -------------------------------------------------------------------------------------------------- |
+| `name`          | string   | no       | sprite_discover | Asset pack name                                                                                    |
+| `description`   | string   | no       | human           | Human-readable description                                                                         |
+| `pack_root`     | string   | no       | sprite_discover | Absolute path to the asset directory                                                               |
+| `exclude`       | string[] | no       | sprite_discover | Glob patterns that were excluded (file-level; directory-level filtering uses `asset_browser.toml`) |
+| `contact_sheet` | string   | no       | sprite_discover | Path to generated contact sheet PNG                                                                |
+| `images`        | table    | no       | sprite_discover | Per-image mechanical facts                                                                         |
+| `sheets`        | table    | no       | sprite_grid     | Sheet definitions, keyed by sheet ID                                                               |
+| `catalog`       | table    | **yes**  | sprite_grid     | Physical asset inventory, keyed by ID                                                              |
 
 A file with only `catalog` is valid — it is a physical asset inventory
 with no semantic interpretation.
@@ -68,16 +68,16 @@ valid_cell_heights = [8, 16, 32]
 
 ```
 
-| Field                | Type         | Required | Description                                           |
-|----------------------|--------------|----------|-------------------------------------------------------|
-| `width`              | integer      | **yes**  | Image width in pixels                                 |
-| `height`             | integer      | **yes**  | Image height in pixels                                |
-| `file_size_bytes`    | integer      | **yes**  | File size on disk in bytes                            |
-| `color_count`        | integer      | **yes**  | Number of unique RGBA colors                          |
-| `transparent_pct`    | integer      | **yes**  | Percentage of fully-transparent pixels (alpha = 0)    |
-| `hash`               | string       | **yes**  | FNV-1a hash of raw RGBA pixel data (16-char hex)      |
-| `valid_cell_widths`  | integer[]    | no       | Which of [8, 16, 24, 32, 48, 64] divide width evenly |
-| `valid_cell_heights` | integer[]    | no       | Which of [8, 16, 24, 32, 48, 64] divide height evenly|
+| Field                | Type      | Required | Description                                           |
+| -------------------- | --------- | -------- | ----------------------------------------------------- |
+| `width`              | integer   | **yes**  | Image width in pixels                                 |
+| `height`             | integer   | **yes**  | Image height in pixels                                |
+| `file_size_bytes`    | integer   | **yes**  | File size on disk in bytes                            |
+| `color_count`        | integer   | **yes**  | Number of unique RGBA colors                          |
+| `transparent_pct`    | integer   | **yes**  | Percentage of fully-transparent pixels (alpha = 0)    |
+| `hash`               | string    | **yes**  | FNV-1a hash of raw RGBA pixel data (16-char hex)      |
+| `valid_cell_widths`  | integer[] | no       | Which of [8, 16, 24, 32, 48, 64] divide width evenly  |
+| `valid_cell_heights` | integer[] | no       | Which of [8, 16, 24, 32, 48, 64] divide height evenly |
 
 Note: redundant directories (RPG Maker variants, individual frames/icons)
 are filtered out upstream by `asset_browser.toml` before discovery runs.
@@ -101,17 +101,17 @@ transparent_pct = 38
 description = "Castle structures tileset"
 ```
 
-| Field             | Type    | Required | Description                                    |
-|-------------------|---------|----------|------------------------------------------------|
-| `file`            | string  | **yes**  | Path to image file, relative to pack root      |
-| `cell_w`          | integer | **yes**  | Cell width in pixels                           |
-| `cell_h`          | integer | **yes**  | Cell height in pixels                          |
-| `cols`            | integer | **yes**  | Number of columns in grid                      |
-| `rows`            | integer | **yes**  | Number of rows in grid                         |
-| `scale`           | number  | no       | Scale factor relative to 1x base size          |
-| `color_count`     | integer | no       | Total unique RGBA colors in the sheet image    |
-| `transparent_pct` | integer | no       | Percentage of pixels with alpha=0              |
-| `description`     | string  | no       | Human-readable note                            |
+| Field             | Type    | Required | Description                                 |
+| ----------------- | ------- | -------- | ------------------------------------------- |
+| `file`            | string  | **yes**  | Path to image file, relative to pack root   |
+| `cell_w`          | integer | **yes**  | Cell width in pixels                        |
+| `cell_h`          | integer | **yes**  | Cell height in pixels                       |
+| `cols`            | integer | **yes**  | Number of columns in grid                   |
+| `rows`            | integer | **yes**  | Number of rows in grid                      |
+| `scale`           | number  | no       | Scale factor relative to 1x base size       |
+| `color_count`     | integer | no       | Total unique RGBA colors in the sheet image |
+| `transparent_pct` | integer | no       | Percentage of pixels with alpha=0           |
+| `description`     | string  | no       | Human-readable note                         |
 
 The expected image dimensions are `cell_w * cols` by `cell_h * rows`.
 The `cols` and `rows` values are computed from actual image dimensions
@@ -143,16 +143,16 @@ sources = [
 ]
 ```
 
-| Field          | Type    | Required | Written by      | Description                                                                    |
-|----------------|---------|----------|-----------------|--------------------------------------------------------------------------------|
-| `sources`      | array   | **yes**  | sprite_grid   | One or more physical locations (see source types)                              |
-| `derived_from` | object  | no       | sprite_grid     | Mechanical relationship to another catalog entry                               |
-| `empty`        | boolean | no       | sprite_grid   | True if every pixel has alpha=0                                                |
-| `bbox`         | array   | no       | sprite_grid   | Bounding box `[x, y, w, h]` of non-transparent content, relative to crop origin |
-| `pixels`       | integer | no       | sprite_grid   | Non-transparent pixel count                                                    |
-| `colors`       | integer | no       | sprite_grid   | Unique RGBA color count                                                        |
-| `hash`         | string  | no       | sprite_grid   | FNV-1a hex hash of raw RGBA pixel data                                         |
-| `duplicate_of` | string  | no       | sprite_grid   | Catalog ID of the first entry with the same hash                               |
+| Field          | Type    | Required | Written by  | Description                                                                     |
+| -------------- | ------- | -------- | ----------- | ------------------------------------------------------------------------------- |
+| `sources`      | array   | **yes**  | sprite_grid | One or more physical locations (see source types)                               |
+| `derived_from` | object  | no       | sprite_grid | Mechanical relationship to another catalog entry                                |
+| `empty`        | boolean | no       | sprite_grid | True if every pixel has alpha=0                                                 |
+| `bbox`         | array   | no       | sprite_grid | Bounding box `[x, y, w, h]` of non-transparent content, relative to crop origin |
+| `pixels`       | integer | no       | sprite_grid | Non-transparent pixel count                                                     |
+| `colors`       | integer | no       | sprite_grid | Unique RGBA color count                                                         |
+| `hash`         | string  | no       | sprite_grid | FNV-1a hex hash of raw RGBA pixel data                                          |
+| `duplicate_of` | string  | no       | sprite_grid | Catalog ID of the first entry with the same hash                                |
 
 When the same pixel content is accessible via multiple paths (standalone
 file and sheet cell), all paths appear in a single catalog entry's
@@ -206,13 +206,13 @@ sources = [
 derived_from = { entry = "icon449.fc.16", method = "scale", factor = 2.0 }
 ```
 
-| Field    | Type   | Required | Description                                      |
-|----------|--------|----------|--------------------------------------------------|
-| `entry`  | string | **yes**  | ID of the base catalog entry                     |
-| `method` | string | **yes**  | Transform type: `scale`, `palette`, `mirror`, `rotate` |
-| `factor` | number | no       | Scale factor (required when method is `scale`)   |
-| `axis`   | string | no       | `"x"` or `"y"` (required when method is `mirror`) |
-| `degrees`| number | no       | `90`, `180`, or `270` (required when method is `rotate`) |
+| Field     | Type   | Required | Description                                              |
+| --------- | ------ | -------- | -------------------------------------------------------- |
+| `entry`   | string | **yes**  | ID of the base catalog entry                             |
+| `method`  | string | **yes**  | Transform type: `scale`, `palette`, `mirror`, `rotate`   |
+| `factor`  | number | no       | Scale factor (required when method is `scale`)           |
+| `axis`    | string | no       | `"x"` or `"y"` (required when method is `mirror`)        |
+| `degrees` | number | no       | `90`, `180`, or `270` (required when method is `rotate`) |
 
 
 ## Source types
@@ -230,7 +230,7 @@ A standalone image file.
 ```
 
 | Field  | Type   | Required | Description                               |
-|--------|--------|----------|-------------------------------------------|
+| ------ | ------ | -------- | ----------------------------------------- |
 | `file` | string | **yes**  | Path to image file, relative to pack root |
 
 ### Sheet-cell source
@@ -248,7 +248,7 @@ For cells that span multiple grid positions:
 ```
 
 | Field      | Type    | Required | Description                       |
-|------------|---------|----------|-----------------------------------|
+| ---------- | ------- | -------- | --------------------------------- |
 | `sheet`    | string  | **yes**  | Sheet ID (must exist in `sheets`) |
 | `col`      | integer | **yes**  | Column index (0-based)            |
 | `row`      | integer | **yes**  | Row index (0-based)               |
@@ -263,10 +263,10 @@ An arbitrary pixel rectangle in a sheet, for non-uniform layouts.
 { sheet = "atlas", rect = [128, 0, 64, 96] }
 ```
 
-| Field  | Type   | Required | Description                       |
-|--------|--------|----------|-----------------------------------|
-| `sheet`| string | **yes**  | Sheet ID (must exist in `sheets`) |
-| `rect` | array  | **yes**  | Pixel rectangle as `[x, y, w, h]` |
+| Field   | Type   | Required | Description                       |
+| ------- | ------ | -------- | --------------------------------- |
+| `sheet` | string | **yes**  | Sheet ID (must exist in `sheets`) |
+| `rect`  | array  | **yes**  | Pixel rectangle as `[x, y, w, h]` |
 
 
 ## Consumer lookup path

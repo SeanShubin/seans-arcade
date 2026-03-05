@@ -115,12 +115,12 @@ See [sprite-packs.toml config](#pipelinetoml-config) for the file format.
 
 **Flags:**
 
-| Flag                 | Effect                                        |
-|----------------------|-----------------------------------------------|
-| `--name "Pack Name"` | Set the pack name in the TOML                 |
-| `--exclude "*.bak"`  | Skip files matching the glob pattern          |
-| `--thumb-size 64`    | Max thumbnail size in pixels (default 64)     |
-| `--contact out.png`  | Generate a contact sheet with thumbnails      |
+| Flag                 | Effect                                    |
+| -------------------- | ----------------------------------------- |
+| `--name "Pack Name"` | Set the pack name in the TOML             |
+| `--exclude "*.bak"`  | Skip files matching the glob pattern      |
+| `--thumb-size 64`    | Max thumbnail size in pixels (default 64) |
+| `--contact out.png`  | Generate a contact sheet with thumbnails  |
 
 **Output:** A single TOML file with context and `[images.*]` section,
 plus next-step instructions on stderr.
@@ -283,18 +283,18 @@ dir = "timefantasy_characters"
 ```
 
 | Field        | Default    | Description                                |
-|--------------|------------|--------------------------------------------|
+| ------------ | ---------- | ------------------------------------------ |
 | `asset_root` | (required) | Base directory containing downloaded packs |
 | `output_dir` | (required) | Where metadata TOMLs are written           |
 | `export_dir` | `"assets"` | Where sprite_export writes game assets     |
 
 Each `[[packs]]` entry has:
 
-| Field     | Default | Description                                     |
-|-----------|---------|------------------------------------------------|
-| `name`    | (required) | Pack identifier, used for filenames           |
-| `dir`     | (required) | Directory under `asset_root` (or absolute)    |
-| `exclude` | `[]`    | Glob patterns to skip during discovery          |
+| Field     | Default    | Description                                |
+| --------- | ---------- | ------------------------------------------ |
+| `name`    | (required) | Pack identifier, used for filenames        |
+| `dir`     | (required) | Directory under `asset_root` (or absolute) |
+| `exclude` | `[]`       | Glob patterns to skip during discovery     |
 
 
 ## File inventory
@@ -303,25 +303,25 @@ All tools live in `examples/` and share code via `examples/shared/`.
 
 ### Pipeline tools
 
-| File                          | Role                                                |
-|-------------------------------|-----------------------------------------------------|
-| `examples/sprite_discover.rs` | Step 1: directory → TOML with images + context      |
-| `examples/sprite_grid.rs`     | Step 2: interactive grid definition                 |
-| `examples/sprite_export.rs`   | Step 3: gridded TOML → game-ready assets            |
+| File                          | Role                                           |
+| ----------------------------- | ---------------------------------------------- |
+| `examples/sprite_discover.rs` | Step 1: directory → TOML with images + context |
+| `examples/sprite_grid.rs`     | Step 2: interactive grid definition            |
+| `examples/sprite_export.rs`   | Step 3: gridded TOML → game-ready assets       |
 
 ### Shared modules
 
-| File                                 | Contents                                              |
-|--------------------------------------|-------------------------------------------------------|
+| File                                 | Contents                                                      |
+| ------------------------------------ | ------------------------------------------------------------- |
 | `examples/shared/sprite_meta.rs`     | TOML types: metadata, pipeline config, manifest, verification |
-| `examples/shared/sprite_analysis.rs` | Image analysis: grid detection, cell analysis, hashing |
-| `examples/shared/sprite_runtime.rs`  | Bevy plugin: SpriteDatabase, CellLocation              |
-| `examples/shared/scan_config.rs`     | Directory filtering config shared by browser + discover |
+| `examples/shared/sprite_analysis.rs` | Image analysis: grid detection, cell analysis, hashing        |
+| `examples/shared/sprite_runtime.rs`  | Bevy plugin: SpriteDatabase, CellLocation                     |
+| `examples/shared/scan_config.rs`     | Directory filtering config shared by browser + discover       |
 
 ### Documentation
 
-| File                                                         | Contents                        |
-|--------------------------------------------------------------|---------------------------------|
-| `docs/architecture/sprite-pipeline.md`                       | This file — pipeline overview   |
-| `docs/architecture/sprite-metadata-format.md`                | Unified TOML format spec        |
-| `sprite-packs.toml`                                              | Multi-pack pipeline config      |
+| File                                          | Contents                      |
+| --------------------------------------------- | ----------------------------- |
+| `docs/architecture/sprite-pipeline.md`        | This file — pipeline overview |
+| `docs/architecture/sprite-metadata-format.md` | Unified TOML format spec      |
+| `sprite-packs.toml`                           | Multi-pack pipeline config    |
