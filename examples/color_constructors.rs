@@ -1288,6 +1288,12 @@ fn stepped_slider(ui: &mut egui::Ui, value: &mut f32, range: std::ops::RangeIncl
 // Individual color-space panels
 // ---------------------------------------------------------------------------
 
+fn copy_button(ui: &mut egui::Ui, label: &str, code: &str) {
+    if ui.small_button(label).clicked() {
+        ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(code.to_string())));
+    }
+}
+
 fn srgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     ui.strong("Color::srgb() / srgba()");
     ui.label("Specific colors matching hex values. Most common constructor.");
@@ -1298,7 +1304,16 @@ fn srgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
     changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
-    ui.monospace(format!("Color::srgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
+    let ru = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let gu = (g.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let bu = (b.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let au = (a.clamp(0.0, 1.0) * 255.0).round() as u8;
+    ui.horizontal(|ui| {
+        copy_button(ui, "srgb", &format!("Color::srgb({r:.2}, {g:.2}, {b:.2})"));
+        copy_button(ui, "srgba", &format!("Color::srgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
+        copy_button(ui, "srgb_u8", &format!("Color::srgb_u8({ru}, {gu}, {bu})"));
+        copy_button(ui, "srgba_u8", &format!("Color::srgba_u8({ru}, {gu}, {bu}, {au})"));
+    });
     color_preview(ui, Color::srgba(r, g, b, a));
     ui.label(format!("xkcd: {}", closest_xkcd_name(r, g, b)));
     changed
@@ -1314,10 +1329,13 @@ fn hsl_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "lightness");
     changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [h, s, l, a] = *values;
-    ui.monospace(format!("Color::hsla({h:.0}, {s:.2}, {l:.2}, {a:.2})"));
     let color = Color::hsla(h, s, l, a);
-    color_preview(ui, color);
     let srgba = color.to_srgba();
+    ui.horizontal(|ui| {
+        copy_button(ui, "hsl", &format!("Color::hsl({h:.0}, {s:.2}, {l:.2})"));
+        copy_button(ui, "hsla", &format!("Color::hsla({h:.0}, {s:.2}, {l:.2}, {a:.2})"));
+    });
+    color_preview(ui, color);
     ui.label(format!("xkcd: {}", closest_xkcd_name(srgba.red, srgba.green, srgba.blue)));
     changed
 }
@@ -1332,10 +1350,13 @@ fn oklch_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     changed |= stepped_slider(ui, &mut values[2], 0.0..=360.0, "hue");
     changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [l, c, h, a] = *values;
-    ui.monospace(format!("Color::oklcha({l:.2}, {c:.3}, {h:.0}, {a:.2})"));
     let color = Color::oklcha(l, c, h, a);
-    color_preview(ui, color);
     let srgba = color.to_srgba();
+    ui.horizontal(|ui| {
+        copy_button(ui, "oklch", &format!("Color::oklch({l:.2}, {c:.3}, {h:.0})"));
+        copy_button(ui, "oklcha", &format!("Color::oklcha({l:.2}, {c:.3}, {h:.0}, {a:.2})"));
+    });
+    color_preview(ui, color);
     ui.label(format!("xkcd: {}", closest_xkcd_name(srgba.red, srgba.green, srgba.blue)));
     changed
 }
@@ -1350,10 +1371,13 @@ fn linear_rgb_panel(ui: &mut egui::Ui, values: &mut [f32; 4]) -> bool {
     changed |= stepped_slider(ui, &mut values[2], 0.0..=1.0, "blue");
     changed |= stepped_slider(ui, &mut values[3], 0.0..=1.0, "alpha");
     let [r, g, b, a] = *values;
-    ui.monospace(format!("Color::linear_rgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
     let color = Color::linear_rgba(r, g, b, a);
-    color_preview(ui, color);
     let srgba = color.to_srgba();
+    ui.horizontal(|ui| {
+        copy_button(ui, "linear_rgb", &format!("Color::linear_rgb({r:.2}, {g:.2}, {b:.2})"));
+        copy_button(ui, "linear_rgba", &format!("Color::linear_rgba({r:.2}, {g:.2}, {b:.2}, {a:.2})"));
+    });
+    color_preview(ui, color);
     ui.label(format!("xkcd: {}", closest_xkcd_name(srgba.red, srgba.green, srgba.blue)));
     changed
 }
