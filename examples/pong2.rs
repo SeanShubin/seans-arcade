@@ -14,6 +14,8 @@ const BORDER_THICKNESS: f32 = 4.0;
 const BORDER_COLOR: Color = COLOR_RED_WINE;
 const PADDLE_X_OFFSET: f32 = 30.0;
 const BALL_SIZE: f32 = 12.0;
+const CENTER_LINE_DASH_COUNT: usize = 15;
+const CENTER_LINE_DASH_WIDTH: f32 = 4.0;
 
 fn main() {
     App::new()
@@ -30,11 +32,31 @@ fn setup(mut commands: Commands) {
     let ball = ball_bundle();
     let top_border = border_bundle(ARENA_HEIGHT / 2.0);
     let bottom_border = border_bundle(-ARENA_HEIGHT / 2.0);
+    let center_line = center_line_bundle();
     commands.spawn(bottom_border);
     commands.spawn(top_border);
+    for bundle in center_line {
+        commands.spawn(bundle);
+    }
     commands.spawn(paddle_x);
     commands.spawn(paddle_y);
     commands.spawn(ball);
+}
+
+fn center_line_bundle() -> Vec<(Sprite, Transform)> {
+    let dash_spacing = ARENA_HEIGHT / CENTER_LINE_DASH_COUNT as f32;
+    let dash_width = dash_spacing * 0.5;
+    let bundles = (0..CENTER_LINE_DASH_COUNT).map(|i| {
+        let y = -ARENA_HEIGHT / 2.0 + dash_spacing * (i as f32 + 0.5);
+        let sprite = Sprite {
+            color: BORDER_COLOR,
+            custom_size: Some(Vec2::new(CENTER_LINE_DASH_WIDTH, dash_width)),
+            ..default()
+        };
+        let transform = Transform::from_xyz(0.0, y, 0.0);
+        (sprite, transform)
+    });
+    bundles.collect()
 }
 
 fn border_bundle(position_y: f32) -> (Sprite, Transform) {
