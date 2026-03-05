@@ -107,6 +107,19 @@ impl PipelineConfig {
 }
 
 // ===========================================================================
+// Walk animation defaults
+// ===========================================================================
+
+/// Optional walk animation parameters (move speed and stride).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WalkDefaults {
+    #[serde(default)]
+    pub move_speed: Option<f32>,
+    #[serde(default)]
+    pub stride: Option<f32>,
+}
+
+// ===========================================================================
 // Sprite metadata types (the TOML format)
 // ===========================================================================
 
@@ -129,6 +142,10 @@ pub struct SpriteMetadata {
     // Discovery data — legacy, no longer serialized
     #[serde(default, skip_serializing)]
     pub images: BTreeMap<String, ImageEntry>,
+
+    // Walk animation defaults
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_defaults: Option<WalkDefaults>,
 
     // Enriched data — written by AI and sprite_analyze
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

@@ -14,6 +14,7 @@ image = "0.25"
 rand = "0.10.0"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+zip = "2"
 
 # Enable fast compiles for development (Bevy recommendation)
 # Disable when profiling or benchmarking

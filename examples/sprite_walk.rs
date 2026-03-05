@@ -13,9 +13,8 @@ use bevy::{camera::ScalingMode, prelude::*};
 mod sprite_meta;
 use sprite_meta::SpriteMetadata;
 
-const MOVE_SPEED: f32 = 125.0;
-const STRIDE: f32 = 12.5;
-const FRAME_DURATION: f32 = STRIDE / MOVE_SPEED;
+const DEFAULT_MOVE_SPEED: f32 = 125.0;
+const DEFAULT_STRIDE: f32 = 12.5;
 const CANVAS_W: f32 = 320.0;
 const CANVAS_H: f32 = 180.0;
 const STICK_DEADZONE: f32 = 0.2;
@@ -173,6 +172,11 @@ fn main() {
         .run();
 }
 
+#[derive(Resource)]
+struct WalkConfig {
+    move_speed: f32,
+}
+
 #[derive(Component)]
 struct Player;
 
@@ -313,6 +317,20 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         .unwrap_or_else(|e| panic!("Failed to read {META_TOML}: {e}"));
     let meta: SpriteMetadata = toml::from_str(&toml_str)
         .unwrap_or_else(|e| panic!("Failed to parse {META_TOML}: {e}"));
+
+    let move_speed = meta
+        .walk_defaults
+        .as_ref()
+        .and_then(|w| w.move_speed)
+        .unwrap_or(DEFAULT_MOVE_SPEED);
+    let stride = meta
+        .walk_defaults
+        .as_ref()
+        .and_then(|w| w.stride)
+        .unwrap_or(DEFAULT_STRIDE);
+    let frame_duration = stride / move_speed;
+    commands.insert_resource(WalkConfig { move_speed });
+
     let walk_sheets = meta.sheets_by_category("4dir-walk");
 
     let mut groups = Vec::new();
@@ -344,7 +362,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Facing(Direction::Down),
         WalkAnimation {
             frame_index: 0,
-            timer: Timer::from_seconds(FRAME_DURATION, TimerMode::Repeating),
+            timer: Timer::from_seconds(frame_duration, TimerMode::Repeating),
             moving: false,
         },
         Sprite {
@@ -419,6 +437,7 @@ fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepad: Res<GamepadState>,
     time: Res<Time>,
+    walk_config: Res<WalkConfig>,
     mut query: Query<(&mut Transform, &mut Facing, &mut WalkAnimation), With<Player>>,
 ) {
     let mut direction = Vec2::ZERO;
@@ -483,7 +502,7 @@ fn player_movement(
         anim.moving = is_moving;
 
         if is_moving {
-            let movement = direction.normalize() * MOVE_SPEED * time.delta_secs();
+            let movement = direction.normalize() * walk_config.move_speed * time.delta_secs();
             transform.translation += movement.extend(0.0);
         }
 

@@ -1,5 +1,9 @@
 name = "time-fantasy-characters"
 
+[walk_defaults]
+move_speed = 64.0
+stride = 8.0
+
 [sheets._tf_template]
 file = "sheets/$tf_template.png"
 cell_w = 26

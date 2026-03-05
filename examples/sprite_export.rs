@@ -27,6 +27,8 @@ use std::path::{Path, PathBuf};
 struct RuntimeMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    walk_defaults: Option<WalkDefaults>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     sheets: BTreeMap<String, RuntimeSheet>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -168,6 +170,7 @@ fn export_pack(
     // Build runtime metadata by recomputing catalog from sheets + PNGs
     let mut runtime = RuntimeMetadata {
         name: meta.name.clone(),
+        walk_defaults: meta.walk_defaults.clone(),
         sheets: BTreeMap::new(),
         catalog: BTreeMap::new(),
     };
