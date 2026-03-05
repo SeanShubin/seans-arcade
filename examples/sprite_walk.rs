@@ -9,6 +9,10 @@
 
 use bevy::{camera::ScalingMode, prelude::*};
 
+#[path = "shared/sprite_meta.rs"]
+mod sprite_meta;
+use sprite_meta::SpriteMetadata;
+
 const MOVE_SPEED: f32 = 125.0;
 const STRIDE: f32 = 12.5;
 const FRAME_DURATION: f32 = STRIDE / MOVE_SPEED;
@@ -19,23 +23,8 @@ const TILE_SIZE: f32 = 16.0;
 const GROUND_SHEET: &str = "external/time-fantasy-tiles/TILESETS/castle.png";
 const GROUND_TILE_COL: f32 = 7.0;
 const GROUND_TILE_ROW: f32 = 1.0;
-const CHAR_CELL_W: f32 = 26.0;
-const CHAR_CELL_H: f32 = 36.0;
-
-const CHAR_SHEETS: &[(&str, &str)] = &[
-    ("bonus1", "external/time-fantasy-characters/sheets/bonus1.png"),
-    ("chara2", "external/time-fantasy-characters/sheets/chara2.png"),
-    ("chara3", "external/time-fantasy-characters/sheets/chara3.png"),
-    ("chara4", "external/time-fantasy-characters/sheets/chara4.png"),
-    ("chara5", "external/time-fantasy-characters/sheets/chara5.png"),
-    ("military1", "external/time-fantasy-characters/sheets/military1.png"),
-    ("military2", "external/time-fantasy-characters/sheets/military2.png"),
-    ("military3", "external/time-fantasy-characters/sheets/military3.png"),
-    ("npc1", "external/time-fantasy-characters/sheets/npc1.png"),
-    ("npc2", "external/time-fantasy-characters/sheets/npc2.png"),
-    ("npc3", "external/time-fantasy-characters/sheets/npc3.png"),
-    ("npc4", "external/time-fantasy-characters/sheets/npc4.png"),
-];
+const META_TOML: &str = "assets/external/time-fantasy-characters/time-fantasy-characters.toml";
+const PACK_PREFIX: &str = "external/time-fantasy-characters/";
 
 // ---------------------------------------------------------------------------
 // XInput FFI — bypasses Bevy's gilrs (see docs/gilrs-dual-gamepad-bug.md)
@@ -254,12 +243,19 @@ fn sheet_dir_row(direction: Direction) -> f32 {
 
 /// Pixel rect for a character/direction/frame on a sprite sheet.
 ///
-/// Sheet layout: 4 characters across × 2 down, each block 3 cols × 4 rows.
+/// Each character block is 3 cols × 4 rows.
 /// Columns within a block: 0 = walk1, 1 = idle, 2 = walk2.
 /// Rows within a block: 0 = down, 1 = left, 2 = right, 3 = up.
-fn char_frame_rect(char_index: usize, direction: Direction, frame: usize) -> Rect {
-    let col_block = (char_index % 4) as f32;
-    let row_block = (char_index / 4) as f32;
+fn char_frame_rect(
+    char_index: usize,
+    direction: Direction,
+    frame: usize,
+    cell_w: f32,
+    cell_h: f32,
+    chars_across: usize,
+) -> Rect {
+    let col_block = (char_index % chars_across) as f32;
+    let row_block = (char_index / chars_across) as f32;
 
     let frame_col = match frame {
         0 => 1.0, // idle/stand
@@ -267,27 +263,35 @@ fn char_frame_rect(char_index: usize, direction: Direction, frame: usize) -> Rec
         _ => 2.0, // walk2
     };
 
-    let x = (col_block * 3.0 + frame_col) * CHAR_CELL_W;
-    let y = (row_block * 4.0 + sheet_dir_row(direction)) * CHAR_CELL_H;
+    let x = (col_block * 3.0 + frame_col) * cell_w;
+    let y = (row_block * 4.0 + sheet_dir_row(direction)) * cell_h;
 
-    Rect::new(x, y, x + CHAR_CELL_W, y + CHAR_CELL_H)
+    Rect::new(x, y, x + cell_w, y + cell_h)
 }
 
-/// Loads one sprite sheet and returns 8 (name, FrameSet) entries.
+/// Loads one sprite sheet and returns (name, FrameSet) entries for each character.
 fn load_sheet_characters(
     asset_server: &AssetServer,
     sheet_name: &str,
     sheet_path: &str,
+    cell_w: f32,
+    cell_h: f32,
+    cols: u32,
+    rows: u32,
 ) -> Vec<(String, FrameSet)> {
+    let chars_across = (cols / 3) as usize;
+    let chars_down = (rows / 4) as usize;
+    let total = chars_across * chars_down;
+
     let image: Handle<Image> = asset_server.load(sheet_path.to_string());
-    (0..8)
+    (0..total)
         .map(|i| {
             let name = format!("{sheet_name}_{i}");
             let frames = [Direction::Down, Direction::Up, Direction::Left, Direction::Right]
                 .map(|dir| {
                     [0, 1, 2].map(|f| FrameRef {
                         image: image.clone(),
-                        rect: char_frame_rect(i, dir, f),
+                        rect: char_frame_rect(i, dir, f, cell_w, cell_h, chars_across),
                     })
                 });
             (name, frames)
@@ -305,9 +309,24 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         }),
     ));
 
+    let toml_str = std::fs::read_to_string(META_TOML)
+        .unwrap_or_else(|e| panic!("Failed to read {META_TOML}: {e}"));
+    let meta: SpriteMetadata = toml::from_str(&toml_str)
+        .unwrap_or_else(|e| panic!("Failed to parse {META_TOML}: {e}"));
+    let walk_sheets = meta.sheets_by_category("4dir-walk");
+
     let mut groups = Vec::new();
-    for &(name, path) in CHAR_SHEETS {
-        groups.extend(load_sheet_characters(&asset_server, name, path));
+    for (id, sheet) in &walk_sheets {
+        let asset_path = format!("{PACK_PREFIX}{}", sheet.file);
+        groups.extend(load_sheet_characters(
+            &asset_server,
+            id,
+            &asset_path,
+            sheet.cell_w as f32,
+            sheet.cell_h as f32,
+            sheet.cols,
+            sheet.rows,
+        ));
     }
     assert!(!groups.is_empty(), "No character sheets configured.");
 

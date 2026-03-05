@@ -175,6 +175,8 @@ pub struct Sheet {
     pub cols: u32,
     #[serde(default, skip_serializing)]
     pub rows: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     #[serde(default, skip_serializing)]
     pub scale: Option<f64>,
     #[serde(default, skip_serializing)]
@@ -289,6 +291,17 @@ impl Source {
 // ===========================================================================
 // Verification
 // ===========================================================================
+
+impl SpriteMetadata {
+    /// Return all sheets matching a given category tag.
+    pub fn sheets_by_category(&self, category: &str) -> Vec<(&str, &Sheet)> {
+        self.sheets
+            .iter()
+            .filter(|(_, s)| s.category.as_deref() == Some(category))
+            .map(|(id, s)| (id.as_str(), s))
+            .collect()
+    }
+}
 
 /// Verify internal consistency of a metadata file.
 /// Returns a list of error messages (empty = valid).

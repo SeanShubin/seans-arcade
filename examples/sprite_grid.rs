@@ -8,7 +8,6 @@
 //!   Scroll wheel — zoom
 //!   Left-click drag — pan
 //!   Home or R — reset pan/zoom
-//!   Ctrl+S — save
 //!
 //! Run with:
 //!   cargo run --example sprite_grid -- metadata.toml --pack-root D:/assets/SomePack
@@ -159,7 +158,6 @@ struct EditorState {
     image_keys: Vec<String>,
     current_image: usize,
     // General
-    dirty: bool,
     status_message: Option<(String, f64)>,
 }
 
@@ -365,7 +363,6 @@ fn build_editor_state(
         config_path: config_path.map(|p| p.to_path_buf()),
         image_keys,
         current_image: 0,
-        dirty: false,
         status_message: None,
     }
 }
@@ -476,6 +473,7 @@ fn apply_grid_to_image(
         file: image_key.to_string(),
         cell_w,
         cell_h,
+        category: None,
         cols: 0,
         rows: 0,
         scale: None,
@@ -1134,15 +1132,6 @@ fn draw_span_selection(
 // Systems: save + window title
 // ---------------------------------------------------------------------------
 
-fn save_metadata(keyboard: Res<ButtonInput<KeyCode>>, mut editor: ResMut<EditorState>) {
-    let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
-    if !(ctrl && keyboard.just_pressed(KeyCode::KeyS)) {
-        return;
-    }
-
-    do_save(&mut editor);
-}
-
 fn do_save(editor: &mut EditorState) {
     let errors = verify(&editor.meta);
     if !errors.is_empty() {
@@ -1160,14 +1149,8 @@ fn do_save(editor: &mut EditorState) {
         return;
     }
 
-    match std::fs::write(&editor.meta_path, &output) {
-        Ok(()) => {
-            editor.dirty = false;
-            editor.status_message = Some(("Saved!".into(), 3.0));
-        }
-        Err(e) => {
-            editor.status_message = Some((format!("Save failed: {e}"), 5.0));
-        }
+    if let Err(e) = std::fs::write(&editor.meta_path, &output) {
+        editor.status_message = Some((format!("Save failed: {e}"), 5.0));
     }
 }
 
@@ -1182,7 +1165,6 @@ fn update_window_title(
     };
 
     let zoom_pct = (browser.zoom * 100.0).round() as i32;
-    let dirty_marker = if editor.dirty { " *" } else { "" };
     let pack_prefix = pipeline
         .as_ref()
         .and_then(|p| p.config.packs.get(p.current_pack))
@@ -1202,7 +1184,7 @@ fn update_window_title(
         .count();
 
     window.title = format!(
-        "{pack_prefix}Sprite Editor — [{}/{}] {current_label} — {gridded}/{} gridded — {zoom_pct}%{dirty_marker}",
+        "{pack_prefix}Sprite Editor — [{}/{}] {current_label} — {gridded}/{} gridded — {zoom_pct}%",
         editor.current_image + 1,
         editor.image_keys.len(),
         editor.image_keys.len(),
@@ -1265,10 +1247,6 @@ fn editor_ui(
                         });
 
                     if new_pack != pipeline.current_pack {
-                        // Auto-save if dirty
-                        if editor.dirty {
-                            do_save(&mut editor);
-                        }
 
                         let pack = &packs[new_pack];
                         let meta_path = pipeline.config.meta_path(pack);
@@ -1362,16 +1340,6 @@ fn editor_ui(
                 &hovered,
             );
 
-            // Save button
-            ui.separator();
-            let save_label = if editor.dirty {
-                "Save (Ctrl+S) *"
-            } else {
-                "Save (Ctrl+S)"
-            };
-            if ui.button(save_label).clicked() {
-                do_save(&mut editor);
-            }
         });
 }
 
@@ -1381,7 +1349,7 @@ fn editor_ui(
 
 fn show_grid_panel(
     ui: &mut egui::Ui,
-    editor: &mut ResMut<EditorState>,
+    mut editor: &mut ResMut<EditorState>,
     browser: &mut ResMut<BrowserState>,
     raw_image: &mut ResMut<CurrentRawImage>,
     stats: &mut ResMut<CachedImageStats>,
@@ -1452,6 +1420,45 @@ fn show_grid_panel(
             egui::Color32::from_rgb(200, 200, 100),
             "Not yet gridded",
         );
+    }
+
+    // Category picker (only when sheet exists)
+    if let Some(ref sid) = existing_sheet {
+        ui.separator();
+        ui.label("Category:");
+
+        // Collect known categories from all sheets + hardcoded seeds
+        let mut categories: Vec<String> = Vec::new();
+        for seed in &["4dir-walk", "8dir-walk"] {
+            categories.push(seed.to_string());
+        }
+        for s in editor.meta.sheets.values() {
+            if let Some(ref cat) = s.category {
+                if !categories.contains(cat) {
+                    categories.push(cat.clone());
+                }
+            }
+        }
+        categories.sort();
+
+        let current = editor
+            .meta
+            .sheets
+            .get(sid.as_str())
+            .and_then(|s| s.category.clone());
+
+        ui.horizontal_wrapped(|ui| {
+            for cat in &categories {
+                let active = current.as_deref() == Some(cat.as_str());
+                if ui.selectable_label(active, cat).clicked() {
+                    if let Some(sheet) = editor.meta.sheets.get_mut(sid.as_str()) {
+                        // Toggle off if already selected, otherwise set
+                        sheet.category = if active { None } else { Some(cat.clone()) };
+                        do_save(&mut editor);
+                    }
+                }
+            }
+        });
     }
 
     ui.separator();
@@ -1531,7 +1538,7 @@ fn show_grid_panel(
                     browser.cell_w,
                     browser.cell_h,
                 );
-                editor.dirty = true;
+                do_save(&mut editor);
                 editor.status_message = Some((
                     format!("Applied grid \"{sheet_id}\""),
                     4.0,
@@ -1544,7 +1551,7 @@ fn show_grid_panel(
     if let Some(ref sid) = existing_sheet {
         if ui.button("Clear Grid").clicked() {
             editor.meta.sheets.remove(sid.as_str());
-            editor.dirty = true;
+            do_save(&mut editor);
             editor.status_message = Some(("Grid cleared.".into(), 3.0));
         }
     }
@@ -1573,7 +1580,7 @@ fn show_grid_panel(
                 if ui.button("Merge into Span").clicked() {
                     if let Some(ref rgba) = raw_image.rgba.clone() {
                         if merge_span(&mut editor.meta, rgba, sid, start, end) {
-                            editor.dirty = true;
+                            do_save(&mut editor);
                             editor.status_message = Some((
                                 format!("Merged {col_span}x{row_span} cells into span"),
                                 4.0,
@@ -1715,7 +1722,6 @@ fn main() {
             draw_occupancy,
             draw_spans,
             draw_span_selection,
-            save_metadata,
             update_window_title,
         )
             .chain(),

@@ -24,26 +24,31 @@ cell_h = 50
 file = "sheets/bonus1.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.chara2]
 file = "sheets/chara2.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.chara3]
 file = "sheets/chara3.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.chara4]
 file = "sheets/chara4.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.chara5]
 file = "sheets/chara5.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.chests]
 file = "sheets/chests.png"
@@ -74,33 +79,40 @@ cell_h = 36
 file = "sheets/military1.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.military2]
 file = "sheets/military2.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.military3]
 file = "sheets/military3.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.npc1]
 file = "sheets/npc1.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.npc2]
 file = "sheets/npc2.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.npc3]
 file = "sheets/npc3.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"
 
 [sheets.npc4]
 file = "sheets/npc4.png"
 cell_w = 26
 cell_h = 36
+category = "4dir-walk"

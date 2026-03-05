@@ -41,6 +41,8 @@ struct RuntimeSheet {
     cell_h: u32,
     cols: u32,
     rows: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
 }
 
 /// Runtime catalog entry — only sources, no analysis.
@@ -187,6 +189,7 @@ fn export_pack(
                 cell_h: sheet.cell_h,
                 cols,
                 rows,
+                category: sheet.category.clone(),
             },
         );
 
