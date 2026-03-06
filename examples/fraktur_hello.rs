@@ -57,22 +57,40 @@ fn to_fraktur_string(s: &str) -> String {
     s.chars().map(to_fraktur).collect()
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2d);
 
-    let fraktur_text = to_fraktur_string("Hello, Sean!");
+    let font = asset_server.load("fonts/NotoSansMath-Regular.ttf");
+    let pangram = "Sphinx of black quartz, judge my vow";
+    let lines = [
+        to_fraktur_string("Hello, Sean!"),
+        to_fraktur_string(&pangram.to_uppercase()),
+        to_fraktur_string(&pangram.to_lowercase()),
+    ];
+
+    let text_font = TextFont {
+        font,
+        font_size: 48.0,
+        ..default()
+    };
 
     commands
         .spawn(Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
+            flex_direction: FlexDirection::Column,
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
+            row_gap: Val::Px(16.0),
             ..default()
         })
-        .with_child((
-            Text::new(&fraktur_text),
-            TextFont::from_font_size(48.0),
-            TextColor::WHITE,
-        ));
+        .with_children(|parent| {
+            for line in &lines {
+                parent.spawn((
+                    Text::new(line),
+                    text_font.clone(),
+                    TextColor::WHITE,
+                ));
+            }
+        });
 }
