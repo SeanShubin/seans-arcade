@@ -152,3 +152,4 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [bevy-modern-api.md](research/bevy-modern-api.md) — Bevy modern API reference: current patterns vs deprecated ones
 - [coordinate-systems-and-pixels.md](research/coordinate-systems-and-pixels.md) — World units, screen pixels, camera projection, sprites, and when to use what
 - [randomness-in-bevy.md](research/randomness-in-bevy.md) — Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking
+- [window-modes.md](research/window-modes.md) — Window modes: windowed, borderless, fullscreen, and how they differ
