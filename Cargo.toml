@@ -1,5 +1,11 @@
 [workspace]
-members = ["prototypes/relay", "prototypes/net_pong"]
+members = [
+    "crates/arcade",
+    "crates/relay",
+    "crates/arcade-cli",
+    "prototypes/relay",
+    "prototypes/net_pong",
+]
 
 [package]
 name = "bevy-prototyping"

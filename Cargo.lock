@@ -241,6 +241,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcade"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
+name = "arcade-cli"
+version = "0.1.0"
+
+[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5153,6 +5164,10 @@ name = "regex-syntax"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
+
+[[package]]
+name = "relay"
+version = "0.1.0"
 
 [[package]]
 name = "renderdoc-sys"
