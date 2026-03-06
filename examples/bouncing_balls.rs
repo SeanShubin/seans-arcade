@@ -23,16 +23,17 @@ fn main() {
         ))
         .init_resource::<BounceConfig>()
         .init_resource::<PanelWidth>()
+        .init_resource::<BallActions>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms)
+            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms, collect_balls, scatter_balls)
                 .chain()
                 .run_if(|config: Res<BounceConfig>| !config.use_fixed_update),
         )
         .add_systems(
             FixedUpdate,
-            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms)
+            (manage_balls, sync_trail_entities, sync_ball_size, move_balls, apply_noise, update_trails, sync_trail_transforms, collect_balls, scatter_balls)
                 .chain()
                 .run_if(|config: Res<BounceConfig>| config.use_fixed_update),
         )
@@ -47,8 +48,12 @@ struct BounceConfig {
     trail_count_exp: i32,
     speed_exp: i32,
     trail_gap_exp: i32,
-    hue_noise_exp: i32,
-    direction_noise_exp: i32,
+    dir_enabled: bool,
+    dir_turn_rate_exp: i32,
+    dir_coherence_exp: i32,
+    hue_enabled: bool,
+    hue_range_exp: i32,
+    hue_coherence_exp: i32,
     use_fixed_update: bool,
 }
 
@@ -60,8 +65,12 @@ impl Default for BounceConfig {
             trail_count_exp: 0,
             speed_exp: 0,
             trail_gap_exp: 0,
-            hue_noise_exp: 0,
-            direction_noise_exp: 0,
+            dir_enabled: true,
+            dir_turn_rate_exp: 7,
+            dir_coherence_exp: 0,
+            hue_enabled: true,
+            hue_range_exp: 7,
+            hue_coherence_exp: 0,
             use_fixed_update: false,
         }
     }
@@ -88,14 +97,24 @@ impl BounceConfig {
         2_usize.pow(self.trail_gap_exp as u32)
     }
 
-    /// Hue noise rate in cycles per second.
-    fn hue_cycles_per_sec(&self) -> f64 {
-        2_f64.powi(self.hue_noise_exp)
+    /// Direction turning rate in degrees per second.
+    fn dir_turn_rate(&self) -> f64 {
+        2_f64.powi(self.dir_turn_rate_exp)
     }
 
-    /// Direction noise rate in cycles per second.
-    fn direction_cycles_per_sec(&self) -> f64 {
-        2_f64.powi(self.direction_noise_exp)
+    /// Direction coherence time in seconds.
+    fn dir_coherence(&self) -> f64 {
+        2_f64.powi(self.dir_coherence_exp)
+    }
+
+    /// Hue range (max deviation from base) in degrees.
+    fn hue_range(&self) -> f64 {
+        2_f64.powi(self.hue_range_exp)
+    }
+
+    /// Hue coherence time in seconds.
+    fn hue_coherence(&self) -> f64 {
+        2_f64.powi(self.hue_coherence_exp)
     }
 }
 
@@ -128,6 +147,12 @@ struct BaseHue(f32);
 
 #[derive(Resource, Default)]
 struct PanelWidth(f32);
+
+#[derive(Resource, Default)]
+struct BallActions {
+    collect: bool,
+    scatter: bool,
+}
 
 #[derive(Resource)]
 struct CircleTexture(Handle<Image>);
@@ -366,34 +391,44 @@ fn apply_noise(
 ) {
     let perlin = Perlin::new(0);
     let elapsed_secs = time.elapsed_secs_f64();
-    let dir_rate = config.direction_cycles_per_sec();
-    let hue_rate = config.hue_cycles_per_sec();
+    let dt = time.delta_secs_f64();
+    let dir_turn_rate_rad = config.dir_turn_rate().to_radians();
+    let dir_freq = 1.0 / config.dir_coherence();
+    let hue_range = config.hue_range();
+    let hue_freq = 1.0 / config.hue_coherence();
     let trail_count = config.trail_count();
 
+    let dir_enabled = config.dir_enabled;
+    let hue_enabled = config.hue_enabled;
+
     for (seeds, base_hue, mut vel, mut ball_color, mut ball_sprite, trail_ents) in &mut balls {
-        // Direction noise: rotate velocity
-        let dir_noise = perlin.get([elapsed_secs * dir_rate, seeds.direction]);
-        let angle = dir_noise * 0.05;
-        let (sin, cos) = (angle as f32).sin_cos();
-        let v = vel.0;
-        vel.0 = Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+        // Direction noise: rotate velocity by turning_rate * delta_time
+        if dir_enabled {
+            let dir_noise = perlin.get([elapsed_secs * dir_freq, seeds.direction]);
+            let angle = dir_noise * dir_turn_rate_rad * dt;
+            let (sin, cos) = (angle as f32).sin_cos();
+            let v = vel.0;
+            vel.0 = Vec2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos);
+        }
 
-        // Hue noise: shift color
-        let hue_noise = perlin.get([elapsed_secs * hue_rate, seeds.hue]);
-        let new_hue = (base_hue.0 + hue_noise as f32 * 180.0).rem_euclid(360.0);
-        let new_color = Color::oklcha(0.5, 0.4, new_hue, 1.0);
-        ball_color.0 = new_color;
+        // Hue noise: offset from base hue by range
+        if hue_enabled {
+            let hue_noise = perlin.get([elapsed_secs * hue_freq, seeds.hue]);
+            let new_hue = (base_hue.0 + hue_noise as f32 * hue_range as f32).rem_euclid(360.0);
+            let new_color = Color::oklcha(0.5, 0.4, new_hue, 1.0);
+            ball_color.0 = new_color;
 
-        // Update ball sprite color
-        ball_sprite.color = new_color;
+            // Update ball sprite color
+            ball_sprite.color = new_color;
 
-        // Update trail sprite colors (preserve per-dot alpha)
-        let base_srgba = new_color.to_srgba();
-        for (i, &entity) in trail_ents.0.iter().enumerate() {
-            if let Ok(mut sprite) = trail_dots.get_mut(entity) {
-                let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
-                sprite.color =
-                    Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+            // Update trail sprite colors (preserve per-dot alpha)
+            let base_srgba = new_color.to_srgba();
+            for (i, &entity) in trail_ents.0.iter().enumerate() {
+                if let Ok(mut sprite) = trail_dots.get_mut(entity) {
+                    let alpha = (1.0 - i as f32 / trail_count as f32) * base_srgba.alpha;
+                    sprite.color =
+                        Color::srgba(base_srgba.red, base_srgba.green, base_srgba.blue, alpha);
+                }
             }
         }
     }
@@ -434,10 +469,45 @@ fn sync_trail_transforms(
     }
 }
 
+fn collect_balls(
+    mut actions: ResMut<BallActions>,
+    panel: Res<PanelWidth>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    mut balls: Query<(&mut Transform, &mut TrailHistory), With<Ball>>,
+) {
+    if !actions.collect {
+        return;
+    }
+    actions.collect = false;
+    let Ok(win) = window.single() else { return };
+    let center_x = (-win.width() / 2.0 + panel.0 + win.width() / 2.0) / 2.0;
+    for (mut transform, mut trail) in &mut balls {
+        transform.translation.x = center_x;
+        transform.translation.y = 0.0;
+        trail.0.clear();
+    }
+}
+
+fn scatter_balls(
+    mut actions: ResMut<BallActions>,
+    mut balls: Query<&mut Velocity, With<Ball>>,
+) {
+    if !actions.scatter {
+        return;
+    }
+    actions.scatter = false;
+    let mut rng = rand::rng();
+    for mut vel in &mut balls {
+        let angle: f32 = rng.random_range(0.0..std::f32::consts::TAU);
+        vel.0 = Vec2::new(angle.cos(), angle.sin());
+    }
+}
+
 fn ui_system(
     mut contexts: EguiContexts,
     mut config: ResMut<BounceConfig>,
     mut panel_width: ResMut<PanelWidth>,
+    mut actions: ResMut<BallActions>,
     diagnostics: Res<DiagnosticsStore>,
     time: Res<Time>,
 ) {
@@ -507,32 +577,70 @@ fn ui_system(
             ui.label("Speed");
         });
 
-        // Hue drift
+        ui.checkbox(&mut config.dir_enabled, "Direction noise");
+
+        // Direction turning rate
         ui.horizontal(|ui| {
             if ui.button("-").clicked() {
-                config.hue_noise_exp -= 1;
+                config.dir_turn_rate_exp -= 1;
             }
-            ui.label(format!("{:.2} /sec", config.hue_cycles_per_sec()));
+            ui.label(format!("{:.0} °/s", config.dir_turn_rate()));
             if ui.button("+").clicked() {
-                config.hue_noise_exp += 1;
+                config.dir_turn_rate_exp += 1;
             }
-            ui.label("Hue drift");
+            ui.label("Turn rate");
         });
 
-        // Direction drift
+        // Direction coherence
         ui.horizontal(|ui| {
             if ui.button("-").clicked() {
-                config.direction_noise_exp -= 1;
+                config.dir_coherence_exp -= 1;
             }
-            ui.label(format!("{:.2} /sec", config.direction_cycles_per_sec()));
+            ui.label(format!("{:.2} s", config.dir_coherence()));
             if ui.button("+").clicked() {
-                config.direction_noise_exp += 1;
+                config.dir_coherence_exp += 1;
             }
-            ui.label("Dir drift");
+            ui.label("Dir coherence");
+        });
+
+        ui.checkbox(&mut config.hue_enabled, "Hue noise");
+
+        // Hue range
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.hue_range_exp -= 1;
+            }
+            ui.label(format!("{:.0}°", config.hue_range()));
+            if ui.button("+").clicked() {
+                config.hue_range_exp += 1;
+            }
+            ui.label("Hue range");
+        });
+
+        // Hue coherence
+        ui.horizontal(|ui| {
+            if ui.button("-").clicked() {
+                config.hue_coherence_exp -= 1;
+            }
+            ui.label(format!("{:.2} s", config.hue_coherence()));
+            if ui.button("+").clicked() {
+                config.hue_coherence_exp += 1;
+            }
+            ui.label("Hue coherence");
         });
 
         // Fixed update toggle
         ui.checkbox(&mut config.use_fixed_update, "Use FixedUpdate (64 Hz)");
+
+        ui.separator();
+        ui.horizontal(|ui| {
+            if ui.button("Collect").clicked() {
+                actions.collect = true;
+            }
+            if ui.button("Scatter").clicked() {
+                actions.scatter = true;
+            }
+        });
 
         ui.separator();
         ui.heading("Diagnostics");
