@@ -9,15 +9,17 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    commands.spawn((
-        Text::new("arcade"),
-        TextFont::from_font_size(48.0),
-        TextColor::WHITE,
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Percent(50.0),
-            left: Val::Percent(50.0),
+    commands
+        .spawn((Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
             ..default()
-        },
-    ));
+        },))
+        .with_child((
+            Text::new("arcade"),
+            TextFont::from_font_size(48.0),
+            TextColor::WHITE,
+        ));
 }
