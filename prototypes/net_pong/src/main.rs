@@ -10,7 +10,7 @@
 use std::net::{SocketAddr, UdpSocket};
 
 use bevy::prelude::*;
-use relay::{ClientMessage, RelayMessage, Tick, deserialize, serialize};
+use prototype_relay::{ClientMessage, RelayMessage, Tick, deserialize, serialize};
 
 fn main() {
     let relay_addr: SocketAddr = std::env::args()

@@ -9,7 +9,7 @@
 
 use std::net::{SocketAddr, UdpSocket};
 
-use relay::{
+use prototype_relay::{
     ClientMessage, PlayerSlot, RelayMessage, Tick, deserialize, serialize,
 };
 
