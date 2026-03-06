@@ -44,6 +44,11 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Identity secret rotation** via two-field config — player adds `new_identity_secret` to `config.toml`, client sends both in Hello, relay rotates the stored hash, client removes the field after success; Hello gains an optional `new_secret` field (backward-compatible) ([decision](architecture-decisions.md))
 - **New-machine identity recovery** via claimed-name prompt — new machine auto-generates a secret, gets rejected, prompts "enter your identity secret"; player reads the 4 words from `config.toml` on old machine and types them; if old machine is gone, operator runs `identity reset` ([decision](architecture-decisions.md))
 
+### Logging
+- **Minimal logging, emergencies only** — no verbose operational logs, just panics and errors
+- **`arcade`** logs to a file in `%APPDATA%\seans-arcade\` (next to `config.toml`) — no console window in release builds
+- **`relay`** and **`arcade-cli`** log to stderr — console output is accessible directly
+
 ### Design
 - Prefer **diegetic design** — interactions happen in the game world through the avatar, not in menus or overlays ([philosophy](research/design-philosophy.md))
 - **Chat text is readable** — messages use standard legible text rendering

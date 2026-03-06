@@ -14,6 +14,7 @@ A multiplayer arcade application built with Bevy, distributed as a single Rust b
 
 ## Where to Start
 
+- **What am I working on now?** → [TODO.md](docs/TODO.md)
 - **What is this project?** → [project-overview.md](docs/project-overview.md)
 - **What has been decided?** → [decisions.md](docs/decisions.md)
 - **Why was something decided?** → [architecture-decisions.md](docs/architecture-decisions.md)

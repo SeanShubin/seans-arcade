@@ -102,6 +102,9 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 
 ## Document Index
 
+### Work Tracking
+- [TODO.md](TODO.md) — Current work items and completed tasks
+
 ### Decisions
 - [decisions.md](decisions.md) — Decision register (terse bullets, links to rationale)
 - [architecture-decisions.md](architecture-decisions.md) — Formalized technical decisions with rationale
