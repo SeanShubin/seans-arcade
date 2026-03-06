@@ -1,3 +1,3 @@
 fn main() {
-    println!("arcade-cli");
+    println!("arcade-cli {}", env!("GIT_COMMIT_HASH"));
 }

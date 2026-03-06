@@ -18,7 +18,7 @@ fn setup(mut commands: Commands) {
             ..default()
         },))
         .with_child((
-            Text::new("arcade"),
+            Text::new(format!("arcade {}", env!("GIT_COMMIT_HASH"))),
             TextFont::from_font_size(48.0),
             TextColor::WHITE,
         ));

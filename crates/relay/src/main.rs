@@ -1,3 +1,3 @@
 fn main() {
-    println!("relay");
+    println!("relay {}", env!("GIT_COMMIT_HASH"));
 }
