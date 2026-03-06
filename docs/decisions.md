@@ -46,6 +46,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### Design
 - Prefer **diegetic design** — interactions happen in the game world through the avatar, not in menus or overlays ([philosophy](research/design-philosophy.md))
+- **Chat text is readable** — messages use standard legible text rendering
+- **Player names use Mathematical Fraktur** — stylized rune-like appearance while remaining recognizable as Latin a-z/A-Z ([rationale](architecture-decisions.md#mathematical-fraktur-for-player-names))
 
 ### Arcade Model (v2+)
 - The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it

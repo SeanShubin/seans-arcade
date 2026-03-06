@@ -338,3 +338,15 @@ Cross-game interaction flows through the container, never directly between games
 **Rationale:** The commit hash is identical for every message from a given connection — it cannot change without disconnecting and reconnecting, which produces a new connection event. Repeating it on every log entry adds bytes that carry zero additional information. With version isolation, logs are split by version, so every entry in a given log shares the same commit hash — recorded once per log. Minimum information means: log state changes, not state itself.
 
 **See:** [network-operations.md](architecture/network-operations.md) — Version Index
+
+---
+
+## Design
+
+### Mathematical Fraktur for player names
+
+**Decision:** Chat message text uses standard readable rendering. Player names are displayed in Mathematical Fraktur, mapping a-z to 𝔞–𝔷 (U+1D51E–U+1D537) and A-Z to 𝔄–ℨ (U+1D504–U+1D51B). Names are restricted to a-z/A-Z characters. Note: uppercase Fraktur has five codepoints (C, H, I, R, Z) that live in the Letterlike Symbols block rather than the Mathematical Alphanumeric Symbols block, so uppercase requires a lookup table rather than a simple offset.
+
+**Alternatives rejected:** Elder Futhark runes (real historical runes but unreadable — players can't learn to recognize names), custom sprite sheet (maximum creative control but requires art assets and custom rendering), plain Latin text (functional but no visual identity).
+
+**Rationale:** Mathematical Fraktur is a Unicode range that maps 1:1 to Latin a-z, so names are stylized but still recognizable with brief exposure. It requires no custom art — it's just a character offset. Chat readability is preserved because only the name is stylized, not the message body. The rune-like aesthetic gives the arcade visual character without sacrificing usability.
