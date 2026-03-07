@@ -1,35 +1,49 @@
 //! Networking plugin: UDP connection to relay server.
 //!
-//! Follows the pattern from `prototypes/net_pong/src/main.rs`:
-//! non-blocking UDP socket, resource-based message passing.
+//! Owns: ConnectionState, PeerList, ClientConfig, NetSocket.
+//! Cross-domain communication uses RelayEvent (Bevy event).
 
 use std::net::UdpSocket;
 
 use bevy::prelude::*;
 use protocol::{ClientMessage, RelayMessage, deserialize, serialize};
 
-use crate::config::{Config, data_dir_from_args, load_config, save_config};
+use crate::config::{data_dir_from_args, load_config, save_config};
 
 pub struct NetPlugin;
 
 impl Plugin for NetPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ConnectionState::Loading)
-            .init_resource::<IncomingMessages>()
             .init_resource::<PeerList>()
             .insert_resource(HelloTimer(Timer::from_seconds(0.5, TimerMode::Repeating)))
             .insert_resource(KeepaliveTimer(Timer::from_seconds(10.0, TimerMode::Repeating)))
+            .add_message::<RelayEvent>()
+            .add_message::<ConnectRequest>()
             .add_systems(Startup, setup_network)
             .add_systems(
                 Update,
                 (
+                    handle_connect_request,
                     send_hello.run_if(is_connecting),
-                    receive_messages.run_if(has_socket),
+                    receive_messages.run_if(has_socket).in_set(ReceiveSet),
                     send_keepalive.run_if(is_connected),
                 ),
             );
     }
 }
+
+/// Relay message forwarded as a Bevy message for cross-domain consumers.
+#[derive(Message)]
+pub struct RelayEvent(pub RelayMessage);
+
+/// Fired by chat to request a new connection (after relay secret entry).
+#[derive(Message)]
+pub struct ConnectRequest;
+
+/// System set for ordering: chat systems that read RelayEvent run after this.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ReceiveSet;
 
 #[derive(Resource)]
 pub struct NetSocket {
@@ -50,14 +64,11 @@ pub enum ConnectionState {
 }
 
 #[derive(Resource, Default)]
-pub struct IncomingMessages(pub Vec<RelayMessage>);
-
-#[derive(Resource, Default)]
 pub struct PeerList(pub Vec<String>);
 
 #[derive(Resource)]
 pub struct ClientConfig {
-    pub config: Config,
+    pub config: crate::config::Config,
     pub data_dir: std::path::PathBuf,
 }
 
@@ -133,7 +144,7 @@ fn send_hello(net: Option<Res<NetSocket>>, config: Res<ClientConfig>, mut timer:
 fn receive_messages(
     net: Res<NetSocket>,
     mut state: ResMut<ConnectionState>,
-    mut incoming: ResMut<IncomingMessages>,
+    mut events: MessageWriter<RelayEvent>,
     mut peers: ResMut<PeerList>,
     mut config: ResMut<ClientConfig>,
 ) {
@@ -152,22 +163,27 @@ fn receive_messages(
             continue;
         };
 
+        // Net-domain concerns: ConnectionState, PeerList, Config
         match &msg {
             RelayMessage::Welcome { peer_count } => {
                 if *state == ConnectionState::Connecting {
                     println!("arcade: connected ({peer_count} peers)");
-                    // If we had a new_identity_secret, it was accepted — clean it up
                     if config.config.new_identity_secret.is_some() {
                         config.config.identity_secret =
                             config.config.new_identity_secret.take().unwrap();
-                        save_config(&config.data_dir, &config.config);
                     }
+                    save_config(&config.data_dir, &config.config);
                     *state = ConnectionState::Connected;
                 }
             }
             RelayMessage::NameClaimed => {
                 println!("arcade: name claimed by another identity");
                 *state = ConnectionState::NameClaimed;
+            }
+            RelayMessage::RejectSecret => {
+                bevy::log::info!("received RejectSecret from relay");
+                config.config.relay_secret = None;
+                *state = ConnectionState::NeedsRelaySecret;
             }
             RelayMessage::PeerJoined { name } => {
                 if !peers.0.contains(name) {
@@ -180,7 +196,34 @@ fn receive_messages(
             _ => {}
         }
 
-        incoming.0.push(msg);
+        // Forward to cross-domain consumers (chat UI, future systems)
+        events.write(RelayEvent(msg));
+    }
+}
+
+fn handle_connect_request(
+    mut events: MessageReader<ConnectRequest>,
+    mut commands: Commands,
+    config: Res<ClientConfig>,
+    mut state: ResMut<ConnectionState>,
+) {
+    for _ in events.read() {
+        let relay_addr: std::net::SocketAddr = config
+            .config
+            .relay_address
+            .parse()
+            .unwrap_or_else(|_| "127.0.0.1:7700".parse().unwrap());
+
+        let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind local UDP socket");
+        socket
+            .set_nonblocking(true)
+            .expect("failed to set non-blocking");
+
+        commands.insert_resource(NetSocket {
+            socket,
+            relay_addr,
+        });
+        *state = ConnectionState::Connecting;
     }
 }
 
@@ -206,21 +249,3 @@ pub fn send_chat_message(net: &NetSocket, text: &str) {
     let _ = net.socket.send_to(&msg, net.relay_addr);
 }
 
-pub fn start_connection(commands: &mut Commands, config: &mut ClientConfig, state: &mut ConnectionState) {
-    let relay_addr: std::net::SocketAddr = config
-        .config
-        .relay_address
-        .parse()
-        .unwrap_or_else(|_| "127.0.0.1:7700".parse().unwrap());
-
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind local UDP socket");
-    socket
-        .set_nonblocking(true)
-        .expect("failed to set non-blocking");
-
-    commands.insert_resource(NetSocket {
-        socket,
-        relay_addr,
-    });
-    *state = ConnectionState::Connecting;
-}

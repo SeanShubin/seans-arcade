@@ -13,8 +13,8 @@ use crate::fraktur::to_fraktur;
 
 use crate::config::{generate_identity_secret, save_config};
 use crate::net::{
-    ClientConfig, ConnectionState, IncomingMessages, NetSocket, PeerList, send_chat_message,
-    start_connection,
+    ClientConfig, ConnectRequest, ConnectionState, NetSocket, PeerList, ReceiveSet, RelayEvent,
+    send_chat_message,
 };
 
 const SCROLLBAR_WIDTH: f32 = 14.0;
@@ -32,13 +32,15 @@ impl Plugin for ChatPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ChatState>()
             .init_resource::<ScrollbarDragState>()
+            .add_message::<TextSubmitted>()
             .add_systems(Startup, setup_ui)
             .add_systems(
                 Update,
                 (
-                    handle_keyboard_input,
-                    process_incoming_messages,
-                    spawn_new_messages,
+                    (read_text_input, handle_text_submit).chain(),
+                    (process_incoming_messages, spawn_new_messages)
+                        .chain()
+                        .after(ReceiveSet),
                     handle_mouse_wheel,
                     handle_scrollbar_interaction,
                     update_scrollbar_thumb,
@@ -66,6 +68,9 @@ enum InputMode {
     NameEntry,
     SecretEntry,
 }
+
+#[derive(Message)]
+struct TextSubmitted(String);
 
 struct ChatMessage {
     from: String,
@@ -211,13 +216,11 @@ fn setup_ui(mut commands: Commands, state: Res<ConnectionState>, mut chat: ResMu
         });
 }
 
-fn handle_keyboard_input(
+/// Input layer: translates raw keyboard events into buffer edits and TextSubmitted events.
+fn read_text_input(
     mut events: MessageReader<KeyboardInput>,
     mut chat: ResMut<ChatState>,
-    mut commands: Commands,
-    mut config: ResMut<ClientConfig>,
-    mut conn_state: ResMut<ConnectionState>,
-    net: Option<Res<NetSocket>>,
+    mut submit: MessageWriter<TextSubmitted>,
 ) {
     for event in events.read() {
         if !event.state.is_pressed() {
@@ -227,70 +230,9 @@ fn handle_keyboard_input(
         match event.key_code {
             KeyCode::Enter | KeyCode::NumpadEnter => {
                 let trimmed = chat.input_buffer.trim().to_string();
-                if trimmed.is_empty() {
-                    continue;
-                }
-
-                match chat.input_mode {
-                    InputMode::NameEntry => {
-                        // Validate: only a-z, A-Z
-                        if trimmed.chars().all(|c| c.is_ascii_alphabetic()) && trimmed.len() <= 20
-                        {
-                            config.config.identity_name = trimmed.clone();
-                            config.config.identity_secret = generate_identity_secret();
-                            save_config(&config.data_dir, &config.config);
-
-                            chat.messages.push(ChatMessage {
-                                from: trimmed.clone(),
-                                text: " registered. Enter the relay secret:".into(),
-                                is_system: true,
-                            });
-                            chat.input_mode = InputMode::RelaySecretEntry;
-                        } else {
-                            chat.messages.push(ChatMessage {
-                                from: String::new(),
-                                text: "Name must be 1-20 letters (a-z, A-Z) only.".into(),
-                                is_system: true,
-                            });
-                        }
-                        chat.input_buffer.clear();
-                    }
-                    InputMode::RelaySecretEntry => {
-                        bevy::log::info!("relay secret entered, connecting...");
-                        config.config.relay_secret = Some(trimmed);
-                        // Don't save yet — wait for Welcome to confirm the secret is correct
-                        chat.messages.push(ChatMessage {
-                            from: String::new(),
-                            text: "Connecting...".into(),
-                            is_system: true,
-                        });
-                        chat.input_mode = InputMode::Chat;
-                        start_connection(
-                            &mut commands,
-                            &mut config,
-                            &mut conn_state,
-                        );
-                        chat.input_buffer.clear();
-                    }
-                    InputMode::SecretEntry => {
-                        config.config.identity_secret = trimmed;
-                        save_config(&config.data_dir, &config.config);
-
-                        chat.messages.push(ChatMessage {
-                            from: String::new(),
-                            text: "Secret updated. Reconnecting...".into(),
-                            is_system: true,
-                        });
-                        chat.input_mode = InputMode::Chat;
-                        *conn_state = ConnectionState::Connecting;
-                        chat.input_buffer.clear();
-                    }
-                    InputMode::Chat => {
-                        if let Some(ref net) = net {
-                            send_chat_message(net, &trimmed);
-                        }
-                        chat.input_buffer.clear();
-                    }
+                if !trimmed.is_empty() {
+                    submit.write(TextSubmitted(trimmed));
+                    chat.input_buffer.clear();
                 }
             }
             KeyCode::Backspace => {
@@ -305,13 +247,75 @@ fn handle_keyboard_input(
     }
 }
 
-fn process_incoming_messages(
-    mut incoming: ResMut<IncomingMessages>,
+/// Simulation layer: dispatches submitted text based on current input mode.
+fn handle_text_submit(
+    mut events: MessageReader<TextSubmitted>,
     mut chat: ResMut<ChatState>,
-    mut conn_state: ResMut<ConnectionState>,
     mut config: ResMut<ClientConfig>,
+    mut connect: MessageWriter<ConnectRequest>,
+    net: Option<Res<NetSocket>>,
 ) {
-    for msg in incoming.0.drain(..) {
+    for TextSubmitted(text) in events.read() {
+        match chat.input_mode {
+            InputMode::NameEntry => {
+                if text.chars().all(|c| c.is_ascii_alphabetic()) && text.len() <= 20 {
+                    config.config.identity_name = text.clone();
+                    config.config.identity_secret = generate_identity_secret();
+                    save_config(&config.data_dir, &config.config);
+
+                    chat.messages.push(ChatMessage {
+                        from: text.clone(),
+                        text: " registered. Enter the relay secret:".into(),
+                        is_system: true,
+                    });
+                    chat.input_mode = InputMode::RelaySecretEntry;
+                } else {
+                    chat.messages.push(ChatMessage {
+                        from: String::new(),
+                        text: "Name must be 1-20 letters (a-z, A-Z) only.".into(),
+                        is_system: true,
+                    });
+                }
+            }
+            InputMode::RelaySecretEntry => {
+                bevy::log::info!("relay secret entered, connecting...");
+                config.config.relay_secret = Some(text.clone());
+                chat.messages.push(ChatMessage {
+                    from: String::new(),
+                    text: "Connecting...".into(),
+                    is_system: true,
+                });
+                chat.input_mode = InputMode::Chat;
+                connect.write(ConnectRequest);
+            }
+            InputMode::SecretEntry => {
+                config.config.identity_secret = text.clone();
+                save_config(&config.data_dir, &config.config);
+
+                chat.messages.push(ChatMessage {
+                    from: String::new(),
+                    text: "Secret updated. Reconnecting...".into(),
+                    is_system: true,
+                });
+                chat.input_mode = InputMode::Chat;
+                connect.write(ConnectRequest);
+            }
+            InputMode::Chat => {
+                if let Some(ref net) = net {
+                    send_chat_message(net, &text);
+                }
+            }
+        }
+    }
+}
+
+/// Chat-domain consumer of relay events: display messages and manage input mode.
+/// Net-domain concerns (ConnectionState, PeerList, Config) are handled in net.rs.
+fn process_incoming_messages(
+    mut events: MessageReader<RelayEvent>,
+    mut chat: ResMut<ChatState>,
+) {
+    for RelayEvent(msg) in events.read() {
         match msg {
             RelayMessage::Broadcast { from, payload } => {
                 if payload.is_empty() {
@@ -327,28 +331,25 @@ fn process_incoming_messages(
             }
             RelayMessage::PeerJoined { name } => {
                 chat.messages.push(ChatMessage {
-                    from: name,
+                    from: name.clone(),
                     text: " joined".into(),
                     is_system: true,
                 });
             }
             RelayMessage::PeerLeft { name } => {
                 chat.messages.push(ChatMessage {
-                    from: name,
+                    from: name.clone(),
                     text: " left".into(),
                     is_system: true,
                 });
             }
             RelayMessage::RejectSecret => {
-                bevy::log::info!("received RejectSecret from relay");
-                config.config.relay_secret = None;
                 chat.messages.push(ChatMessage {
                     from: String::new(),
                     text: "Relay secret rejected. Try again:".into(),
                     is_system: true,
                 });
                 chat.input_mode = InputMode::RelaySecretEntry;
-                *conn_state = ConnectionState::NeedsRelaySecret;
             }
             RelayMessage::NameClaimed => {
                 chat.messages.push(ChatMessage {
@@ -357,12 +358,8 @@ fn process_incoming_messages(
                     is_system: true,
                 });
                 chat.input_mode = InputMode::SecretEntry;
-                *conn_state = ConnectionState::NameClaimed;
             }
-            RelayMessage::Welcome { .. } => {
-                bevy::log::info!("received Welcome from relay, saving config");
-                save_config(&config.data_dir, &config.config);
-            }
+            RelayMessage::Welcome { .. } => {}
             RelayMessage::RejectVersion { expected } => {
                 chat.messages.push(ChatMessage {
                     from: String::new(),
