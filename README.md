@@ -11,6 +11,7 @@ A multiplayer arcade application built with Bevy, distributed as a single Rust b
 | [`docs/architecture-decisions.md`](docs/architecture-decisions.md) | **Decision rationale** — analysis, alternatives considered, justifications       |
 | [`docs/architecture/`](docs/architecture/)                         | **Architecture** — how things work (networking, distribution, engine)            |
 | [`docs/research/`](docs/research/)                                 | **Research** — game design studies, technical investigations, learning notes     |
+| [`docs/postmortems/`](docs/postmortems/)                           | **Postmortems** — root cause analysis of production bugs                        |
 
 ## Where to Start
 
