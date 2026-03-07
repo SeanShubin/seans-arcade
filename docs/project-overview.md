@@ -157,3 +157,4 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [randomness-in-bevy.md](research/randomness-in-bevy.md) — Bevy RNG: PRNG types, algorithm selection, bevy_rand, deterministic seed forking
 - [window-modes.md](research/window-modes.md) — Window modes: windowed, borderless, fullscreen, and how they differ
 - [bevy-wasm-build.md](research/bevy-wasm-build.md) — Building Bevy examples for WebAssembly: setup, config, dev runner, production builds
+- [bevy-scrollable-ui.md](research/bevy-scrollable-ui.md) — Bevy 0.18 scrollable UI: flexbox gotchas, scroll containers, scrollbar implementation
