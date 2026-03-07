@@ -68,3 +68,96 @@ pub fn generate_identity_secret() -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.identity_name, "");
+        assert_eq!(config.identity_secret, "");
+        assert_eq!(config.relay_address, "");
+        assert_eq!(config.relay_secret, None);
+    }
+
+    #[test]
+    fn save_then_load_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("arcade_config_test_{}", line!()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = Config {
+            identity_name: "alice".into(),
+            identity_secret: "secret words here now".into(),
+            new_identity_secret: None,
+            relay_address: "10.0.0.1:9999".into(),
+            relay_secret: Some("relay_pass".into()),
+        };
+        save_config(&dir, &config);
+        let loaded = load_config(&dir);
+        assert_eq!(loaded.identity_name, "alice");
+        assert_eq!(loaded.identity_secret, "secret words here now");
+        assert_eq!(loaded.relay_address, "10.0.0.1:9999");
+        assert_eq!(loaded.relay_secret, Some("relay_pass".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_from_nonexistent_dir() {
+        let dir = std::env::temp_dir().join(format!("arcade_config_test_{}", line!()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = load_config(&dir);
+        assert_eq!(config.relay_address, "127.0.0.1:7700");
+    }
+
+    #[test]
+    fn relay_secret_none_not_serialized() {
+        let dir = std::env::temp_dir().join(format!("arcade_config_test_{}", line!()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = Config {
+            relay_secret: None,
+            ..Default::default()
+        };
+        save_config(&dir, &config);
+        let raw = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(!raw.contains("relay_secret"), "relay_secret should not appear in TOML when None");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relay_secret_some_is_serialized() {
+        let dir = std::env::temp_dir().join(format!("arcade_config_test_{}", line!()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = Config {
+            relay_secret: Some("test".into()),
+            ..Default::default()
+        };
+        save_config(&dir, &config);
+        let loaded = load_config(&dir);
+        assert_eq!(loaded.relay_secret, Some("test".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn generate_identity_secret_produces_4_words() {
+        let secret = generate_identity_secret();
+        let parts: Vec<&str> = secret.split(' ').collect();
+        assert_eq!(parts.len(), 4, "expected 4 words, got: {secret}");
+    }
+
+    #[test]
+    fn generate_identity_secret_words_from_bip39() {
+        let wordlist: Vec<&str> = BIP39_ENGLISH.lines().collect();
+        let secret = generate_identity_secret();
+        for word in secret.split(' ') {
+            assert!(wordlist.contains(&word), "word '{word}' not in BIP39 list");
+        }
+    }
+
+    #[test]
+    fn generate_identity_secret_is_nondeterministic() {
+        let a = generate_identity_secret();
+        let b = generate_identity_secret();
+        assert_ne!(a, b, "two calls should produce different secrets");
+    }
+}

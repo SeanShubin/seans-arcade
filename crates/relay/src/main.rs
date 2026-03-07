@@ -26,6 +26,14 @@ struct ClientInfo {
     last_seen: Instant,
 }
 
+/// IO-free action returned by handler functions. Executed by the main loop.
+#[derive(Debug, Clone, PartialEq)]
+enum RelayAction {
+    SendTo(SocketAddr, RelayMessage),
+    SaveRegistry,
+    LogChat { from: String, text: String },
+}
+
 struct RelayState {
     clients: HashMap<SocketAddr, ClientInfo>,
     identity_registry: IdentityRegistry,
@@ -42,17 +50,171 @@ impl RelayState {
             .count() as u32
     }
 
-    fn broadcast_to_peers(
+    fn broadcast_actions(
         &self,
-        socket: &UdpSocket,
         msg: &RelayMessage,
         commit_hash: &str,
         exclude: Option<&SocketAddr>,
-    ) {
-        let data = serialize(msg);
-        for (addr, client) in &self.clients {
-            if client.commit_hash == commit_hash && exclude.map_or(true, |ex| addr != ex) {
-                let _ = socket.send_to(&data, addr);
+    ) -> Vec<RelayAction> {
+        self.clients
+            .iter()
+            .filter(|(addr, client)| {
+                client.commit_hash == commit_hash && exclude.map_or(true, |ex| *addr != ex)
+            })
+            .map(|(addr, _)| RelayAction::SendTo(*addr, msg.clone()))
+            .collect()
+    }
+
+    /// Pure logic: process a client message and return actions to execute.
+    fn handle_message(
+        &mut self,
+        src: SocketAddr,
+        msg: ClientMessage,
+        now: Instant,
+    ) -> Vec<RelayAction> {
+        let mut actions = Vec::new();
+
+        match msg {
+            ClientMessage::Hello {
+                commit_hash,
+                relay_secret,
+                identity_name,
+                identity_secret,
+                new_identity_secret,
+            } => {
+                if relay_secret != self.relay_secret {
+                    actions.push(RelayAction::SendTo(src, RelayMessage::RejectSecret));
+                    return actions;
+                }
+
+                let result = self.identity_registry.validate(
+                    &identity_name,
+                    &identity_secret,
+                    new_identity_secret.as_deref(),
+                );
+
+                match result {
+                    ValidationResult::NameClaimed => {
+                        actions.push(RelayAction::SendTo(src, RelayMessage::NameClaimed));
+                        return actions;
+                    }
+                    ValidationResult::NewRegistration | ValidationResult::Accepted => {
+                        actions.push(RelayAction::SaveRegistry);
+                    }
+                }
+
+                // Remove any existing connection for this address
+                if let Some(old_info) = self.clients.remove(&src) {
+                    let left = RelayMessage::PeerLeft {
+                        name: old_info.identity_name.clone(),
+                    };
+                    actions.extend(self.broadcast_actions(&left, &old_info.commit_hash, Some(&src)));
+                }
+
+                let peer_count = self.peer_count_for_hash(&commit_hash);
+
+                // Welcome the new client
+                actions.push(RelayAction::SendTo(
+                    src,
+                    RelayMessage::Welcome { peer_count },
+                ));
+
+                // Broadcast PeerJoined to existing peers
+                let joined = RelayMessage::PeerJoined {
+                    name: identity_name.clone(),
+                };
+                actions.extend(self.broadcast_actions(&joined, &commit_hash, Some(&src)));
+
+                // Send existing peer names to the new client
+                for client in self.clients.values() {
+                    if client.commit_hash == commit_hash {
+                        actions.push(RelayAction::SendTo(
+                            src,
+                            RelayMessage::PeerJoined {
+                                name: client.identity_name.clone(),
+                            },
+                        ));
+                    }
+                }
+
+                self.clients.insert(
+                    src,
+                    ClientInfo {
+                        identity_name,
+                        commit_hash,
+                        last_seen: now,
+                    },
+                );
+            }
+            ClientMessage::Input { payload } => {
+                let Some(client) = self.clients.get_mut(&src) else {
+                    return actions;
+                };
+                client.last_seen = now;
+
+                let from = client.identity_name.clone();
+                let commit_hash = client.commit_hash.clone();
+
+                if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&payload) {
+                    actions.push(RelayAction::LogChat {
+                        from: from.clone(),
+                        text,
+                    });
+                }
+
+                let broadcast = RelayMessage::Broadcast { from, payload };
+                actions.extend(self.broadcast_actions(&broadcast, &commit_hash, None));
+            }
+            ClientMessage::Disconnect => {
+                if let Some(info) = self.clients.remove(&src) {
+                    let left = RelayMessage::PeerLeft {
+                        name: info.identity_name.clone(),
+                    };
+                    actions.extend(self.broadcast_actions(&left, &info.commit_hash, None));
+                }
+            }
+        }
+
+        actions
+    }
+
+    /// Pure logic: find timed-out clients and return actions.
+    fn sweep_timeouts(&mut self, now: Instant) -> Vec<RelayAction> {
+        let mut actions = Vec::new();
+
+        let timed_out: Vec<SocketAddr> = self
+            .clients
+            .iter()
+            .filter(|(_, info)| now.duration_since(info.last_seen).as_secs() > TIMEOUT_SECS)
+            .map(|(addr, _)| *addr)
+            .collect();
+
+        for addr in timed_out {
+            if let Some(info) = self.clients.remove(&addr) {
+                println!("relay: {} timed out from {}", info.identity_name, addr);
+                let left = RelayMessage::PeerLeft {
+                    name: info.identity_name.clone(),
+                };
+                actions.extend(self.broadcast_actions(&left, &info.commit_hash, None));
+            }
+        }
+
+        actions
+    }
+}
+
+fn execute_actions(socket: &UdpSocket, state: &mut RelayState, actions: &[RelayAction]) {
+    for action in actions {
+        match action {
+            RelayAction::SendTo(addr, msg) => {
+                let data = serialize(msg);
+                let _ = socket.send_to(&data, *addr);
+            }
+            RelayAction::SaveRegistry => {
+                state.identity_registry.save(&state.registry_path);
+            }
+            RelayAction::LogChat { from, text } => {
+                state.log_writer.log_message(from, text);
             }
         }
     }
@@ -85,6 +247,390 @@ fn relay_secret_from_env() -> String {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    struct RelayTester {
+        state: RelayState,
+        _temp_dir: std::path::PathBuf,
+    }
+
+    impl RelayTester {
+        fn new() -> Self {
+            let id = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let temp_dir = std::env::temp_dir().join(format!(
+                "relay_test_{}_{}",
+                std::process::id(),
+                id
+            ));
+            let log_dir = LogWriter::log_dir_from_data_dir(&temp_dir);
+            let registry_path = IdentityRegistry::path_from_data_dir(&temp_dir);
+            let state = RelayState {
+                clients: HashMap::new(),
+                identity_registry: IdentityRegistry::default(),
+                relay_secret: "test_secret".to_string(),
+                log_writer: LogWriter::new(&log_dir),
+                registry_path,
+            };
+            Self {
+                state,
+                _temp_dir: temp_dir,
+            }
+        }
+
+        fn add_client(&mut self, addr: SocketAddr, name: &str, hash: &str, last_seen: Instant) {
+            self.state.clients.insert(
+                addr,
+                ClientInfo {
+                    identity_name: name.to_string(),
+                    commit_hash: hash.to_string(),
+                    last_seen,
+                },
+            );
+        }
+
+        fn handle(&mut self, src: SocketAddr, msg: ClientMessage) -> Vec<RelayAction> {
+            self.state.handle_message(src, msg, Instant::now())
+        }
+
+        fn sweep(&mut self, now: Instant) -> Vec<RelayAction> {
+            self.state.sweep_timeouts(now)
+        }
+
+        fn client_count(&self) -> usize {
+            self.state.clients.len()
+        }
+
+        fn client_names(&self) -> Vec<String> {
+            let mut names: Vec<String> = self
+                .state
+                .clients
+                .values()
+                .map(|c| c.identity_name.clone())
+                .collect();
+            names.sort();
+            names
+        }
+
+        fn has_client(&self, name: &str) -> bool {
+            self.state
+                .clients
+                .values()
+                .any(|c| c.identity_name == name)
+        }
+    }
+
+    impl Drop for RelayTester {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self._temp_dir);
+        }
+    }
+
+    fn addr(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
+    fn hello_msg(name: &str, secret: &str, relay_secret: &str) -> ClientMessage {
+        ClientMessage::Hello {
+            commit_hash: "abc123".to_string(),
+            relay_secret: relay_secret.to_string(),
+            identity_name: name.to_string(),
+            identity_secret: secret.to_string(),
+            new_identity_secret: None,
+        }
+    }
+
+    // ========================================================================
+    // Hello tests
+    // ========================================================================
+
+    #[test]
+    fn hello_with_wrong_relay_secret_returns_reject_secret() {
+        // given a relay with a known secret
+        let mut tester = RelayTester::new();
+
+        // when a client sends Hello with a wrong relay secret
+        let actions = tester.handle(addr("1.0.0.1:1001"), hello_msg("alice", "id_sec", "wrong"));
+
+        // then the relay responds with RejectSecret
+        assert_eq!(actions.len(), 1);
+        assert_eq!(
+            actions[0],
+            RelayAction::SendTo(addr("1.0.0.1:1001"), RelayMessage::RejectSecret)
+        );
+
+        // and no client is added
+        assert_eq!(tester.client_count(), 0);
+    }
+
+    #[test]
+    fn hello_with_new_name_returns_welcome_and_save_registry() {
+        // given an empty relay
+        let mut tester = RelayTester::new();
+
+        // when a client sends Hello with a new name
+        let actions = tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "id_sec", "test_secret"),
+        );
+
+        // then the relay responds with SaveRegistry and Welcome
+        assert!(actions.contains(&RelayAction::SaveRegistry));
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.1:1001"),
+            RelayMessage::Welcome { peer_count: 0 },
+        )));
+
+        // and the client is added
+        assert_eq!(tester.client_count(), 1);
+        assert!(tester.has_client("alice"));
+    }
+
+    #[test]
+    fn hello_with_claimed_name_returns_name_claimed() {
+        // given a relay with alice already registered (via identity registry)
+        let mut tester = RelayTester::new();
+        tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "id_sec", "test_secret"),
+        );
+
+        // when a different client sends Hello with the same name but wrong identity secret
+        let actions = tester.handle(
+            addr("1.0.0.2:1002"),
+            hello_msg("alice", "wrong_id_sec", "test_secret"),
+        );
+
+        // then the relay responds with NameClaimed
+        assert_eq!(actions.len(), 1);
+        assert_eq!(
+            actions[0],
+            RelayAction::SendTo(addr("1.0.0.2:1002"), RelayMessage::NameClaimed)
+        );
+
+        // and no new client is added (still just the original)
+        assert_eq!(tester.client_count(), 1);
+    }
+
+    #[test]
+    fn hello_broadcasts_peer_joined_to_existing_peer() {
+        // given a relay with alice connected
+        let mut tester = RelayTester::new();
+        tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "sec_a", "test_secret"),
+        );
+
+        // when bob joins with the same commit hash
+        let actions = tester.handle(
+            addr("1.0.0.2:1002"),
+            hello_msg("bob", "sec_b", "test_secret"),
+        );
+
+        // then alice receives PeerJoined for bob
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.1:1001"),
+            RelayMessage::PeerJoined {
+                name: "bob".to_string()
+            },
+        )));
+
+        // and both clients are present
+        assert_eq!(tester.client_count(), 2);
+        assert!(tester.has_client("alice"));
+        assert!(tester.has_client("bob"));
+    }
+
+    #[test]
+    fn hello_sends_existing_peer_names_to_new_client() {
+        // given a relay with alice connected
+        let mut tester = RelayTester::new();
+        tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "sec_a", "test_secret"),
+        );
+
+        // when bob joins
+        let actions = tester.handle(
+            addr("1.0.0.2:1002"),
+            hello_msg("bob", "sec_b", "test_secret"),
+        );
+
+        // then bob receives PeerJoined for alice (existing peer notification)
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.2:1002"),
+            RelayMessage::PeerJoined {
+                name: "alice".to_string()
+            },
+        )));
+    }
+
+    // ========================================================================
+    // Input tests
+    // ========================================================================
+
+    #[test]
+    fn input_from_known_client_broadcasts_and_logs() {
+        // given a relay with alice and bob connected (same commit hash)
+        let mut tester = RelayTester::new();
+        tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "sec_a", "test_secret"),
+        );
+        tester.handle(
+            addr("1.0.0.2:1002"),
+            hello_msg("bob", "sec_b", "test_secret"),
+        );
+
+        // when alice sends a chat text input
+        let chat_payload = protocol::serialize(&protocol::ChatPayload::Text("hello".to_string()));
+        let actions = tester.handle(
+            addr("1.0.0.1:1001"),
+            ClientMessage::Input {
+                payload: chat_payload.clone(),
+            },
+        );
+
+        // then both alice and bob receive the Broadcast
+        let expected_broadcast = RelayMessage::Broadcast {
+            from: "alice".to_string(),
+            payload: chat_payload,
+        };
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.1:1001"),
+            expected_broadcast.clone(),
+        )));
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.2:1002"),
+            expected_broadcast,
+        )));
+
+        // and a LogChat action is emitted
+        assert!(actions.contains(&RelayAction::LogChat {
+            from: "alice".to_string(),
+            text: "hello".to_string(),
+        }));
+    }
+
+    #[test]
+    fn input_from_unknown_client_produces_no_actions() {
+        // given an empty relay
+        let mut tester = RelayTester::new();
+
+        // when an unknown address sends an Input message
+        let actions = tester.handle(
+            addr("1.0.0.1:1001"),
+            ClientMessage::Input {
+                payload: vec![1, 2, 3],
+            },
+        );
+
+        // then no actions are produced
+        assert!(actions.is_empty());
+    }
+
+    // ========================================================================
+    // Disconnect tests
+    // ========================================================================
+
+    #[test]
+    fn disconnect_removes_client_and_broadcasts_peer_left() {
+        // given a relay with alice and bob connected
+        let mut tester = RelayTester::new();
+        tester.handle(
+            addr("1.0.0.1:1001"),
+            hello_msg("alice", "sec_a", "test_secret"),
+        );
+        tester.handle(
+            addr("1.0.0.2:1002"),
+            hello_msg("bob", "sec_b", "test_secret"),
+        );
+
+        // when alice disconnects
+        let actions = tester.handle(addr("1.0.0.1:1001"), ClientMessage::Disconnect);
+
+        // then bob receives PeerLeft for alice
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.2:1002"),
+            RelayMessage::PeerLeft {
+                name: "alice".to_string()
+            },
+        )));
+
+        // and alice is removed from clients
+        assert_eq!(tester.client_count(), 1);
+        assert!(!tester.has_client("alice"));
+        assert!(tester.has_client("bob"));
+    }
+
+    #[test]
+    fn disconnect_from_unknown_client_produces_no_actions() {
+        // given an empty relay
+        let mut tester = RelayTester::new();
+
+        // when an unknown address sends Disconnect
+        let actions = tester.handle(addr("1.0.0.1:1001"), ClientMessage::Disconnect);
+
+        // then no actions are produced
+        assert!(actions.is_empty());
+    }
+
+    // ========================================================================
+    // Timeout sweep tests
+    // ========================================================================
+
+    #[test]
+    fn sweep_removes_stale_clients_and_broadcasts_peer_left() {
+        // given a relay with alice (stale) and bob (recent)
+        let mut tester = RelayTester::new();
+        let now = Instant::now();
+        let stale_time = now - std::time::Duration::from_secs(TIMEOUT_SECS + 10);
+        tester.add_client(addr("1.0.0.1:1001"), "alice", "abc123", stale_time);
+        tester.add_client(addr("1.0.0.2:1002"), "bob", "abc123", now);
+
+        // when we sweep at the current time
+        let actions = tester.sweep(now);
+
+        // then bob receives PeerLeft for alice
+        assert!(actions.contains(&RelayAction::SendTo(
+            addr("1.0.0.2:1002"),
+            RelayMessage::PeerLeft {
+                name: "alice".to_string()
+            },
+        )));
+
+        // and alice is removed, bob remains
+        assert_eq!(tester.client_count(), 1);
+        assert!(!tester.has_client("alice"));
+        assert!(tester.has_client("bob"));
+    }
+
+    #[test]
+    fn sweep_ignores_recent_clients() {
+        // given a relay with only recent clients
+        let mut tester = RelayTester::new();
+        let now = Instant::now();
+        tester.add_client(addr("1.0.0.1:1001"), "alice", "abc123", now);
+        tester.add_client(addr("1.0.0.2:1002"), "bob", "abc123", now);
+
+        // when we sweep at the current time
+        let actions = tester.sweep(now);
+
+        // then no actions are produced
+        assert!(actions.is_empty());
+
+        // and both clients remain
+        assert_eq!(tester.client_count(), 2);
+        assert_eq!(tester.client_names(), vec!["alice", "bob"]);
+    }
+}
+
 fn main() {
     println!("relay {}", env!("GIT_COMMIT_HASH"));
 
@@ -113,24 +659,8 @@ fn main() {
     let mut buf = [0u8; RECV_BUF_SIZE];
 
     loop {
-        // Timeout sweep: remove clients not seen in TIMEOUT_SECS
-        let now = Instant::now();
-        let timed_out: Vec<SocketAddr> = state
-            .clients
-            .iter()
-            .filter(|(_, info)| now.duration_since(info.last_seen).as_secs() > TIMEOUT_SECS)
-            .map(|(addr, _)| *addr)
-            .collect();
-
-        for addr in timed_out {
-            if let Some(info) = state.clients.remove(&addr) {
-                println!("relay: {} timed out from {}", info.identity_name, addr);
-                let msg = RelayMessage::PeerLeft {
-                    name: info.identity_name.clone(),
-                };
-                state.broadcast_to_peers(&socket, &msg, &info.commit_hash, None);
-            }
-        }
+        let timeout_actions = state.sweep_timeouts(Instant::now());
+        execute_actions(&socket, &mut state, &timeout_actions);
 
         let (len, src) = match socket.recv_from(&mut buf) {
             Ok(result) => result,
@@ -151,121 +681,7 @@ fn main() {
             continue;
         };
 
-        match msg {
-            ClientMessage::Hello {
-                commit_hash,
-                relay_secret,
-                identity_name,
-                identity_secret,
-                new_identity_secret,
-            } => {
-                // Validate relay secret
-                if relay_secret != state.relay_secret {
-                    let reject = serialize(&RelayMessage::RejectSecret);
-                    let _ = socket.send_to(&reject, src);
-                    continue;
-                }
-
-                // Validate identity
-                let result = state.identity_registry.validate(
-                    &identity_name,
-                    &identity_secret,
-                    new_identity_secret.as_deref(),
-                );
-
-                match result {
-                    ValidationResult::NameClaimed => {
-                        let reject = serialize(&RelayMessage::NameClaimed);
-                        let _ = socket.send_to(&reject, src);
-                        continue;
-                    }
-                    ValidationResult::NewRegistration | ValidationResult::Accepted => {
-                        state.identity_registry.save(&state.registry_path);
-                    }
-                }
-
-                // Remove any existing connection for this address
-                if let Some(old_info) = state.clients.remove(&src) {
-                    let left = RelayMessage::PeerLeft {
-                        name: old_info.identity_name.clone(),
-                    };
-                    state.broadcast_to_peers(&socket, &left, &old_info.commit_hash, Some(&src));
-                }
-
-                let peer_count = state.peer_count_for_hash(&commit_hash);
-                println!(
-                    "relay: {} connected from {} (hash: {}, peers: {})",
-                    identity_name,
-                    src,
-                    &commit_hash[..8.min(commit_hash.len())],
-                    peer_count + 1
-                );
-
-                // Send Welcome
-                let welcome = serialize(&RelayMessage::Welcome {
-                    peer_count: peer_count,
-                });
-                let _ = socket.send_to(&welcome, src);
-
-                // Broadcast PeerJoined to existing peers
-                let joined = RelayMessage::PeerJoined {
-                    name: identity_name.clone(),
-                };
-                state.broadcast_to_peers(&socket, &joined, &commit_hash, Some(&src));
-
-                // Send existing peer names to the new client
-                for client in state.clients.values() {
-                    if client.commit_hash == commit_hash {
-                        let peer_joined = serialize(&RelayMessage::PeerJoined {
-                            name: client.identity_name.clone(),
-                        });
-                        let _ = socket.send_to(&peer_joined, src);
-                    }
-                }
-
-                state.clients.insert(
-                    src,
-                    ClientInfo {
-                        identity_name,
-                        commit_hash,
-                        last_seen: Instant::now(),
-                    },
-                );
-            }
-            ClientMessage::Input { payload } => {
-                let Some(client) = state.clients.get_mut(&src) else {
-                    continue;
-                };
-                client.last_seen = Instant::now();
-
-                let from = client.identity_name.clone();
-                let commit_hash = client.commit_hash.clone();
-
-                // Try to decode payload for logging
-                if let Some(chat) = deserialize::<ChatPayload>(&payload) {
-                    match &chat {
-                        ChatPayload::Text(text) => {
-                            state.log_writer.log_message(&from, text);
-                        }
-                    }
-                }
-
-                // Broadcast to all peers with same commit hash (including sender for echo)
-                let broadcast = RelayMessage::Broadcast {
-                    from,
-                    payload,
-                };
-                state.broadcast_to_peers(&socket, &broadcast, &commit_hash, None);
-            }
-            ClientMessage::Disconnect => {
-                if let Some(info) = state.clients.remove(&src) {
-                    println!("relay: {} disconnected from {}", info.identity_name, src);
-                    let left = RelayMessage::PeerLeft {
-                        name: info.identity_name.clone(),
-                    };
-                    state.broadcast_to_peers(&socket, &left, &info.commit_hash, None);
-                }
-            }
-        }
+        let actions = state.handle_message(src, msg, Instant::now());
+        execute_actions(&socket, &mut state, &actions);
     }
 }

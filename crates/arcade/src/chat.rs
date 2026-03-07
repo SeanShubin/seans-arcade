@@ -60,7 +60,7 @@ struct ChatState {
     input_mode: InputMode,
 }
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum InputMode {
     #[default]
     Chat,
@@ -720,4 +720,335 @@ fn auto_scroll_on_new_message(
     let viewport_h = computed.size().y;
     let content_h = computed.content_size().y;
     scroll.y = max_scroll(content_h, viewport_h);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::message::Messages;
+    use protocol::RelayMessage;
+
+    /// Test orchestrator for chat system logic.
+    /// Hides Bevy App setup; exposes domain-focused methods.
+    struct ChatTester {
+        app: App,
+    }
+
+    impl ChatTester {
+        fn new() -> Self {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins);
+            app.add_message::<RelayEvent>();
+            app.add_message::<TextSubmitted>();
+            app.add_message::<ConnectRequest>();
+            app.init_resource::<ChatState>();
+
+            // Insert a ClientConfig with test data
+            let dir = std::env::temp_dir().join(format!("chat_test_{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&dir);
+            app.insert_resource(ClientConfig {
+                config: crate::config::Config {
+                    identity_name: "Alice".into(),
+                    identity_secret: "secret".into(),
+                    relay_address: "127.0.0.1:7700".into(),
+                    relay_secret: Some("test".into()),
+                    new_identity_secret: None,
+                },
+                data_dir: dir,
+            });
+
+            app.add_systems(
+                Update,
+                (
+                    handle_text_submit,
+                    process_incoming_messages,
+                ),
+            );
+
+            ChatTester { app }
+        }
+
+        fn with_input_mode(mut self, mode: InputMode) -> Self {
+            self.app.world_mut().resource_mut::<ChatState>().input_mode = mode;
+            self
+        }
+
+        // -- Actions --
+
+        fn receive_relay_message(&mut self, msg: RelayMessage) {
+            self.app.world_mut().write_message(RelayEvent(msg));
+            self.app.update();
+        }
+
+        fn submit_text(&mut self, text: &str) {
+            self.app
+                .world_mut()
+                .write_message(TextSubmitted(text.to_string()));
+            self.app.update();
+        }
+
+        // -- Queries --
+
+        fn message_count(&self) -> usize {
+            self.app.world().resource::<ChatState>().messages.len()
+        }
+
+        fn last_message_text(&self) -> String {
+            let chat = self.app.world().resource::<ChatState>();
+            chat.messages.last().map(|m| m.text.clone()).unwrap_or_default()
+        }
+
+        fn last_message_from(&self) -> String {
+            let chat = self.app.world().resource::<ChatState>();
+            chat.messages.last().map(|m| m.from.clone()).unwrap_or_default()
+        }
+
+        fn last_message_is_system(&self) -> bool {
+            let chat = self.app.world().resource::<ChatState>();
+            chat.messages.last().map(|m| m.is_system).unwrap_or(false)
+        }
+
+        fn input_mode(&self) -> &InputMode {
+            &self.app.world().resource::<ChatState>().input_mode
+        }
+
+        fn identity_name(&self) -> String {
+            self.app
+                .world()
+                .resource::<ClientConfig>()
+                .config
+                .identity_name
+                .clone()
+        }
+
+        fn relay_secret(&self) -> Option<String> {
+            self.app
+                .world()
+                .resource::<ClientConfig>()
+                .config
+                .relay_secret
+                .clone()
+        }
+
+        fn connect_requests_sent(&self) -> usize {
+            let messages = self.app.world().resource::<Messages<ConnectRequest>>();
+            messages.iter_current_update_messages().count()
+        }
+    }
+
+    // -- process_incoming_messages tests --
+
+    #[test]
+    fn broadcast_creates_chat_message() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        let payload = protocol::serialize(&protocol::ChatPayload::Text("hello!".into()));
+        tester.receive_relay_message(RelayMessage::Broadcast {
+            from: "Bob".into(),
+            payload,
+        });
+
+        // then
+        assert_eq!(tester.message_count(), 1);
+        assert_eq!(tester.last_message_from(), "Bob");
+        assert_eq!(tester.last_message_text(), "hello!");
+        assert!(!tester.last_message_is_system());
+    }
+
+    #[test]
+    fn empty_broadcast_is_ignored() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::Broadcast {
+            from: "Bob".into(),
+            payload: vec![],
+        });
+
+        // then
+        assert_eq!(tester.message_count(), 0);
+    }
+
+    #[test]
+    fn peer_joined_creates_system_message() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::PeerJoined {
+            name: "Charlie".into(),
+        });
+
+        // then
+        assert_eq!(tester.message_count(), 1);
+        assert_eq!(tester.last_message_from(), "Charlie");
+        assert_eq!(tester.last_message_text(), " joined");
+        assert!(tester.last_message_is_system());
+    }
+
+    #[test]
+    fn peer_left_creates_system_message() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::PeerLeft {
+            name: "Charlie".into(),
+        });
+
+        // then
+        assert_eq!(tester.last_message_text(), " left");
+        assert!(tester.last_message_is_system());
+    }
+
+    #[test]
+    fn reject_secret_prompts_reentry() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::RejectSecret);
+
+        // then
+        assert!(tester.last_message_text().contains("rejected"));
+        assert_eq!(tester.input_mode(), &InputMode::RelaySecretEntry);
+    }
+
+    #[test]
+    fn name_claimed_prompts_secret_entry() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::NameClaimed);
+
+        // then
+        assert!(tester.last_message_text().contains("already taken"));
+        assert_eq!(tester.input_mode(), &InputMode::SecretEntry);
+    }
+
+    #[test]
+    fn reject_version_shows_expected() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::RejectVersion {
+            expected: "abc123".into(),
+        });
+
+        // then
+        assert!(tester.last_message_text().contains("abc123"));
+    }
+
+    #[test]
+    fn welcome_produces_no_chat_message() {
+        // given
+        let mut tester = ChatTester::new();
+
+        // when
+        tester.receive_relay_message(RelayMessage::Welcome { peer_count: 2 });
+
+        // then
+        assert_eq!(tester.message_count(), 0);
+    }
+
+    // -- handle_text_submit tests --
+
+    #[test]
+    fn name_entry_valid_name_transitions_to_relay_secret() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::NameEntry);
+
+        // when
+        tester.submit_text("Bob");
+
+        // then
+        assert_eq!(tester.input_mode(), &InputMode::RelaySecretEntry);
+        assert_eq!(tester.identity_name(), "Bob");
+    }
+
+    #[test]
+    fn name_entry_invalid_name_stays_in_name_entry() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::NameEntry);
+
+        // when
+        tester.submit_text("Bob123");
+
+        // then
+        assert_eq!(tester.input_mode(), &InputMode::NameEntry);
+        assert!(tester.last_message_text().contains("letters"));
+    }
+
+    #[test]
+    fn name_entry_too_long_stays_in_name_entry() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::NameEntry);
+
+        // when
+        tester.submit_text("Abcdefghijklmnopqrstuvwxyz");
+
+        // then
+        assert_eq!(tester.input_mode(), &InputMode::NameEntry);
+    }
+
+    #[test]
+    fn relay_secret_entry_transitions_to_chat_and_connects() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::RelaySecretEntry);
+
+        // when
+        tester.submit_text("mysecret");
+
+        // then
+        assert_eq!(tester.input_mode(), &InputMode::Chat);
+        assert_eq!(tester.relay_secret(), Some("mysecret".into()));
+        assert_eq!(tester.connect_requests_sent(), 1);
+    }
+
+    #[test]
+    fn secret_entry_updates_identity_secret_and_connects() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::SecretEntry);
+
+        // when
+        tester.submit_text("new-identity-secret");
+
+        // then
+        assert_eq!(tester.input_mode(), &InputMode::Chat);
+        assert_eq!(tester.connect_requests_sent(), 1);
+    }
+
+    // -- Scrollbar helper tests --
+
+    #[test]
+    fn max_scroll_zero_when_content_fits() {
+        assert_eq!(max_scroll(100.0, 200.0), 0.0);
+    }
+
+    #[test]
+    fn max_scroll_positive_when_content_overflows() {
+        assert_eq!(max_scroll(500.0, 200.0), 300.0);
+    }
+
+    #[test]
+    fn thumb_height_fills_track_when_content_fits() {
+        assert_eq!(thumb_height(200.0, 100.0, 200.0), 200.0);
+    }
+
+    #[test]
+    fn thumb_height_proportional_when_content_overflows() {
+        let h = thumb_height(200.0, 400.0, 200.0);
+        assert_eq!(h, 100.0); // viewport/content * track = 0.5 * 200
+    }
+
+    #[test]
+    fn thumb_height_respects_minimum() {
+        let h = thumb_height(200.0, 10000.0, 200.0);
+        assert_eq!(h, THUMB_MIN_HEIGHT);
+    }
 }

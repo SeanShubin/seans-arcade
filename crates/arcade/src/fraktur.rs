@@ -67,4 +67,37 @@ mod tests {
         let result = to_fraktur("Alice");
         assert!(result.starts_with('\u{1D504}')); // A
     }
+
+    #[test]
+    fn non_ascii_passthrough() {
+        assert_eq!(to_fraktur("123 ,.!?"), "123 ,.!?");
+    }
+
+    #[test]
+    fn empty_string() {
+        assert_eq!(to_fraktur(""), "");
+    }
+
+    #[test]
+    fn full_lowercase_alphabet() {
+        let input = "abcdefghijklmnopqrstuvwxyz";
+        let result = to_fraktur(input);
+        let chars: Vec<char> = result.chars().collect();
+        assert_eq!(chars.len(), 26);
+        for (i, ch) in chars.iter().enumerate() {
+            let expected = char::from_u32(0x1D51E + i as u32).unwrap();
+            assert_eq!(*ch, expected, "mismatch at index {i}");
+        }
+    }
+
+    #[test]
+    fn full_uppercase_alphabet() {
+        let input = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        let result = to_fraktur(input);
+        let chars: Vec<char> = result.chars().collect();
+        assert_eq!(chars.len(), 26);
+        for (i, ch) in chars.iter().enumerate() {
+            assert_eq!(*ch, UPPER_FRAKTUR[i], "mismatch at index {i}");
+        }
+    }
 }

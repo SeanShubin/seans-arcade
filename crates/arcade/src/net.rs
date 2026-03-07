@@ -163,41 +163,48 @@ fn receive_messages(
             continue;
         };
 
-        // Net-domain concerns: ConnectionState, PeerList, Config
-        match &msg {
-            RelayMessage::Welcome { peer_count } => {
-                if *state == ConnectionState::Connecting {
-                    println!("arcade: connected ({peer_count} peers)");
-                    if config.config.new_identity_secret.is_some() {
-                        config.config.identity_secret =
-                            config.config.new_identity_secret.take().unwrap();
-                    }
-                    save_config(&config.data_dir, &config.config);
-                    *state = ConnectionState::Connected;
-                }
-            }
-            RelayMessage::NameClaimed => {
-                println!("arcade: name claimed by another identity");
-                *state = ConnectionState::NameClaimed;
-            }
-            RelayMessage::RejectSecret => {
-                bevy::log::info!("received RejectSecret from relay");
-                config.config.relay_secret = None;
-                *state = ConnectionState::NeedsRelaySecret;
-            }
-            RelayMessage::PeerJoined { name } => {
-                if !peers.0.contains(name) {
-                    peers.0.push(name.clone());
-                }
-            }
-            RelayMessage::PeerLeft { name } => {
-                peers.0.retain(|n| n != name);
-            }
-            _ => {}
-        }
+        apply_relay_message(&msg, &mut state, &mut peers, &mut config);
 
         // Forward to cross-domain consumers (chat UI, future systems)
         events.write(RelayEvent(msg));
+    }
+}
+
+/// Pure logic for handling relay messages — no IO, testable directly.
+fn apply_relay_message(
+    msg: &RelayMessage,
+    state: &mut ConnectionState,
+    peers: &mut PeerList,
+    config: &mut ClientConfig,
+) {
+    match msg {
+        RelayMessage::Welcome { peer_count } => {
+            if *state == ConnectionState::Connecting {
+                println!("arcade: connected ({peer_count} peers)");
+                if config.config.new_identity_secret.is_some() {
+                    config.config.identity_secret =
+                        config.config.new_identity_secret.take().unwrap();
+                }
+                save_config(&config.data_dir, &config.config);
+                *state = ConnectionState::Connected;
+            }
+        }
+        RelayMessage::NameClaimed => {
+            *state = ConnectionState::NameClaimed;
+        }
+        RelayMessage::RejectSecret => {
+            config.config.relay_secret = None;
+            *state = ConnectionState::NeedsRelaySecret;
+        }
+        RelayMessage::PeerJoined { name } => {
+            if !peers.0.contains(name) {
+                peers.0.push(name.clone());
+            }
+        }
+        RelayMessage::PeerLeft { name } => {
+            peers.0.retain(|n| n != name);
+        }
+        _ => {}
     }
 }
 
@@ -247,5 +254,236 @@ pub fn send_chat_message(net: &NetSocket, text: &str) {
     let payload = serialize(&ChatPayload::Text(text.to_string()));
     let msg = serialize(&ClientMessage::Input { payload });
     let _ = net.socket.send_to(&msg, net.relay_addr);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use protocol::RelayMessage;
+
+    fn test_config() -> ClientConfig {
+        let dir = std::env::temp_dir().join(format!("arcade_net_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        ClientConfig {
+            config: Config {
+                identity_name: "Alice".into(),
+                identity_secret: "old-secret".into(),
+                relay_address: "127.0.0.1:7700".into(),
+                relay_secret: Some("test".into()),
+                new_identity_secret: None,
+            },
+            data_dir: dir,
+        }
+    }
+
+    // -- Welcome --
+
+    #[test]
+    fn welcome_when_connecting_transitions_to_connected() {
+        // given
+        let mut state = ConnectionState::Connecting;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::Welcome { peer_count: 3 },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(state, ConnectionState::Connected);
+    }
+
+    #[test]
+    fn welcome_when_already_connected_is_ignored() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::Welcome { peer_count: 1 },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(state, ConnectionState::Connected);
+    }
+
+    #[test]
+    fn welcome_applies_new_identity_secret() {
+        // given
+        let mut state = ConnectionState::Connecting;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+        config.config.new_identity_secret = Some("new-secret".into());
+
+        // when
+        apply_relay_message(
+            &RelayMessage::Welcome { peer_count: 0 },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(config.config.identity_secret, "new-secret");
+        assert!(config.config.new_identity_secret.is_none());
+    }
+
+    // -- RejectSecret --
+
+    #[test]
+    fn reject_secret_clears_secret_and_transitions() {
+        // given
+        let mut state = ConnectionState::Connecting;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::RejectSecret,
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(state, ConnectionState::NeedsRelaySecret);
+        assert!(config.config.relay_secret.is_none());
+    }
+
+    // -- NameClaimed --
+
+    #[test]
+    fn name_claimed_transitions_state() {
+        // given
+        let mut state = ConnectionState::Connecting;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::NameClaimed,
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(state, ConnectionState::NameClaimed);
+    }
+
+    // -- PeerJoined --
+
+    #[test]
+    fn peer_joined_adds_to_list() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList::default();
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::PeerJoined { name: "Bob".into() },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(peers.0, vec!["Bob"]);
+    }
+
+    #[test]
+    fn peer_joined_does_not_duplicate() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList(vec!["Bob".into()]);
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::PeerJoined { name: "Bob".into() },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(peers.0.len(), 1);
+    }
+
+    // -- PeerLeft --
+
+    #[test]
+    fn peer_left_removes_from_list() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList(vec!["Alice".into(), "Bob".into()]);
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::PeerLeft { name: "Bob".into() },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(peers.0, vec!["Alice"]);
+    }
+
+    #[test]
+    fn peer_left_unknown_name_is_noop() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList(vec!["Alice".into()]);
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::PeerLeft { name: "Unknown".into() },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(peers.0, vec!["Alice"]);
+    }
+
+    // -- Other messages are no-ops for net domain --
+
+    #[test]
+    fn broadcast_does_not_change_net_state() {
+        // given
+        let mut state = ConnectionState::Connected;
+        let mut peers = PeerList(vec!["Bob".into()]);
+        let mut config = test_config();
+
+        // when
+        apply_relay_message(
+            &RelayMessage::Broadcast {
+                from: "Bob".into(),
+                payload: vec![1, 2, 3],
+            },
+            &mut state,
+            &mut peers,
+            &mut config,
+        );
+
+        // then
+        assert_eq!(state, ConnectionState::Connected);
+        assert_eq!(peers.0.len(), 1);
+    }
 }
 
