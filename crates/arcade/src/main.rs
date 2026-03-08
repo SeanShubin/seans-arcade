@@ -2,6 +2,7 @@
 //!
 //! Usage: `cargo run -p arcade [-- --data-dir local/alice]`
 
+mod assets;
 mod chat;
 mod config;
 mod fraktur;
@@ -31,6 +32,9 @@ fn main() {
         // If auto_update returns, it failed — continue with current version
     }
 
+    let data_dir = config::data_dir_from_args();
+    let assets_dir = assets::sync_assets(&data_dir);
+
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
@@ -47,6 +51,7 @@ fn main() {
             })
         )
         .insert_resource(version_status)
+        .insert_resource(assets::AssetsDir(assets_dir))
         .add_plugins(version::VersionPlugin)
         .add_plugins(net::NetPlugin)
         .add_plugins(chat::ChatPlugin)

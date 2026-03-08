@@ -145,7 +145,7 @@ CI builds for all three platforms (Windows, macOS, Linux). Key Bevy/Rust constra
 - `#![windows_subsystem = "windows"]` suppresses the console window on Windows (conditionally, so debug builds still get console output)
 - macOS builds should be **universal binaries** (x86_64 + aarch64) to support both Intel and Apple Silicon Macs
 
-**Distribution format:** All platforms are distributed as **bare binaries**, not platform-specific bundles. macOS conventionally uses `.app` bundles, but a bare binary works fine and keeps the auto-update mechanism simple across all platforms. Assets are embedded in the binary via `include_bytes!` — no external files needed at runtime.
+**Distribution format:** All platforms are distributed as **bare binaries**, not platform-specific bundles. macOS conventionally uses `.app` bundles, but a bare binary works fine and keeps the auto-update mechanism simple across all platforms. Assets are downloaded on first launch via a manifest-based approach (see [architecture-decisions.md](../architecture-decisions.md) — Asset distribution strategy).
 
 **Platform-specific input quirks:**
 - macOS scroll events produce non-integer values (OS-level acceleration) — do not assume discrete scroll steps

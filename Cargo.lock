@@ -251,6 +251,7 @@ dependencies = [
  "protocol",
  "rand 0.10.0",
  "serde",
+ "serde_json",
  "toml",
  "tracing-appender",
  "tracing-subscriber",

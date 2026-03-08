@@ -157,6 +157,18 @@ jobs:
       - name: Generate version file
         run: echo -n "${{ github.sha }}" > deploy/version
 
+      - name: Generate assets manifest and copy assets
+        run: |
+          mkdir -p deploy/assets
+          cp -r assets/fonts assets/local deploy/assets/
+          manifest="[]"
+          while IFS= read -r -d '' file; do
+            rel="${file#deploy/assets/}"
+            hash=$(sha256sum "$file" | cut -d' ' -f1)
+            manifest=$(echo "$manifest" | jq --arg f "$rel" --arg h "$hash" '. + [{"file": $f, "hash": $h}]')
+          done < <(find deploy/assets -type f -print0 | sort -z)
+          echo "$manifest" | jq '.' > deploy/assets-manifest.json
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

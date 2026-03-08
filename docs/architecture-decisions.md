@@ -79,18 +79,18 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Asset distribution strategy
 
-**Decision:** For v1, all assets are embedded directly in the binary using Rust's `include_bytes!`. The font file is compiled into the executable. No external `assets/` directory is needed at runtime. When assets grow beyond a few MB, switch to downloading assets on first launch.
+**Decision:** Assets are downloaded on first launch via a manifest-based approach. S3 hosts `assets-manifest.json` listing each asset's relative path and SHA-256 hash. On startup, the client compares the remote manifest to the local manifest (stored in the platform data directory, next to `config.toml`). Only changed or missing assets are downloaded. Assets are stored in the data directory alongside the manifest. This keeps the binary small and avoids re-downloading unchanged assets. CI generates the manifest from tracked assets (`assets/fonts/`, `assets/local/`) and uploads both assets and manifest to S3.
 
 **Options considered:**
 
 | Strategy | Binary size | Distribution | Build iteration | Modding | When to use |
 |----------|------------|-------------|-----------------|---------|-------------|
-| **Embedded in binary** (current) | Grows with every asset | Single file, nothing to copy | Recompile for any asset change | Impossible | Few small assets |
+| **Embedded in binary** | Grows with every asset | Single file, nothing to copy | Recompile for any asset change | Impossible | Few small assets |
 | **Assets on disk** | Binary stays small | Need installer, zip, or copy step | Fast — just replace the file | Users can swap files | Many large assets, rapid art iteration |
-| **Asset download on first launch** | Binary stays small | Single file + first-run download | Fast — update server assets | Possible via override directory | Moderate asset volume, clean distribution |
+| **Asset download on first launch** (current) | Binary stays small | Single file + first-run download | Fast — update server assets | Possible via override directory | Moderate asset volume, clean distribution |
 | **Installer/zip bundle** | N/A (packaged together) | Platform-specific packaging | Fast — just replace the file | Users can swap files | Commercial distribution, platform stores |
 
-**Rationale:** The project currently has one font file (~300KB). Embedding it eliminates the entire "where are my assets?" problem — the binary is self-contained, works from any directory, and needs no installer. Commercial games use disk assets because they have gigabytes of textures, models, and audio; recompiling to change one texture would be impractical. At the current asset volume, that tradeoff doesn't apply. The migration path to "download on first launch" uses a manifest file approach: S3 hosts an `assets-manifest.json` listing each asset filename and content hash. On startup, the client compares the remote manifest to the local manifest (stored in the platform data directory, next to `config.toml`). Only changed or missing assets are downloaded. Assets are stored in the data directory alongside the manifest. This avoids re-downloading unchanged assets and keeps the binary small.
+**Rationale:** The manifest approach keeps the binary small, eliminates the "where are my assets?" problem by storing them in the platform data directory, and only downloads what changed. Asset updates don't require a binary update — just change the asset on S3 and the manifest hash triggers a re-download on next launch.
 
 ---
 
