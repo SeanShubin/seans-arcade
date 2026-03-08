@@ -46,24 +46,23 @@ resource "aws_lightsail_instance" "relay" {
     systemctl enable docker
     systemctl start docker
 
-    # Install SSM agent (usually pre-installed on Amazon Linux 2023)
-    yum install -y amazon-ssm-agent || true
-    systemctl enable amazon-ssm-agent
-    systemctl start amazon-ssm-agent
-
-    # Install AWS CLI (for ECR login)
-    yum install -y aws-cli
-
-    # Create deploy script
+# Create deploy script
     cat > /usr/local/bin/deploy-relay.sh <<'SCRIPT'
     #!/bin/bash
     set -e
-    REGION=us-east-1
-    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-    ECR_URI="$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/arcade-relay"
 
-    aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com"
-    docker pull "$ECR_URI:latest"
+    # Build Docker image from binary uploaded by CI
+    cp /tmp/relay-binary /opt/arcade-relay/relay-binary
+    chmod +x /opt/arcade-relay/relay-binary
+    cat > /opt/arcade-relay/Dockerfile <<'DOCKERFILE'
+    FROM debian:bookworm-slim
+    COPY relay-binary /usr/local/bin/relay
+    RUN chmod +x /usr/local/bin/relay
+    EXPOSE 7700/udp
+    CMD ["relay"]
+    DOCKERFILE
+    docker build -t arcade-relay:latest /opt/arcade-relay
+
     docker stop arcade-relay 2>/dev/null || true
     docker rm arcade-relay 2>/dev/null || true
     docker run -d \
@@ -72,7 +71,7 @@ resource "aws_lightsail_instance" "relay" {
       --network host \
       -e RELAY_SECRET \
       -v /opt/arcade-relay/data:/data \
-      "$ECR_URI:latest" \
+      arcade-relay:latest \
       relay --data-dir /data
     SCRIPT
     chmod +x /usr/local/bin/deploy-relay.sh
@@ -110,7 +109,7 @@ resource "aws_lightsail_instance_public_ports" "relay" {
     to_port   = 7700
   }
 
-  # SSH for initial setup and SSM fallback
+  # SSH for deployment and administration
   port_info {
     protocol  = "tcp"
     from_port = 22
@@ -132,7 +131,7 @@ resource "aws_route53_record" "relay" {
 
 output "relay_instance_name" {
   value       = aws_lightsail_instance.relay.name
-  description = "Lightsail instance name (used by CI for SSM commands)"
+  description = "Lightsail instance name"
 }
 
 output "relay_address" {

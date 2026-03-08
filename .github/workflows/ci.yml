@@ -144,6 +144,7 @@ jobs:
           mv deploy/macos/relay deploy/relay
           mv deploy/macos/arcade-cli deploy/arcade-cli
           rm -rf deploy/windows deploy/macos
+          # linux-relay stays in deploy/ for the SSH deploy step but exclude from S3
 
       - name: Generate index.html with build info
         run: |
@@ -159,26 +160,36 @@ jobs:
           aws-region: us-east-1
 
       - name: Upload to S3
-        run: aws s3 sync deploy/ s3://arcade.seanshubin.com/ --delete
+        run: aws s3 sync deploy/ s3://arcade.seanshubin.com/ --delete --exclude "linux-relay/*"
 
       - name: Invalidate CloudFront cache
         run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
-
-      - name: Build and push relay Docker image
-        run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ECR_URI="$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/arcade-relay"
-          cp deploy/linux-relay/relay relay-binary
-          chmod +x relay-binary
-          docker build -f Dockerfile.relay -t "$ECR_URI:latest" .
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com"
-          docker push "$ECR_URI:latest"
-          rm relay-binary
 
       - name: Deploy relay via SSH
         run: |
           echo "${{ secrets.RELAY_SSH_KEY }}" > /tmp/relay-key
           chmod 600 /tmp/relay-key
-          ssh -o StrictHostKeyChecking=no -i /tmp/relay-key ec2-user@relay.seanshubin.com \
-            "sudo RELAY_SECRET=\$(cat /opt/arcade-relay/relay-secret) /usr/local/bin/deploy-relay.sh"
+          SSH_OPTS="-o StrictHostKeyChecking=no -i /tmp/relay-key"
+          SSH_HOST="ec2-user@relay.seanshubin.com"
+          chmod +x deploy/linux-relay/relay
+          scp $SSH_OPTS deploy/linux-relay/relay "$SSH_HOST:/tmp/relay-binary"
+          scp $SSH_OPTS Dockerfile.relay "$SSH_HOST:/tmp/Dockerfile.relay"
+          ssh $SSH_OPTS "$SSH_HOST" bash -s <<'REMOTE'
+          set -e
+          sudo cp /tmp/relay-binary /opt/arcade-relay/relay-binary
+          sudo chmod +x /opt/arcade-relay/relay-binary
+          sudo cp /tmp/Dockerfile.relay /opt/arcade-relay/Dockerfile
+          sudo docker build -t arcade-relay:latest -f /opt/arcade-relay/Dockerfile /opt/arcade-relay
+          sudo docker stop arcade-relay 2>/dev/null || true
+          sudo docker rm arcade-relay 2>/dev/null || true
+          RELAY_SECRET=$(sudo cat /opt/arcade-relay/relay-secret)
+          sudo docker run -d \
+            --name arcade-relay \
+            --restart unless-stopped \
+            --network host \
+            -e RELAY_SECRET="$RELAY_SECRET" \
+            -v /opt/arcade-relay/data:/data \
+            arcade-relay:latest \
+            relay --data-dir /data
+          REMOTE
           rm /tmp/relay-key
