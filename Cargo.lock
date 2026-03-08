@@ -251,6 +251,7 @@ name = "arcade"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "base64",
  "bevy",
  "dirs",
  "postcard",
@@ -5870,8 +5871,10 @@ dependencies = [
 name = "protocol"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "postcard",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -50,6 +50,67 @@ pub enum ChatPayload {
     Text(String),
 }
 
+// ---- S3 persistence types ---------------------------------------------------
+//
+// Shared between relay (writes) and client (reads). JSON-serializable chat
+// history with base64-encoded payloads.
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use std::collections::{HashMap, VecDeque};
+
+#[derive(Serialize, Deserialize)]
+pub struct PersistedChatHistory {
+    pub groups: HashMap<String, Vec<PersistedHistoryEntry>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PersistedHistoryEntry {
+    pub from: String,
+    pub payload: String,
+}
+
+impl PersistedChatHistory {
+    /// Snapshot in-memory chat history into a serializable format.
+    pub fn from_memory(history: &HashMap<String, VecDeque<HistoryEntry>>) -> Self {
+        let groups = history
+            .iter()
+            .map(|(hash, entries)| {
+                let persisted = entries
+                    .iter()
+                    .map(|e| PersistedHistoryEntry {
+                        from: e.from.clone(),
+                        payload: BASE64.encode(&e.payload),
+                    })
+                    .collect();
+                (hash.clone(), persisted)
+            })
+            .collect();
+        Self { groups }
+    }
+
+    /// Restore in-memory chat history from a persisted snapshot.
+    /// Entries with invalid base64 are silently skipped.
+    pub fn into_memory(self) -> HashMap<String, VecDeque<HistoryEntry>> {
+        self.groups
+            .into_iter()
+            .map(|(hash, entries)| {
+                let memory = entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let payload = BASE64.decode(&e.payload).ok()?;
+                        Some(HistoryEntry {
+                            from: e.from,
+                            payload,
+                        })
+                    })
+                    .collect();
+                (hash, memory)
+            })
+            .collect()
+    }
+}
+
 // ---- Serialization helpers --------------------------------------------------
 
 pub fn serialize<T: Serialize>(value: &T) -> Vec<u8> {

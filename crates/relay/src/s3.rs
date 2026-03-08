@@ -1,18 +1,18 @@
 //! Optional S3 client for state persistence and admin dashboard.
 //!
 //! All operations are best-effort: failures are logged but never crash the relay.
-//! The relay's in-memory state is authoritative; S3 is a snapshot that gets
-//! recreated naturally on the next sync cycle.
+//! S3 is the canonical store for persisted state. The relay's in-memory buffer
+//! is a write cache that gets flushed to S3 periodically. If S3 is unavailable,
+//! the relay keeps running and recreates admin files on the next successful sync.
 
-use std::collections::{HashMap, VecDeque};
 use std::time::Duration;
 
 use aws_sdk_s3::Client;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64;
-use protocol::HistoryEntry;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
+
+// Re-export persistence types from protocol (shared with client).
+pub use protocol::PersistedChatHistory;
 
 /// Best-effort S3 client. Every operation logs errors and returns None/false
 /// on failure — never panics or propagates errors.
@@ -135,62 +135,6 @@ impl S3Client {
     }
 }
 
-// -- Persisted chat history format -------------------------------------------
-
-/// JSON-serializable chat history for S3 persistence.
-/// Payloads are base64-encoded for clean JSON representation.
-#[derive(Serialize, Deserialize)]
-pub struct PersistedChatHistory {
-    pub groups: HashMap<String, Vec<PersistedHistoryEntry>>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct PersistedHistoryEntry {
-    pub from: String,
-    pub payload: String,
-}
-
-impl PersistedChatHistory {
-    /// Snapshot the in-memory chat history into a serializable format.
-    pub fn from_memory(history: &HashMap<String, VecDeque<HistoryEntry>>) -> Self {
-        let groups = history
-            .iter()
-            .map(|(hash, entries)| {
-                let persisted = entries
-                    .iter()
-                    .map(|e| PersistedHistoryEntry {
-                        from: e.from.clone(),
-                        payload: BASE64.encode(&e.payload),
-                    })
-                    .collect();
-                (hash.clone(), persisted)
-            })
-            .collect();
-        Self { groups }
-    }
-
-    /// Restore in-memory chat history from a persisted snapshot.
-    /// Entries with invalid base64 are silently skipped.
-    pub fn into_memory(self) -> HashMap<String, VecDeque<HistoryEntry>> {
-        self.groups
-            .into_iter()
-            .map(|(hash, entries)| {
-                let memory = entries
-                    .into_iter()
-                    .filter_map(|e| {
-                        let payload = BASE64.decode(&e.payload).ok()?;
-                        Some(HistoryEntry {
-                            from: e.from,
-                            payload,
-                        })
-                    })
-                    .collect();
-                (hash, memory)
-            })
-            .collect()
-    }
-}
-
 // -- Admin dashboard types ---------------------------------------------------
 
 /// Relay heartbeat: written to `admin/heartbeat.json`.
@@ -237,6 +181,11 @@ pub enum AdminCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protocol::{HistoryEntry, PersistedHistoryEntry};
+    use std::collections::{HashMap, VecDeque};
+
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD as BASE64;
 
     #[test]
     fn persisted_history_roundtrip() {
@@ -271,7 +220,7 @@ mod tests {
     #[test]
     fn persisted_history_empty_roundtrip() {
         // given an empty chat history
-        let history: HashMap<String, VecDeque<HistoryEntry>> = HashMap::new();
+        let history: HashMap<String, VecDeque<protocol::HistoryEntry>> = HashMap::new();
 
         // when we convert to persisted format and back
         let persisted = PersistedChatHistory::from_memory(&history);

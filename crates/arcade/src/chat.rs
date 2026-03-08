@@ -337,6 +337,43 @@ fn handle_text_submit(
     }
 }
 
+const CHAT_HISTORY_URL: &str = "https://arcade.seanshubin.com/admin/chat-history.json";
+
+/// Download chat history from S3 and push messages into the chat state.
+/// Best-effort: if the download or parse fails, we just skip history.
+fn fetch_chat_history_from_s3(chat: &mut ChatState) {
+    let body = match ureq::get(CHAT_HISTORY_URL).call() {
+        Ok(mut resp) => match resp.body_mut().read_to_string() {
+            Ok(s) => s,
+            Err(_) => return,
+        },
+        Err(_) => return,
+    };
+
+    let persisted: protocol::PersistedChatHistory = match serde_json::from_str(&body) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    // Get our commit hash to find our version group's history.
+    let commit_hash = crate::version::COMMIT_HASH;
+    let history = persisted.into_memory();
+    if let Some(entries) = history.get(commit_hash) {
+        for entry in entries {
+            if entry.payload.is_empty() {
+                continue;
+            }
+            if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&entry.payload) {
+                chat.messages.push(ChatMessage {
+                    from: entry.from.clone(),
+                    text,
+                    is_system: false,
+                });
+            }
+        }
+    }
+}
+
 /// Chat-domain consumer of relay events: display messages and manage input mode.
 /// Net-domain concerns (ConnectionState, PeerList, Config) are handled in net.rs.
 fn process_incoming_messages(
@@ -376,21 +413,14 @@ fn process_incoming_messages(
                 });
                 chat.input_mode = InputMode::SecretEntry;
             }
-            RelayMessage::ChatHistory { messages } => {
-                for entry in messages {
-                    if entry.payload.is_empty() {
-                        continue;
-                    }
-                    if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&entry.payload) {
-                        chat.messages.push(ChatMessage {
-                            from: entry.from.clone(),
-                            text,
-                            is_system: false,
-                        });
-                    }
-                }
+            RelayMessage::ChatHistory { .. } => {
+                // Chat history is now downloaded from S3 on Welcome, not sent
+                // over UDP. This variant is kept for protocol compatibility.
             }
             RelayMessage::Welcome { .. } => {
+                // Download chat history from S3 (canonical store).
+                fetch_chat_history_from_s3(&mut chat);
+
                 let config_path = config.data_dir.join("config.toml");
                 chat.messages.push(ChatMessage {
                     from: String::new(),

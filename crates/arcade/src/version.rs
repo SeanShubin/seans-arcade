@@ -13,7 +13,7 @@ use std::sync::{Mutex, mpsc};
 use bevy::prelude::*;
 
 const VERSION_URL: &str = "https://arcade.seanshubin.com/version";
-const COMMIT_HASH: &str = env!("GIT_COMMIT_HASH");
+pub const COMMIT_HASH: &str = env!("GIT_COMMIT_HASH");
 const RETRY_INTERVAL_SECS: f32 = 30.0;
 
 #[cfg(target_os = "windows")]

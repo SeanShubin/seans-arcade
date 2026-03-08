@@ -34,6 +34,7 @@ enum RelayAction {
     SendTo(SocketAddr, RelayMessage),
     SaveRegistry,
     LogChat { from: String, text: String },
+    SyncChatHistory,
 }
 
 struct RelayState {
@@ -123,16 +124,8 @@ impl RelayState {
                     RelayMessage::Welcome { peer_count },
                 ));
 
-                // Send chat history to the new client
-                if let Some(history) = self.chat_history.get(&commit_hash) {
-                    let entries: Vec<HistoryEntry> = history.iter().cloned().collect();
-                    if !entries.is_empty() {
-                        actions.push(RelayAction::SendTo(
-                            src,
-                            RelayMessage::ChatHistory { messages: entries },
-                        ));
-                    }
-                }
+                // Flush chat history to S3 so the new client can download it.
+                actions.push(RelayAction::SyncChatHistory);
 
                 // Broadcast PeerJoined to existing peers
                 let joined = RelayMessage::PeerJoined {
@@ -230,7 +223,12 @@ impl RelayState {
     }
 }
 
-fn execute_actions(socket: &UdpSocket, state: &mut RelayState, actions: &[RelayAction]) {
+fn execute_actions(
+    socket: &UdpSocket,
+    state: &mut RelayState,
+    actions: &[RelayAction],
+    s3_client: &Option<s3::S3Client>,
+) {
     for action in actions {
         match action {
             RelayAction::SendTo(addr, msg) => {
@@ -242,6 +240,13 @@ fn execute_actions(socket: &UdpSocket, state: &mut RelayState, actions: &[RelayA
             }
             RelayAction::LogChat { from, text } => {
                 state.log_writer.log_message(from, text);
+            }
+            RelayAction::SyncChatHistory => {
+                if let Some(s3) = s3_client {
+                    let persisted =
+                        protocol::PersistedChatHistory::from_memory(&state.chat_history);
+                    s3.put_json("admin/chat-history.json", &persisted);
+                }
             }
         }
     }
@@ -839,7 +844,7 @@ fn main() {
 
     loop {
         let timeout_actions = state.sweep_timeouts(Instant::now());
-        execute_actions(&socket, &mut state, &timeout_actions);
+        execute_actions(&socket, &mut state, &timeout_actions, &s3_client);
 
         // Periodic S3 sync: write all admin state every S3_SYNC_INTERVAL_SECS.
         // Runs on the same cadence as the recv timeout, so worst case is
@@ -847,7 +852,7 @@ fn main() {
         if let Some(ref s3) = s3_client {
             if s3_sync_timer.elapsed().as_secs() >= S3_SYNC_INTERVAL_SECS {
                 let cmd_actions = poll_admin_commands(&mut state, s3);
-                execute_actions(&socket, &mut state, &cmd_actions);
+                execute_actions(&socket, &mut state, &cmd_actions, &s3_client);
                 sync_to_s3(&state, s3, start_time);
                 s3_sync_timer = Instant::now();
             }
@@ -873,6 +878,6 @@ fn main() {
         };
 
         let actions = state.handle_message(src, msg, Instant::now());
-        execute_actions(&socket, &mut state, &actions);
+        execute_actions(&socket, &mut state, &actions, &s3_client);
     }
 }
