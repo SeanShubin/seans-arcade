@@ -2,16 +2,19 @@
 //!
 //! On startup: fetch the remote version file, compare to the compiled-in commit hash.
 //! If an update is available, download the new binary, replace self, and restart.
+//! If offline, launch with current version and retry every 30 seconds.
 
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Mutex, mpsc};
 
 use bevy::prelude::*;
 
 const VERSION_URL: &str = "https://arcade.seanshubin.com/version";
 const COMMIT_HASH: &str = env!("GIT_COMMIT_HASH");
+const RETRY_INTERVAL_SECS: f32 = 30.0;
 
 #[cfg(target_os = "windows")]
 const BINARY_URL: &str = "https://arcade.seanshubin.com/windows/arcade.exe";
@@ -25,6 +28,93 @@ pub enum VersionStatus {
     UpToDate,
     UpdateAvailable { remote_hash: String },
     Offline,
+}
+
+pub struct VersionPlugin;
+
+impl Plugin for VersionPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(VersionRetryState {
+            timer: Timer::from_seconds(RETRY_INTERVAL_SECS, TimerMode::Repeating),
+            pending: Mutex::new(None),
+        })
+        .add_systems(Update, (poll_version_retry, trigger_version_retry).chain());
+    }
+}
+
+#[derive(Resource)]
+pub struct VersionRetryState {
+    pub timer: Timer,
+    pending: Mutex<Option<mpsc::Receiver<VersionStatus>>>,
+}
+
+/// Poll for completed background version checks.
+fn poll_version_retry(
+    retry: ResMut<VersionRetryState>,
+    mut status: ResMut<VersionStatus>,
+) {
+    let mut pending = retry.pending.lock().unwrap();
+    let Some(ref receiver) = *pending else {
+        return;
+    };
+
+    match receiver.try_recv() {
+        Ok(new_status) => {
+            *pending = None;
+            match new_status {
+                VersionStatus::UpToDate => {
+                    println!("version retry: now up to date");
+                    *status = VersionStatus::UpToDate;
+                }
+                VersionStatus::UpdateAvailable { .. } => {
+                    println!("version retry: update available, updating...");
+                    auto_update();
+                    // If we get here, auto-update failed — stay offline
+                }
+                VersionStatus::Offline => {
+                    // Still offline, timer will fire again
+                }
+            }
+        }
+        Err(mpsc::TryRecvError::Empty) => {
+            // Still waiting
+        }
+        Err(mpsc::TryRecvError::Disconnected) => {
+            *pending = None;
+        }
+    }
+}
+
+/// Start a background version check when the timer fires (only while offline).
+fn trigger_version_retry(
+    mut retry: ResMut<VersionRetryState>,
+    status: Res<VersionStatus>,
+    time: Res<Time>,
+) {
+    if *status != VersionStatus::Offline {
+        return;
+    }
+
+    retry.timer.tick(time.delta());
+    if !retry.timer.just_finished() {
+        return;
+    }
+
+    let mut pending = retry.pending.lock().unwrap();
+    if pending.is_some() {
+        return;
+    }
+
+    let (tx, rx) = mpsc::channel();
+    *pending = Some(rx);
+    std::thread::spawn(move || {
+        let _ = tx.send(check_version());
+    });
+}
+
+/// Seconds remaining until the next retry attempt.
+pub fn retry_countdown(retry: &VersionRetryState) -> f32 {
+    (RETRY_INTERVAL_SECS - retry.timer.elapsed_secs()).max(0.0)
 }
 
 /// Check the remote version file and return the status.

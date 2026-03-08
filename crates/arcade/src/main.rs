@@ -47,6 +47,7 @@ fn main() {
             })
         )
         .insert_resource(version_status)
+        .add_plugins(version::VersionPlugin)
         .add_plugins(net::NetPlugin)
         .add_plugins(chat::ChatPlugin)
         .run();

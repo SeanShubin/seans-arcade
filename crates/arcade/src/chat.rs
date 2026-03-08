@@ -494,15 +494,22 @@ fn update_status_bar(
     conn_state: Res<ConnectionState>,
     config: Res<ClientConfig>,
     peers: Res<PeerList>,
-    mut query: Query<&mut Text, With<StatusBar>>,
+    version_status: Res<crate::version::VersionStatus>,
+    retry_state: Res<crate::version::VersionRetryState>,
+    mut query: Query<(&mut Text, &mut TextColor), With<StatusBar>>,
 ) {
-    if !conn_state.is_changed() && !peers.is_changed() {
+    let Ok((mut text, mut color)) = query.single_mut() else {
+        return;
+    };
+
+    if *version_status == crate::version::VersionStatus::Offline {
+        let countdown = crate::version::retry_countdown(&retry_state);
+        **text = format!("OFFLINE | retry in {countdown:.0}s");
+        color.0 = Color::srgb(1.0, 0.4, 0.4);
         return;
     }
 
-    let Ok(mut text) = query.single_mut() else {
-        return;
-    };
+    color.0 = Color::srgb(0.6, 0.6, 0.6);
 
     let name_display = if config.config.identity_name.is_empty() {
         "?".to_string()
