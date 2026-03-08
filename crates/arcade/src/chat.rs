@@ -358,20 +358,8 @@ fn process_incoming_messages(
                     });
                 }
             }
-            RelayMessage::PeerJoined { name } => {
-                chat.messages.push(ChatMessage {
-                    from: name.clone(),
-                    text: " joined".into(),
-                    is_system: true,
-                });
-            }
-            RelayMessage::PeerLeft { name } => {
-                chat.messages.push(ChatMessage {
-                    from: name.clone(),
-                    text: " left".into(),
-                    is_system: true,
-                });
-            }
+            RelayMessage::PeerJoined { .. } => {}
+            RelayMessage::PeerLeft { .. } => {}
             RelayMessage::RejectSecret => {
                 chat.messages.push(ChatMessage {
                     from: String::new(),
@@ -569,17 +557,16 @@ fn update_status_bar(
         ConnectionState::NeedsRelaySecret => format!("{name_display} | Enter relay secret"),
         ConnectionState::Connecting => format!("{name_display} | Connecting..."),
         ConnectionState::Connected => {
-            let peer_count = peers.0.len();
-            let peer_names: String = peers
-                .0
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ");
-            if peer_count == 0 {
-                format!("{name_display} | Connected (no peers)")
+            if peers.0.is_empty() {
+                format!("{name_display} | Connected")
             } else {
-                format!("{name_display} | {peer_count} peer(s): {peer_names}")
+                let peer_names: String = peers
+                    .0
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{name_display} | {peer_names}")
             }
         }
         ConnectionState::NameClaimed => format!("{name_display} | Name claimed - enter secret"),
@@ -936,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_joined_creates_system_message() {
+    fn peer_joined_produces_no_chat_message() {
         // given
         let mut tester = ChatTester::new();
 
@@ -946,14 +933,11 @@ mod tests {
         });
 
         // then
-        assert_eq!(tester.message_count(), 1);
-        assert_eq!(tester.last_message_from(), "Charlie");
-        assert_eq!(tester.last_message_text(), " joined");
-        assert!(tester.last_message_is_system());
+        assert_eq!(tester.message_count(), 0);
     }
 
     #[test]
-    fn peer_left_creates_system_message() {
+    fn peer_left_produces_no_chat_message() {
         // given
         let mut tester = ChatTester::new();
 
@@ -963,8 +947,7 @@ mod tests {
         });
 
         // then
-        assert_eq!(tester.last_message_text(), " left");
-        assert!(tester.last_message_is_system());
+        assert_eq!(tester.message_count(), 0);
     }
 
     #[test]
