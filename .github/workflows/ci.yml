@@ -80,7 +80,7 @@ jobs:
             target/release/relay
             target/release/arcade-cli
 
-  build-linux-relay:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,20 +95,29 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: linux-cargo-relay-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: linux-cargo-relay-
+          key: linux-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: linux-cargo-
+
+      - name: Build arcade
+        run: cargo build --release -p arcade
 
       - name: Build relay
         run: cargo build --release -p relay
 
-      - name: Upload artifact
+      - name: Build arcade-cli
+        run: cargo build --release -p arcade-cli
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-relay
-          path: target/release/relay
+          name: linux-binaries
+          path: |
+            target/release/arcade
+            target/release/relay
+            target/release/arcade-cli
 
   deploy:
-    needs: [build-windows, build-macos, build-linux-relay]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     permissions:
@@ -129,22 +138,11 @@ jobs:
           name: macos-binaries
           path: deploy/macos/
 
-      - name: Download Linux relay
+      - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-relay
-          path: deploy/linux-relay/
-
-      - name: Stage deploy directory
-        run: |
-          mv deploy/windows/arcade.exe deploy/arcade.exe
-          mv deploy/windows/relay.exe deploy/relay.exe
-          mv deploy/windows/arcade-cli.exe deploy/arcade-cli.exe
-          mv deploy/macos/arcade deploy/arcade
-          mv deploy/macos/relay deploy/relay
-          mv deploy/macos/arcade-cli deploy/arcade-cli
-          rm -rf deploy/windows deploy/macos
-          # linux-relay stays in deploy/ for the SSH deploy step but exclude from S3
+          name: linux-binaries
+          path: deploy/linux/
 
       - name: Generate index.html with build info
         run: |
@@ -160,7 +158,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Upload to S3
-        run: aws s3 sync deploy/ s3://arcade.seanshubin.com/ --delete --exclude "linux-relay/*"
+        run: aws s3 sync deploy/ s3://arcade.seanshubin.com/ --delete
 
       - name: Invalidate CloudFront cache
         run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
@@ -171,8 +169,8 @@ jobs:
           chmod 600 /tmp/relay-key
           SSH_OPTS="-o StrictHostKeyChecking=no -i /tmp/relay-key"
           SSH_HOST="ec2-user@relay.seanshubin.com"
-          chmod +x deploy/linux-relay/relay
-          scp $SSH_OPTS deploy/linux-relay/relay "$SSH_HOST:/tmp/relay-binary"
+          chmod +x deploy/linux/relay
+          scp $SSH_OPTS deploy/linux/relay "$SSH_HOST:/tmp/relay-binary"
           scp $SSH_OPTS Dockerfile.relay "$SSH_HOST:/tmp/Dockerfile.relay"
           ssh $SSH_OPTS "$SSH_HOST" bash -s <<'REMOTE'
           set -e

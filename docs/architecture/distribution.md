@@ -4,7 +4,7 @@ How Sean's Arcade is built, versioned, distributed, and updated. For the commit 
 
 This document covers the **game client** (`arcade`) — how it is built, versioned, distributed, and updated. The project produces three binaries (see [architecture-decisions.md](../architecture-decisions.md) — Project Structure); this document focuses on the player-facing one.
 
-The game client is a single compiled Rust binary (Windows `.exe` for v1), downloaded from seanshubin.com. All clients *in a session* must run the same version — this is critical for deterministic lockstep (identical code = identical simulation). The application handles its own updates automatically.
+The game client is a single compiled Rust binary per platform, downloaded from arcade.seanshubin.com. All clients *in a session* must run the same version — this is critical for deterministic lockstep (identical code = identical simulation). The application handles its own updates automatically.
 
 ## Version Check
 
@@ -62,10 +62,11 @@ When a newer version is detected:
 
 The binary knows its own platform at compile time and fetches the correct artifact:
 
-| Platform | Download URL                                  | Binary name  |
-| -------- | --------------------------------------------- | ------------ |
-| Windows  | `https://arcade.seanshubin.com/arcade.exe`    | `arcade.exe` |
-| macOS    | `https://arcade.seanshubin.com/arcade`        | `arcade`     |
+| Platform | Download URL                                      | Binary name  |
+| -------- | ------------------------------------------------- | ------------ |
+| Windows  | `https://arcade.seanshubin.com/windows/arcade.exe`| `arcade.exe` |
+| macOS    | `https://arcade.seanshubin.com/macos/arcade`      | `arcade`     |
+| Linux    | `https://arcade.seanshubin.com/linux/arcade`      | `arcade`     |
 
 ### Platform-Specific Replacement
 
@@ -104,10 +105,10 @@ The Release Workflow above describes the logical steps. This section describes t
 **Build jobs** run in parallel (separate jobs, not a matrix):
 - **`build-windows`** (`windows-latest`) — builds `arcade`, `relay`, and `arcade-cli`
 - **`build-macos`** (`macos-latest`) — builds `arcade`, `relay`, and `arcade-cli`
-- **`build-linux-relay`** (`ubuntu-latest`) — builds `relay` only (for deployment to the Linux VM)
+- **`build-linux`** (`ubuntu-latest`) — builds `arcade`, `relay`, and `arcade-cli`
 
 **Deploy job** (depends on all three build jobs succeeding):
-1. Download all platform artifacts and stage them into a flat `deploy/` directory
+1. Download all platform artifacts into platform subdirectories (`windows/`, `macos/`, `linux/`)
 2. Generate `index.html` with build info (commit hash, timestamp)
 3. Upload to S3 (`aws s3 sync`), excluding the Linux relay binary
 4. Invalidate CloudFront cache
@@ -137,7 +138,7 @@ The relay understands the **protocol envelope** — message type, tick number, p
 
 ## Cross-Platform Considerations (Bevy)
 
-Design is cross-platform from the start even though v1 is Windows-only. Key Bevy/Rust constraints that affect all platforms:
+CI builds for all three platforms (Windows, macOS, Linux). Key Bevy/Rust constraints that affect all platforms:
 
 **Determinism:** Bevy's `enhanced-determinism` feature flag must be enabled for all builds. This forces `libm` software math instead of hardware-specific intrinsics (x86 SSE vs ARM NEON produce different results for `sin`/`cos`/etc.). Without this, lockstep breaks between Windows and Mac players. All game state computation must stay on the CPU — GPU results are never deterministic across platforms.
 

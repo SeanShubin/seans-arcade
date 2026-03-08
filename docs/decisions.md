@@ -75,7 +75,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Future: **manifest-based asset download** when assets grow beyond a few MB — S3 hosts `assets-manifest.json` (filename + content hash per asset); client compares local vs. remote manifest on startup, downloads only changed/missing assets to the platform data directory
 
 ### Distribution
-- **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
+- **Windows, macOS, and Linux** — CI builds all three platforms; design is cross-platform from the start
 - Single binary per platform, **self-replacing auto-update** — no separate launcher, no installer
 - Version source of truth: `https://seanshubin.com/version` (git commit hash) — shared across all platforms
 - The application has a **compiled-in commit hash** (embedded at build time) checked on startup against the remote version
@@ -83,9 +83,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - If versions differ → **auto-update**: download the platform-specific binary, replace self, restart
 - If version check fails (no internet) → **offline mode**: launch with current version, show offline indicator, retry periodically until reachable
 - The **relay isolates clients by version** — clients with different commit hashes cannot interact
-- **Download URL is platform-specific** — the binary knows its own target at compile time (e.g., `arcade.exe`, `arcade`)
+- **Download URL is platform-specific** — platform subdirectories on S3 (e.g., `windows/arcade.exe`, `macos/arcade`, `linux/arcade`); the binary knows its own target at compile time
 - **Self-replacement varies by platform** — Windows requires a rename dance (can't delete running exe); macOS/Linux can overwrite directly
-- **Builds via GitHub Actions CI** — push to `master` triggers parallel native builds (`build-windows`, `build-macos`, `build-linux-relay`); deploy job uploads binaries to S3, invalidates CloudFront, and deploys relay via SSH
+- **Builds via GitHub Actions CI** — push to `master` triggers parallel native builds (`build-windows`, `build-macos`, `build-linux`); deploy job uploads binaries to S3 in platform subdirectories, invalidates CloudFront, and deploys relay via SSH
 - **All platforms distributed as bare binaries**, not platform-specific bundles (no `.app`, no `.AppImage`)
 - Bevy's `enhanced-determinism` feature flag **enabled for all builds** — required for cross-platform lockstep (forces `libm` software math)
 - Bevy's `dynamic_linking` feature **disabled for all release builds** (breaks macOS and WASM)
