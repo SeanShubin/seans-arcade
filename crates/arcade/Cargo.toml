@@ -13,3 +13,4 @@ postcard = { version = "1", features = ["alloc"] }
 toml = "0.8"
 dirs = "6"
 rand = "0.10.0"
+arboard = "3.6"

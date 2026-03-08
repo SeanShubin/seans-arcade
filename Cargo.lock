@@ -244,6 +244,7 @@ dependencies = [
 name = "arcade"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "bevy",
  "dirs",
  "postcard",

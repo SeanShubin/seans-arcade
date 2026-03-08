@@ -223,6 +223,7 @@ fn read_text_input(
     mut events: MessageReader<KeyboardInput>,
     mut chat: ResMut<ChatState>,
     mut submit: MessageWriter<TextSubmitted>,
+    keys: Res<ButtonInput<KeyCode>>,
 ) {
     for event in events.read() {
         if !event.state.is_pressed() {
@@ -239,6 +240,13 @@ fn read_text_input(
             }
             KeyCode::Backspace => {
                 chat.input_buffer.pop();
+            }
+            KeyCode::KeyV if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Ok(text) = clipboard.get_text() {
+                        chat.input_buffer.push_str(&text);
+                    }
+                }
             }
             _ => {
                 if let Some(ref text) = event.text {
