@@ -166,3 +166,4 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 
 - [bevy-command-timing.md](postmortems/bevy-command-timing.md) — Resource not available same frame as commands.insert_resource()
 - [hostname-not-resolved.md](postmortems/hostname-not-resolved.md) — SocketAddr::parse() silently fails on hostnames, client connects to localhost
+- [glibc-version-mismatch.md](postmortems/glibc-version-mismatch.md) — Relay crash-loops: CI builds against newer glibc than Docker base image provides
