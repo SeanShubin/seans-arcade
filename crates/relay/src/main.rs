@@ -8,6 +8,7 @@
 
 mod identity;
 mod logging;
+mod s3;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
@@ -244,6 +245,16 @@ fn execute_actions(socket: &UdpSocket, state: &mut RelayState, actions: &[RelayA
             }
         }
     }
+}
+
+const S3_SYNC_INTERVAL_SECS: u64 = 15;
+const S3_CHAT_HISTORY_KEY: &str = "admin/chat-history.json";
+
+/// Write the relay's in-memory chat history to S3.
+/// Best-effort: logs errors but never crashes.
+fn sync_chat_history_to_s3(state: &RelayState, s3: &s3::S3Client) {
+    let persisted = s3::PersistedChatHistory::from_memory(&state.chat_history);
+    s3.put_json(S3_CHAT_HISTORY_KEY, &persisted);
 }
 
 fn data_dir_from_args() -> std::path::PathBuf {
@@ -675,20 +686,69 @@ fn main() {
     let registry_path = IdentityRegistry::path_from_data_dir(&data_dir);
     let log_dir = LogWriter::log_dir_from_data_dir(&data_dir);
 
+    // S3 is optional: enabled when S3_BUCKET is set.
+    // Without it, the relay works fine but chat history doesn't survive restarts.
+    let s3_client = match std::env::var("S3_BUCKET") {
+        Ok(bucket) => {
+            println!("relay: s3: connecting to bucket {bucket}");
+            match s3::S3Client::new(bucket) {
+                Some(client) => {
+                    println!("relay: s3: enabled");
+                    Some(client)
+                }
+                None => {
+                    eprintln!("relay: s3: failed to create client, continuing without S3");
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            println!("relay: s3: S3_BUCKET not set, running without S3");
+            None
+        }
+    };
+
+    // Try to restore chat history from S3.
+    // If S3 is unavailable or the file doesn't exist, start with empty history.
+    let restored_history = s3_client
+        .as_ref()
+        .and_then(|s3| {
+            println!("relay: s3: restoring chat history...");
+            s3.get_json::<s3::PersistedChatHistory>(S3_CHAT_HISTORY_KEY)
+        })
+        .map(|persisted| {
+            let history = persisted.into_memory();
+            let total: usize = history.values().map(|v| v.len()).sum();
+            println!("relay: s3: restored {total} messages across {} version groups", history.len());
+            history
+        })
+        .unwrap_or_default();
+
     let mut state = RelayState {
         clients: HashMap::new(),
         identity_registry: IdentityRegistry::load(&registry_path),
         relay_secret: relay_secret_from_env(),
         log_writer: LogWriter::new(&log_dir),
         registry_path,
-        chat_history: HashMap::new(),
+        chat_history: restored_history,
     };
 
     let mut buf = [0u8; RECV_BUF_SIZE];
+    let mut s3_sync_timer = Instant::now();
 
     loop {
         let timeout_actions = state.sweep_timeouts(Instant::now());
         execute_actions(&socket, &mut state, &timeout_actions);
+
+        // Periodic S3 sync: write state every S3_SYNC_INTERVAL_SECS.
+        // Runs on the same cadence as the recv timeout, so worst case is
+        // interval + 5 seconds between syncs.
+        if let Some(ref s3) = s3_client {
+            if s3_sync_timer.elapsed().as_secs() >= S3_SYNC_INTERVAL_SECS {
+                sync_chat_history_to_s3(&state, s3);
+                s3_sync_timer = Instant::now();
+            }
+        }
 
         let (len, src) = match socket.recv_from(&mut buf) {
             Ok(result) => result,
