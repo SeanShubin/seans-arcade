@@ -248,13 +248,54 @@ fn execute_actions(socket: &UdpSocket, state: &mut RelayState, actions: &[RelayA
 }
 
 const S3_SYNC_INTERVAL_SECS: u64 = 15;
-const S3_CHAT_HISTORY_KEY: &str = "admin/chat-history.json";
 
-/// Write the relay's in-memory chat history to S3.
-/// Best-effort: logs errors but never crashes.
-fn sync_chat_history_to_s3(state: &RelayState, s3: &s3::S3Client) {
+/// Write all admin state to S3. Best-effort: logs errors but never crashes.
+/// If any file is deleted from S3, it gets recreated on the next sync cycle.
+fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Heartbeat
+    s3.put_json(
+        "admin/heartbeat.json",
+        &s3::Heartbeat {
+            timestamp: now.clone(),
+            uptime_secs: start_time.elapsed().as_secs(),
+            client_count: state.clients.len(),
+            commit_hash: env!("GIT_COMMIT_HASH").to_string(),
+        },
+    );
+
+    // Connected users
+    let current_time = Instant::now();
+    let users: Vec<s3::ConnectedUser> = state
+        .clients
+        .values()
+        .map(|c| s3::ConnectedUser {
+            name: c.identity_name.clone(),
+            commit_hash: c.commit_hash.clone(),
+            idle_secs: current_time.duration_since(c.last_seen).as_secs(),
+        })
+        .collect();
+    s3.put_json(
+        "admin/connected.json",
+        &s3::ConnectedUsers {
+            timestamp: now.clone(),
+            users,
+        },
+    );
+
+    // Chat history
     let persisted = s3::PersistedChatHistory::from_memory(&state.chat_history);
-    s3.put_json(S3_CHAT_HISTORY_KEY, &persisted);
+    s3.put_json("admin/chat-history.json", &persisted);
+
+    // Registered identities (names only, no secrets)
+    s3.put_json(
+        "admin/identities.json",
+        &s3::RegisteredIdentities {
+            timestamp: now,
+            names: state.identity_registry.names(),
+        },
+    );
 }
 
 fn data_dir_from_args() -> std::path::PathBuf {
@@ -714,7 +755,7 @@ fn main() {
         .as_ref()
         .and_then(|s3| {
             println!("relay: s3: restoring chat history...");
-            s3.get_json::<s3::PersistedChatHistory>(S3_CHAT_HISTORY_KEY)
+            s3.get_json::<s3::PersistedChatHistory>("admin/chat-history.json")
         })
         .map(|persisted| {
             let history = persisted.into_memory();
@@ -734,18 +775,19 @@ fn main() {
     };
 
     let mut buf = [0u8; RECV_BUF_SIZE];
+    let start_time = Instant::now();
     let mut s3_sync_timer = Instant::now();
 
     loop {
         let timeout_actions = state.sweep_timeouts(Instant::now());
         execute_actions(&socket, &mut state, &timeout_actions);
 
-        // Periodic S3 sync: write state every S3_SYNC_INTERVAL_SECS.
+        // Periodic S3 sync: write all admin state every S3_SYNC_INTERVAL_SECS.
         // Runs on the same cadence as the recv timeout, so worst case is
         // interval + 5 seconds between syncs.
         if let Some(ref s3) = s3_client {
             if s3_sync_timer.elapsed().as_secs() >= S3_SYNC_INTERVAL_SECS {
-                sync_chat_history_to_s3(&state, s3);
+                sync_to_s3(&state, s3, start_time);
                 s3_sync_timer = Instant::now();
             }
         }

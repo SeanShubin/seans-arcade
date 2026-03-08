@@ -153,6 +153,38 @@ impl PersistedChatHistory {
     }
 }
 
+// -- Admin dashboard types ---------------------------------------------------
+
+/// Relay heartbeat: written to `admin/heartbeat.json`.
+#[derive(Serialize, Deserialize)]
+pub struct Heartbeat {
+    pub timestamp: String,
+    pub uptime_secs: u64,
+    pub client_count: usize,
+    pub commit_hash: String,
+}
+
+/// Connected client info for `admin/connected.json`.
+#[derive(Serialize, Deserialize)]
+pub struct ConnectedUsers {
+    pub timestamp: String,
+    pub users: Vec<ConnectedUser>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConnectedUser {
+    pub name: String,
+    pub commit_hash: String,
+    pub idle_secs: u64,
+}
+
+/// Registered identities for `admin/identities.json`.
+#[derive(Serialize, Deserialize)]
+pub struct RegisteredIdentities {
+    pub timestamp: String,
+    pub names: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

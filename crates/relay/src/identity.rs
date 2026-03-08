@@ -56,6 +56,13 @@ impl IdentityRegistry {
         }
     }
 
+    /// Return all registered identity names (without secrets).
+    pub fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.entries.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
     pub fn path_from_data_dir(data_dir: &Path) -> PathBuf {
         data_dir.join("identity_registry.toml")
     }
