@@ -3,7 +3,7 @@
 //! Owns: ConnectionState, PeerList, ClientConfig, NetSocket.
 //! Cross-domain communication uses RelayEvent (Bevy event).
 
-use std::net::UdpSocket;
+use std::net::{ToSocketAddrs, UdpSocket};
 
 use bevy::prelude::*;
 use protocol::{ClientMessage, RelayMessage, deserialize, serialize};
@@ -108,10 +108,12 @@ fn setup_network(mut commands: Commands, mut state: ResMut<ConnectionState>) {
         return;
     }
 
-    let relay_addr: std::net::SocketAddr = config
+    let relay_addr = config
         .relay_address
-        .parse()
-        .expect("invalid relay address in config");
+        .to_socket_addrs()
+        .expect("failed to resolve relay address")
+        .next()
+        .expect("relay address resolved to no addresses");
 
     let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind local UDP socket");
     socket
@@ -215,11 +217,13 @@ fn handle_connect_request(
     mut state: ResMut<ConnectionState>,
 ) {
     for _ in events.read() {
-        let relay_addr: std::net::SocketAddr = config
+        let relay_addr = config
             .config
             .relay_address
-            .parse()
-            .unwrap_or_else(|_| "127.0.0.1:7700".parse().unwrap());
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut addrs| addrs.next())
+            .unwrap_or_else(|| "127.0.0.1:7700".parse().unwrap());
 
         let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind local UDP socket");
         socket
