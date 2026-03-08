@@ -17,6 +17,21 @@ use crate::net::{
     send_chat_message,
 };
 
+/// Normalize a name: first letter uppercase, rest lowercase.
+fn normalize_name(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => {
+            let mut s = first.to_ascii_uppercase().to_string();
+            for c in chars {
+                s.push(c.to_ascii_lowercase());
+            }
+            s
+        }
+    }
+}
+
 const SCROLLBAR_WIDTH: f32 = 14.0;
 const THUMB_MIN_HEIGHT: f32 = 20.0;
 const SCROLL_LINE_HEIGHT: f32 = 30.0;
@@ -117,7 +132,7 @@ fn setup_ui(mut commands: Commands, state: Res<ConnectionState>, mut chat: ResMu
         chat.input_mode = InputMode::NameEntry;
         chat.messages.push(ChatMessage {
             from: String::new(),
-            text: "Welcome! Enter your name:".into(),
+            text: "Welcome! Choose a name (one word, letters only):".into(),
             is_system: true,
         });
     } else if *state == ConnectionState::NeedsRelaySecret {
@@ -271,12 +286,13 @@ fn handle_text_submit(
         match chat.input_mode {
             InputMode::NameEntry => {
                 if text.chars().all(|c| c.is_ascii_alphabetic()) && text.len() <= 20 {
-                    config.config.identity_name = text.clone();
+                    let name = normalize_name(text);
+                    config.config.identity_name = name.clone();
                     config.config.identity_secret = generate_identity_secret();
                     save_config(&config.data_dir, &config.config);
 
                     chat.messages.push(ChatMessage {
-                        from: text.clone(),
+                        from: name,
                         text: " registered. Enter the relay secret:".into(),
                         is_system: true,
                     });
@@ -499,10 +515,16 @@ fn update_input_display(
     };
     color.0 = input_color;
 
-    if chat.input_buffer.is_empty() {
+    let display_buffer = if chat.input_mode == InputMode::NameEntry {
+        normalize_name(&chat.input_buffer)
+    } else {
+        chat.input_buffer.clone()
+    };
+
+    if display_buffer.is_empty() {
         **text = format!("{prefix}_");
     } else {
-        **text = format!("{prefix}{}_", chat.input_buffer);
+        **text = format!("{prefix}{display_buffer}_");
     }
 }
 
@@ -1001,6 +1023,18 @@ mod tests {
 
         // then
         assert_eq!(tester.input_mode(), &InputMode::RelaySecretEntry);
+        assert_eq!(tester.identity_name(), "Bob");
+    }
+
+    #[test]
+    fn name_entry_normalizes_capitalization() {
+        // given
+        let mut tester = ChatTester::new().with_input_mode(InputMode::NameEntry);
+
+        // when
+        tester.submit_text("bOB");
+
+        // then
         assert_eq!(tester.identity_name(), "Bob");
     }
 
