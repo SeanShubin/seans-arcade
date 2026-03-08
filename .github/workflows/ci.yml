@@ -175,24 +175,10 @@ jobs:
           docker push "$ECR_URI:latest"
           rm relay-binary
 
-      - name: Deploy relay via SSM
+      - name: Deploy relay via SSH
         run: |
-          INSTANCE_ID=$(aws lightsail get-instance --instance-name arcade-relay --query 'instance.supportCode' --output text | cut -d/ -f2)
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["RELAY_SECRET=$(/usr/local/bin/get-relay-secret.sh) /usr/local/bin/deploy-relay.sh"]' \
-            --query 'Command.CommandId' --output text)
-          echo "SSM Command: $COMMAND_ID"
-          for i in $(seq 1 30); do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$INSTANCE_ID" \
-              --query 'Status' --output text 2>/dev/null || echo "Pending")
-            echo "Status: $STATUS"
-            if [ "$STATUS" = "Success" ]; then exit 0; fi
-            if [ "$STATUS" = "Failed" ]; then exit 1; fi
-            sleep 5
-          done
-          echo "Timed out waiting for SSM command"
-          exit 1
+          echo "${{ secrets.RELAY_SSH_KEY }}" > /tmp/relay-key
+          chmod 600 /tmp/relay-key
+          ssh -o StrictHostKeyChecking=no -i /tmp/relay-key ec2-user@relay.seanshubin.com \
+            "sudo RELAY_SECRET=\$(cat /opt/arcade-relay/relay-secret) /usr/local/bin/deploy-relay.sh"
+          rm /tmp/relay-key

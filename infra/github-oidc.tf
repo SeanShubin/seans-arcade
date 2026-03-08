@@ -75,15 +75,6 @@ resource "aws_iam_role_policy" "github_deploy" {
         ]
         Resource = aws_ecr_repository.relay.arn
       },
-      {
-        Sid    = "SSMSendCommand"
-        Effect = "Allow"
-        Action = [
-          "ssm:SendCommand",
-          "ssm:GetCommandInvocation"
-        ]
-        Resource = "*"
-      }
     ]
   })
 }
