@@ -66,7 +66,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 ### Infrastructure Tooling
 - Infrastructure managed with **Terraform** — cloud-agnostic HCL, no bootstrap ceremony, state stored locally ([decision](architecture-decisions.md#terraform-for-infrastructure-management))
 - CI deploys to S3 via **GitHub Actions OIDC** — no long-lived AWS credentials, role assumption scoped to master branch ([decision](architecture-decisions.md#github-actions-oidc-for-deployment))
-- **No Docker or Kubernetes** for static hosting — commodity cloud services (S3, CloudFront) are sufficient; Docker reserved for future relay deployment if needed ([decision](architecture-decisions.md#no-docker-or-kubernetes-for-static-hosting))
+- **No Docker or Kubernetes** for static hosting — commodity cloud services (S3, CloudFront) are sufficient ([decision](architecture-decisions.md#no-docker-or-kubernetes-for-static-hosting))
+- **Relay deployed via Docker on Lightsail VM** — $3.50/month, UDP support, CI deploys via SSM (no SSH) ([decision](architecture-decisions.md#relay-deployment-lightsail-vm--docker--ssm))
+- Default relay address is **relay.seanshubin.com:7700** — overridable in `config.toml` for local development
 
 ### Assets
 - **Embedded in binary** for v1 — assets compiled into the executable via `include_bytes!`, no external files needed ([decision](architecture-decisions.md#asset-distribution-strategy))
@@ -125,6 +127,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [distribution.md](architecture/distribution.md)                     | Distribution, versioning, CI pipeline, auto-update                               |
 | [deployment-pipeline.md](architecture/deployment-pipeline.md)       | CI/CD pipeline: build, deploy to S3, CloudFront invalidation                     |
 | [deployment-setup.md](architecture/deployment-setup.md)             | One-time setup: AWS credentials, Terraform, GitHub secrets                       |
+| [operations-reference.md](architecture/operations-reference.md)     | Where everything lives, VM commands, debugging checklist                         |
 | [architecture-decisions.md](architecture-decisions.md)              | Formalized technical decisions with rationale                                    |
 | [design-philosophy.md](research/design-philosophy.md)               | Game design principles that motivate technical decisions                         |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md)       | High-level engine pipeline overview                                              |

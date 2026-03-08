@@ -74,9 +74,25 @@ terraform plan    # review what will be created
 terraform apply   # type "yes" to confirm
 ```
 
-This creates: S3 bucket, CloudFront distribution, ACM certificate, Route53 DNS record, and GitHub OIDC role.
+This creates:
+- S3 bucket, CloudFront distribution, ACM certificate, Route53 DNS record (static site)
+- ECR repository (relay Docker images)
+- Lightsail VM with Docker and SSM agent (relay server)
+- Static IP and DNS record for `relay.seanshubin.com`
+- GitHub OIDC role with permissions for S3, CloudFront, ECR, and SSM
 
-The ACM certificate validation may take a few minutes.
+The ACM certificate validation may take a few minutes. The Lightsail VM takes 1-2 minutes to boot and run its user_data script.
+
+## Set Relay Secret
+
+SSH into the Lightsail VM and set the relay secret:
+
+```
+ssh ec2-user@$(cd infra && terraform output -raw relay_ip)
+echo "your-relay-secret" | sudo tee /opt/arcade-relay/relay-secret
+```
+
+This only needs to be done once. The secret persists across relay restarts and redeployments.
 
 ## Set GitHub Secrets
 
@@ -95,11 +111,31 @@ Or manually:
 ## Verify
 
 Push to master. The GitHub Actions workflow will:
-1. Build the Windows binaries
-2. Upload them to S3
+1. Build Windows, macOS, and Linux relay binaries (in parallel)
+2. Upload client binaries to S3
 3. Invalidate CloudFront cache
+4. Build relay Docker image, push to ECR
+5. Deploy relay to Lightsail VM via SSM
 
-Check `https://arcade.seanshubin.com` — the download page should appear.
+Check:
+- `https://arcade.seanshubin.com` — download page with Windows and macOS binaries
+- Run the client — it should connect to `relay.seanshubin.com:7700`
+
+## Local Development
+
+To run the relay locally instead of using the AWS relay:
+
+```
+RELAY_SECRET=test cargo run -p relay
+```
+
+Then set `relay_address = "127.0.0.1:7700"` in your local `config.toml`, or use a separate data dir:
+
+```
+arcade.exe --data-dir local/dev
+```
+
+And edit `local/dev/seans-arcade/config.toml` to point at localhost.
 
 ## Teardown
 

@@ -1,0 +1,5 @@
+FROM debian:bookworm-slim
+COPY relay-binary /usr/local/bin/relay
+RUN chmod +x /usr/local/bin/relay
+EXPOSE 7700/udp
+CMD ["relay"]

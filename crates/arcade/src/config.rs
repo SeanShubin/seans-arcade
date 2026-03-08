@@ -22,7 +22,7 @@ pub struct Config {
 }
 
 fn default_relay_address() -> String {
-    "127.0.0.1:7700".into()
+    "relay.seanshubin.com:7700".into()
 }
 
 pub fn data_dir_from_args() -> PathBuf {
@@ -107,7 +107,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arcade_config_test_{}", line!()));
         let _ = std::fs::remove_dir_all(&dir);
         let config = load_config(&dir);
-        assert_eq!(config.relay_address, "127.0.0.1:7700");
+        assert_eq!(config.relay_address, "relay.seanshubin.com:7700");
     }
 
     #[test]
