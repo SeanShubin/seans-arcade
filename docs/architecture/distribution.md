@@ -27,7 +27,7 @@ The commit hash is the single identifier for "this exact code." It changes autom
 See [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier.
 
 On startup, before doing anything else:
-1. HTTP GET `https://seanshubin.com/version`
+1. HTTP GET `https://arcade.seanshubin.com/version`
 2. Parse the commit hash
 3. If it matches the compiled-in commit hash → proceed to the app
 4. If it doesn't → auto-update (see below)

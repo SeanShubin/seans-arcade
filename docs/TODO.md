@@ -20,18 +20,19 @@ Get all three binaries running locally on one machine. Two arcade clients log in
 
 ## CI Build Pipeline
 
-Push to `main` compiles all three binaries and embeds the commit hash. No AWS dependency — this is pure GitHub Actions.
+Push to `master` compiles all three binaries on all platforms and embeds the commit hash.
 
-- [ ] Create GitHub Actions workflow — Windows build on push to `main`, compile arcade, relay, and arcade-cli
-- [ ] Implement startup version check — arcade client compares compiled-in hash against version source (local file for now)
-- [ ] Implement auto-update — download new binary, Windows rename dance, restart
-- [ ] Implement offline mode — launch with current version, show offline indicator, retry every 30 seconds
+- [x] Create GitHub Actions workflow — builds arcade, relay, and arcade-cli on Windows, macOS, and Linux
+- [x] Implement startup version check — arcade client compares compiled-in hash against `arcade.seanshubin.com/version`
+- [x] Implement auto-update — download new binary, platform-specific replacement (Windows rename dance / Unix overwrite), restart
+- [x] Implement offline mode — launch with current version, show offline indicator, retry every 30 seconds
+- [x] Implement manifest-based asset download — CI generates `assets-manifest.json`, client syncs on startup
 
 ## AWS Deployment
 
 Connect the CI pipeline to AWS. Binaries go to S3, relay goes to Lightsail, DNS points to seanshubin.com.
 
-- [ ] Set up AWS infrastructure — S3 bucket for binaries and version file, Route 53 DNS for seanshubin.com
-- [ ] Upload build artifacts to S3 — CI deploys binaries, then updates version file as atomic "go" signal (ordering matters)
-- [ ] Wire version check and auto-update to S3 — production impl of the version/download abstractions
-- [ ] Deploy relay to Lightsail — relay binary running on a cheap VM, accessible via public endpoint
+- [x] Set up AWS infrastructure — S3 bucket for binaries and version file, Route 53 DNS for arcade.seanshubin.com
+- [x] Upload build artifacts to S3 — CI deploys binaries, version file, and assets manifest in a single sync
+- [x] Wire version check and auto-update to S3 — client checks `arcade.seanshubin.com/version` on startup
+- [x] Deploy relay to Lightsail — relay binary running on a cheap VM, accessible via relay.seanshubin.com

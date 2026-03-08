@@ -71,13 +71,12 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Default relay address is **relay.seanshubin.com:7700** — overridable in `config.toml` for local development
 
 ### Assets
-- **Embedded in binary** for v1 — assets compiled into the executable via `include_bytes!`, no external files needed ([decision](architecture-decisions.md#asset-distribution-strategy))
-- Future: **manifest-based asset download** when assets grow beyond a few MB — S3 hosts `assets-manifest.json` (filename + content hash per asset); client compares local vs. remote manifest on startup, downloads only changed/missing assets to the platform data directory
+- **Manifest-based asset download** — S3 hosts `assets-manifest.json` (filename + SHA-256 hash per asset); client compares local vs. remote manifest on startup, downloads only changed/missing assets to the platform data directory ([decision](architecture-decisions.md#asset-distribution-strategy))
 
 ### Distribution
 - **Windows, macOS, and Linux** — CI builds all three platforms; design is cross-platform from the start
 - Single binary per platform, **self-replacing auto-update** — no separate launcher, no installer
-- Version source of truth: `https://seanshubin.com/version` (git commit hash) — shared across all platforms
+- Version source of truth: `https://arcade.seanshubin.com/version` (git commit hash) — shared across all platforms
 - The application has a **compiled-in commit hash** (embedded at build time) checked on startup against the remote version
 - If versions match → proceed normally
 - If versions differ → **auto-update**: download the platform-specific binary, replace self, restart

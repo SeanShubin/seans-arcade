@@ -273,7 +273,7 @@ Client C ──outbound──→ AWS Relay ←──outbound── Client D
 ```
 
 When a user launches the application:
-1. Version check against `seanshubin.com/version` (auto-update if stale)
+1. Version check against `arcade.seanshubin.com/version` (auto-update if stale)
 2. Connect to the relay on AWS
 3. Hello handshake — send commit hash, shared secret, identity name, and identity secret
 4. Relay validates the shared secret — mismatch silently drops the connection
