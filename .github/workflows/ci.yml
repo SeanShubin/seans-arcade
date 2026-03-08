@@ -137,12 +137,12 @@ jobs:
 
       - name: Stage deploy directory
         run: |
-          mv deploy/windows/arcade.exe deploy/arcade-windows.exe
-          mv deploy/windows/relay.exe deploy/relay-windows.exe
-          mv deploy/windows/arcade-cli.exe deploy/arcade-cli-windows.exe
-          mv deploy/macos/arcade deploy/arcade-macos
-          mv deploy/macos/relay deploy/relay-macos
-          mv deploy/macos/arcade-cli deploy/arcade-cli-macos
+          mv deploy/windows/arcade.exe deploy/arcade.exe
+          mv deploy/windows/relay.exe deploy/relay.exe
+          mv deploy/windows/arcade-cli.exe deploy/arcade-cli.exe
+          mv deploy/macos/arcade deploy/arcade
+          mv deploy/macos/relay deploy/relay
+          mv deploy/macos/arcade-cli deploy/arcade-cli
           rm -rf deploy/windows deploy/macos
 
       - name: Generate index.html with build info

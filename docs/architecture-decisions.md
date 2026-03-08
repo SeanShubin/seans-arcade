@@ -52,17 +52,18 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Rationale:** The download site serves three static files. Docker adds a container image to build, push, and run — for something S3 does natively. Kubernetes adds a ~$75/month control plane cost, steep learning curve, and operational complexity designed for dozens of microservices with auto-scaling needs. Neither provides any benefit over commodity static hosting at this scale. Docker may become relevant if the relay server is deployed to a cloud VM (packaging the relay binary with its runtime), but that is a separate decision for a separate concern.
 
-### Relay deployment: Lightsail VM + Docker + SSM
+### Relay deployment: Lightsail VM + Docker + SSH
 
-**Decision:** The relay server runs as a Docker container on a Lightsail nano instance ($3.50/month). CI builds a Linux relay binary, packages it in a Docker image, pushes to ECR, and triggers deployment via AWS Systems Manager (SSM). The relay secret is stored as a file on the VM, set once via SSH. DNS points `relay.seanshubin.com` to the VM's static IP.
+**Decision:** The relay server runs as a Docker container on a Lightsail nano instance ($5/month, dual-stack). CI builds a Linux relay binary, packages it in a Docker image, pushes to ECR, and triggers deployment via SSH. The relay secret is stored as a file on the VM, set once via SSH. DNS points `relay.seanshubin.com` to the VM's static IP.
 
 **Alternatives rejected:**
 - Lightsail Container Service ($7/month, fully managed) — does not support UDP, only HTTP/HTTPS
 - ECS Fargate ($9-13/month, fully managed, supports UDP) — 3x the cost for a service that uses negligible resources
-- Lightsail VM + systemd without Docker (cheapest, $3.50/month) — hand-rolled update mechanism; if the polling script breaks, requires SSH to fix
+- Lightsail VM + systemd without Docker (cheapest, $5/month) — hand-rolled update mechanism; if the polling script breaks, requires SSH to fix
 - Switching relay protocol to TCP to unlock container services — TCP's automatic retransmission contradicts the "drop slow inputs" design decision for future lockstep games
+- AWS Systems Manager (SSM) — Lightsail instances are not EC2 instances and do not register with SSM; SSM commands cannot target them
 
-**Rationale:** The relay is a UDP server. Managed container services (Lightsail Container, App Runner, Lambda) don't support UDP. Among the options that do, the Lightsail VM is the cheapest. Docker provides reproducible deployments — the same image runs everywhere. SSM eliminates SSH key management for CI; it authenticates via the same OIDC pattern used for S3 deployment. The one-time VM setup (Docker, SSM agent) is handled by Terraform user_data, so `terraform apply` creates a ready-to-deploy VM.
+**Rationale:** The relay is a UDP server. Managed container services (Lightsail Container, App Runner, Lambda) don't support UDP. Among the options that do, the Lightsail VM is the cheapest. Docker provides reproducible deployments — the same image runs everywhere. SSH key is stored as a GitHub secret (`RELAY_SSH_KEY`); CI writes it to a temporary file, runs the deploy command, and deletes it. The one-time VM setup (Docker, deploy script) is handled by Terraform user_data, so `terraform apply` creates a ready-to-deploy VM.
 
 ### Platform neutrality through commodity services
 

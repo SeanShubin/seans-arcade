@@ -77,9 +77,9 @@ terraform apply   # type "yes" to confirm
 This creates:
 - S3 bucket, CloudFront distribution, ACM certificate, Route53 DNS record (static site)
 - ECR repository (relay Docker images)
-- Lightsail VM with Docker and SSM agent (relay server)
+- Lightsail VM with Docker and SSH agent (relay server)
 - Static IP and DNS record for `relay.seanshubin.com`
-- GitHub OIDC role with permissions for S3, CloudFront, ECR, and SSM
+- GitHub OIDC role with permissions for S3, CloudFront, ECR, and SSH
 
 The ACM certificate validation may take a few minutes. The Lightsail VM takes 1-2 minutes to boot and run its user_data script.
 
@@ -96,17 +96,18 @@ This only needs to be done once. The secret persists across relay restarts and r
 
 ## Set GitHub Secrets
 
-After `terraform apply` completes, set two secrets on the GitHub repository:
+After `terraform apply` completes, set three secrets on the GitHub repository:
 
 ```
 gh secret set AWS_DEPLOY_ROLE_ARN --body "$(cd infra && terraform output -raw deploy_role_arn)"
 gh secret set CLOUDFRONT_DISTRIBUTION_ID --body "$(cd infra && terraform output -raw cloudfront_distribution_id)"
+gh secret set RELAY_SSH_KEY --body "$(cat ~/.ssh/lightsail-key.pem)"
 ```
 
 Or manually:
 1. `terraform output` — shows the values
 2. GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-3. Add `AWS_DEPLOY_ROLE_ARN` and `CLOUDFRONT_DISTRIBUTION_ID`
+3. Add `AWS_DEPLOY_ROLE_ARN`, `CLOUDFRONT_DISTRIBUTION_ID`, and `RELAY_SSH_KEY` (contents of `~/.ssh/lightsail-key.pem`)
 
 ## Verify
 
@@ -115,7 +116,7 @@ Push to master. The GitHub Actions workflow will:
 2. Upload client binaries to S3
 3. Invalidate CloudFront cache
 4. Build relay Docker image, push to ECR
-5. Deploy relay to Lightsail VM via SSM
+5. Deploy relay to Lightsail VM via SSH
 
 Check:
 - `https://arcade.seanshubin.com` — download page with Windows and macOS binaries

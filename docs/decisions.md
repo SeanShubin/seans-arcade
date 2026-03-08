@@ -67,7 +67,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Infrastructure managed with **Terraform** — cloud-agnostic HCL, no bootstrap ceremony, state stored locally ([decision](architecture-decisions.md#terraform-for-infrastructure-management))
 - CI deploys to S3 via **GitHub Actions OIDC** — no long-lived AWS credentials, role assumption scoped to master branch ([decision](architecture-decisions.md#github-actions-oidc-for-deployment))
 - **No Docker or Kubernetes** for static hosting — commodity cloud services (S3, CloudFront) are sufficient ([decision](architecture-decisions.md#no-docker-or-kubernetes-for-static-hosting))
-- **Relay deployed via Docker on Lightsail VM** — $3.50/month, UDP support, CI deploys via SSM (no SSH) ([decision](architecture-decisions.md#relay-deployment-lightsail-vm--docker--ssm))
+- **Relay deployed via Docker on Lightsail VM** — $5/month, UDP support, CI deploys via SSH ([decision](architecture-decisions.md#relay-deployment-lightsail-vm--docker--ssh))
 - Default relay address is **relay.seanshubin.com:7700** — overridable in `config.toml` for local development
 
 ### Assets
