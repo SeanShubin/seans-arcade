@@ -154,6 +154,9 @@ jobs:
           sed "s/DEPLOY_COMMIT_HASH/$HASH/g; s/DEPLOY_TIMESTAMP/$TIMESTAMP/g" \
             infra/index.html.tftpl > deploy/index.html
 
+      - name: Generate version file
+        run: echo -n "${{ github.sha }}" > deploy/version
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

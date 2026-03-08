@@ -86,11 +86,11 @@ When publishing a new version:
 1. Push to GitHub — CI builds per-platform binaries on native runners (cannot cross-compile to macOS)
 2. CI uploads all platform binaries to S3
 3. CI deploys the relay binary to the Lightsail VM via SSH
-4. *(Future)* CI uploads the version file to S3 (`version` containing `$GITHUB_SHA`)
+4. CI uploads the version file to S3 (`version` containing `$GITHUB_SHA`)
 
 No manual version bumping — the commit hash is the version.
 
-**Note:** Step 4 (version file) is not yet implemented. When it is, ordering will matter: all platform binaries must be uploaded (step 2) before the version file (step 4), so no client downloads a stale binary for a new commit hash.
+**Note:** All platform binaries and the version file are uploaded in a single `aws s3 sync`, so they land together. The version file is generated into the `deploy/` directory before the sync.
 
 **Why CI, not local builds:** macOS binaries must be built on macOS (the SDK and linker are not freely redistributable). GitHub Actions provides native macOS, Windows, and Linux runners. Bevy has an [official CI template](https://github.com/bevyengine/bevy_github_ci_template) for this.
 
@@ -116,7 +116,7 @@ The Release Workflow above describes the logical steps. This section describes t
 
 No manual version bumping. The commit hash is available automatically in CI.
 
-**Note:** The version file mechanism described in the Version Check section above is the decided design but is not yet implemented in CI. Currently, there is no `version` file on S3 — the auto-update flow is a future feature. The design is retained here as the intended approach.
+The version file is generated into the `deploy/` directory and uploaded alongside all binaries in a single `aws s3 sync`.
 
 ## Version Isolation
 
