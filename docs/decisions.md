@@ -68,6 +68,10 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - CI deploys to S3 via **GitHub Actions OIDC** — no long-lived AWS credentials, role assumption scoped to master branch ([decision](architecture-decisions.md#github-actions-oidc-for-deployment))
 - **No Docker or Kubernetes** for static hosting — commodity cloud services (S3, CloudFront) are sufficient; Docker reserved for future relay deployment if needed ([decision](architecture-decisions.md#no-docker-or-kubernetes-for-static-hosting))
 
+### Assets
+- **Embedded in binary** for v1 — assets compiled into the executable via `include_bytes!`, no external files needed ([decision](architecture-decisions.md#asset-distribution-strategy))
+- Future: **asset download on first launch** when assets grow beyond a few MB
+
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
 - Single binary per platform, **self-replacing auto-update** — no separate launcher, no installer

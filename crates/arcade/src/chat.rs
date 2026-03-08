@@ -100,13 +100,15 @@ struct ScrollbarTrack;
 #[derive(Resource)]
 struct FrakturFont(Handle<Font>);
 
+const FRAKTUR_FONT_BYTES: &[u8] = include_bytes!("../../../assets/fonts/NotoSansMath-Regular.ttf");
+
 #[derive(Component)]
 struct ScrollbarThumb;
 
-fn setup_ui(mut commands: Commands, state: Res<ConnectionState>, mut chat: ResMut<ChatState>, asset_server: Res<AssetServer>) {
+fn setup_ui(mut commands: Commands, state: Res<ConnectionState>, mut chat: ResMut<ChatState>, mut fonts: ResMut<Assets<Font>>) {
     commands.spawn(Camera2d);
 
-    let fraktur_font = asset_server.load("fonts/NotoSansMath-Regular.ttf");
+    let fraktur_font = fonts.add(Font::try_from_bytes(FRAKTUR_FONT_BYTES.to_vec()).expect("failed to load embedded font"));
     commands.insert_resource(FrakturFont(fraktur_font));
 
     if *state == ConnectionState::FirstLaunch {
