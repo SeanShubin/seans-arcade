@@ -95,6 +95,44 @@ impl S3Client {
         }
         true
     }
+
+    /// List all object keys under a prefix. Returns empty vec on failure.
+    pub fn list_keys(&self, prefix: &str) -> Vec<String> {
+        let result = self.runtime.block_on(
+            self.client
+                .list_objects_v2()
+                .bucket(&self.bucket)
+                .prefix(prefix)
+                .send(),
+        );
+        match result {
+            Ok(output) => output
+                .contents()
+                .iter()
+                .filter_map(|obj| obj.key().map(|k| k.to_string()))
+                .collect(),
+            Err(e) => {
+                eprintln!("relay: s3: failed to list {prefix}: {e}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Delete an object from S3. Returns true on success.
+    pub fn delete(&self, key: &str) -> bool {
+        let result = self.runtime.block_on(
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send(),
+        );
+        if let Err(e) = result {
+            eprintln!("relay: s3: failed to delete {key}: {e}");
+            return false;
+        }
+        true
+    }
 }
 
 // -- Persisted chat history format -------------------------------------------
@@ -183,6 +221,17 @@ pub struct ConnectedUser {
 pub struct RegisteredIdentities {
     pub timestamp: String,
     pub names: Vec<String>,
+}
+
+// -- Admin command types -----------------------------------------------------
+
+/// A command written by the dashboard to `admin/commands/`.
+/// The relay polls for these, executes them, and deletes the file.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "command")]
+pub enum AdminCommand {
+    #[serde(rename = "delete-user")]
+    DeleteUser { name: String },
 }
 
 #[cfg(test)]

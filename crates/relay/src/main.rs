@@ -298,6 +298,65 @@ fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
     );
 }
 
+const ADMIN_COMMANDS_PREFIX: &str = "admin/commands/";
+
+/// Poll S3 for admin command files, execute them, and delete the files.
+/// Returns actions to execute (e.g., disconnect messages to send).
+fn poll_admin_commands(state: &mut RelayState, s3: &s3::S3Client) -> Vec<RelayAction> {
+    let mut actions = Vec::new();
+
+    let keys = s3.list_keys(ADMIN_COMMANDS_PREFIX);
+    for key in keys {
+        // Skip the prefix itself (S3 may return the "directory" key)
+        if key == ADMIN_COMMANDS_PREFIX {
+            continue;
+        }
+
+        let Some(cmd) = s3.get_json::<s3::AdminCommand>(&key) else {
+            eprintln!("relay: s3: ignoring unparseable command file: {key}");
+            s3.delete(&key);
+            continue;
+        };
+
+        println!("relay: s3: executing command from {key}: {cmd:?}");
+
+        match cmd {
+            s3::AdminCommand::DeleteUser { name } => {
+                // Remove from identity registry
+                if state.identity_registry.remove(&name) {
+                    state.identity_registry.save(&state.registry_path);
+                    println!("relay: deleted identity: {name}");
+                } else {
+                    println!("relay: identity not found: {name}");
+                }
+
+                // Disconnect any active connections for this user
+                let to_disconnect: Vec<SocketAddr> = state
+                    .clients
+                    .iter()
+                    .filter(|(_, c)| c.identity_name == name)
+                    .map(|(addr, _)| *addr)
+                    .collect();
+                for addr in to_disconnect {
+                    if let Some(info) = state.clients.remove(&addr) {
+                        let left = RelayMessage::PeerLeft {
+                            name: info.identity_name.clone(),
+                        };
+                        actions.extend(
+                            state.broadcast_actions(&left, &info.commit_hash, None),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Delete the command file after execution
+        s3.delete(&key);
+    }
+
+    actions
+}
+
 fn data_dir_from_args() -> std::path::PathBuf {
     let args: Vec<String> = std::env::args().collect();
     for i in 0..args.len() - 1 {
@@ -787,6 +846,8 @@ fn main() {
         // interval + 5 seconds between syncs.
         if let Some(ref s3) = s3_client {
             if s3_sync_timer.elapsed().as_secs() >= S3_SYNC_INTERVAL_SECS {
+                let cmd_actions = poll_admin_commands(&mut state, s3);
+                execute_actions(&socket, &mut state, &cmd_actions);
                 sync_to_s3(&state, s3, start_time);
                 s3_sync_timer = Instant::now();
             }

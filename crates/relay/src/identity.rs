@@ -56,6 +56,11 @@ impl IdentityRegistry {
         }
     }
 
+    /// Remove a registered identity. Returns true if it existed.
+    pub fn remove(&mut self, name: &str) -> bool {
+        self.entries.remove(name).is_some()
+    }
+
     /// Return all registered identity names (without secrets).
     pub fn names(&self) -> Vec<String> {
         let mut names: Vec<String> = self.entries.keys().cloned().collect();
