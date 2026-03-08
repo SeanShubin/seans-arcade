@@ -160,3 +160,5 @@ CI builds for all three platforms (Windows, macOS, Linux). Key Bevy/Rust constra
 - No differential/patch updates — full binary download every time. At 0-10 users and ~50MB binary, this is fine.
 - No rollback mechanism — if a version is bad, publish a new one with a higher number.
 - No code signing for v1 — required for macOS when that platform is added (Gatekeeper/notarization); add for Windows if SmartScreen becomes a problem.
+- No self-install yet — decided but blocked on code signing. See [architecture-decisions.md](../architecture-decisions.md) — Self-installing on first run.
+- No profiles — OS user separation is sufficient. See [architecture-decisions.md](../architecture-decisions.md) — OS user separation.

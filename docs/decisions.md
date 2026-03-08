@@ -91,6 +91,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - No differential/patch updates — full binary download every time
 - No rollback — publish a new version with a higher number
 - No code signing for v1 (required for macOS when that platform is added)
+- **Self-installing on first run** (future) — binary copies itself to a standard OS location (`%LOCALAPPDATA%\seans-arcade\` on Windows, `~/Applications/seans-arcade/` on macOS, `~/.local/bin/` on Linux), creates shortcuts, and launches from there; auto-updates happen in that location. Blocked on code signing — unsigned self-installing binaries trigger OS security warnings.
+- **OS user separation** for multi-user machines — each OS account gets its own data directory automatically (`%APPDATA%`, `~/Library/Application Support/`, `~/.config/`). No profiles feature needed; the `--data-dir` flag covers testing with multiple identities on one OS account.
 - Running clients **continue on their current version** until relaunch — no mid-session updates, no background downloads
 - The relay groups clients by commit hash — **multiple versions coexist** independently; each version group operates in isolation
 - The relay treats game inputs as **opaque bytes** — only protocol-level changes (message framing, handshake) require relay redeployment; game logic changes are relay-transparent

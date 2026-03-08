@@ -75,6 +75,34 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Installation & User Separation
+
+### Self-installing on first run
+
+**Decision:** On first run, the binary copies itself to a standard OS location and launches from there. Future auto-updates happen in that installed location. Not yet implemented — blocked on code signing.
+
+**Locations:**
+
+| Platform | Install location | Data directory |
+|----------|-----------------|----------------|
+| Windows | `%LOCALAPPDATA%\seans-arcade\arcade.exe` | `%APPDATA%\seans-arcade\` |
+| macOS | `~/Applications/seans-arcade/arcade` | `~/Library/Application Support/seans-arcade/` |
+| Linux | `~/.local/bin/seans-arcade/arcade` | `~/.config/seans-arcade/` |
+
+**Alternatives rejected:** Suggested location (user docs say "put it here" — no enforcement, users ignore it), platform-specific installer (MSI, .app bundle, .deb — heavy tooling for minimal benefit at this scale).
+
+**Rationale:** Users download a bare binary and run it. Without self-install, it lives wherever they saved it (Desktop, Downloads, random folder), which makes auto-update fragile and the experience messy. Self-installing gives a predictable location without requiring a separate installer. Blocked on code signing because an unsigned binary that copies itself and creates shortcuts triggers aggressive OS security warnings (Windows SmartScreen, macOS Gatekeeper).
+
+### OS user separation (no profiles)
+
+**Decision:** Each OS user account gets its own data directory automatically via platform conventions (`%APPDATA%`, `~/Library/Application Support/`, `~/.config/`). No in-app profiles feature. The `--data-dir` flag covers the testing case of running multiple identities on one OS account.
+
+**Alternatives rejected:** Named profiles (`--profile alice` mapping to a subdirectory), profile picker UI on launch.
+
+**Rationale:** Different OS users already get separate data directories with zero code. An in-app profiles feature adds UI complexity for a scenario that barely exists — multiple real humans sharing one OS account and both playing the same niche game. The `--data-dir` flag already handles the developer testing case (batch files with separate data dirs). Building profiles solves a problem that doesn't exist yet.
+
+---
+
 ## Assets
 
 ### Asset distribution strategy
