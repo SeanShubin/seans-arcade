@@ -18,6 +18,50 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Infrastructure
+
+### Static site hosting: S3 + CloudFront
+
+**Decision:** Downloadable binaries are served from `arcade.seanshubin.com` via S3 (storage) + CloudFront (CDN, HTTPS) + ACM (SSL certificate) + Route53 (DNS). The S3 bucket is private — only CloudFront can read from it via Origin Access Control.
+
+**Alternatives rejected:** Self-hosted Nginx on EC2 (unnecessary operational burden for static files), GitHub Releases (ties distribution to GitHub, not a custom domain), bare S3 with public access (no HTTPS on custom domain, no CDN caching).
+
+**Rationale:** Three `.exe` files and an `index.html` is a static hosting problem. S3+CloudFront is the commodity solution — zero maintenance, automatic scaling, pennies/month. CloudFront provides HTTPS and edge caching. The setup is trivially replaceable: every cloud has equivalent services (Azure Blob + CDN, GCP Cloud Storage + CDN). No application code depends on AWS APIs.
+
+### Terraform for infrastructure management
+
+**Decision:** AWS infrastructure is defined in Terraform (HCL) in the `infra/` directory. State is stored locally.
+
+**Alternatives rejected:** AWS CloudFormation (verbose YAML, AWS-only), AWS CDK (requires Node.js bootstrap step, AWS-only), Pulumi (less mature ecosystem), manual console setup (not reproducible, not version-controlled).
+
+**Rationale:** Terraform is cloud-agnostic — the same HCL knowledge and workflow applies to any cloud provider. If the project moves off AWS, the infrastructure definition is rewritten (~60 lines) but the tooling and mental model transfer completely. No bootstrap ceremony is required (unlike CDK). State starts as a local file, which is appropriate for a single-developer project. The configuration is version-controlled alongside the application code. CloudFormation was rejected primarily for verbosity and AWS lock-in; CDK was rejected for requiring a Node.js toolchain and `cdk bootstrap` in the AWS account.
+
+### GitHub Actions OIDC for deployment
+
+**Decision:** GitHub Actions authenticates to AWS via OpenID Connect (OIDC) federation — no long-lived AWS access keys. An IAM role (`arcade-github-deploy`) trusts the GitHub OIDC provider, scoped to the `master` branch of this specific repository. The role has minimal permissions: S3 put/delete/list on the site bucket, and CloudFront cache invalidation on the site distribution.
+
+**Alternatives rejected:** IAM user with access key stored as GitHub secret (long-lived credential that must be rotated, broader blast radius if leaked), manual deployment (not automated, error-prone).
+
+**Rationale:** OIDC federation is the AWS-recommended approach for GitHub Actions. No credentials are stored — GitHub mints a short-lived token per workflow run, AWS validates it against the OIDC provider. The IAM role is scoped to exactly the permissions needed (one S3 bucket, one CloudFront distribution) and can only be assumed from the master branch of this repo. If the repository is compromised, the attacker can only upload files to the download site — they cannot access other AWS resources.
+
+### No Docker or Kubernetes for static hosting
+
+**Decision:** The download site uses S3+CloudFront directly. No containers, no container orchestration.
+
+**Alternatives rejected:** Docker + Nginx (container running a web server to serve static files), Kubernetes/EKS (container orchestration for multiple services).
+
+**Rationale:** The download site serves three static files. Docker adds a container image to build, push, and run — for something S3 does natively. Kubernetes adds a ~$75/month control plane cost, steep learning curve, and operational complexity designed for dozens of microservices with auto-scaling needs. Neither provides any benefit over commodity static hosting at this scale. Docker may become relevant if the relay server is deployed to a cloud VM (packaging the relay binary with its runtime), but that is a separate decision for a separate concern.
+
+### Platform neutrality through commodity services
+
+**Decision:** All AWS services used are commodity services with direct equivalents on every major cloud. No proprietary APIs are called from application code. The only AWS-specific artifacts are Terraform definitions and the CI deploy step.
+
+**Alternatives rejected:** Using AWS-specific services in application code (DynamoDB, SQS, Lambda), building an abstraction layer over cloud APIs "just in case."
+
+**Rationale:** Platform neutrality is achieved by choosing services that are commodity (S3 = blob storage, CloudFront = CDN, Route53 = DNS, ACM = SSL certs) rather than by abstracting over them. Every cloud offers these. The application binaries have zero cloud dependencies — they are Rust executables that communicate via UDP. Switching clouds means rewriting ~60 lines of Terraform and updating the CI deploy command — an afternoon of work, not an architecture change. An abstraction layer would add ongoing maintenance cost for a migration that may never happen.
+
+---
+
 ## Networking Model
 
 ### Deterministic lockstep with relay server

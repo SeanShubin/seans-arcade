@@ -113,6 +113,8 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [network-architecture.md](architecture/network-architecture.md) — Lockstep relay networking model: architecture and concepts
 - [network-operations.md](architecture/network-operations.md) — Running, debugging, and maintaining networked games; AWS infrastructure and cost estimates
 - [distribution.md](architecture/distribution.md) — Distribution, versioning, CI pipeline, and auto-update
+- [deployment-pipeline.md](architecture/deployment-pipeline.md) — CI/CD pipeline: GitHub Actions build, S3 deploy, CloudFront invalidation, Terraform infrastructure
+- [deployment-setup.md](architecture/deployment-setup.md) — One-time setup: AWS credentials, Terraform install, infrastructure creation, GitHub secrets
 - [game-engine-anatomy.md](architecture/game-engine-anatomy.md) — How a game engine is structured
 - [session-architecture.md](architecture/session-architecture.md) — Session architecture decision: unified world state, not multiplexed sessions
 - [sprite-pipeline.md](architecture/sprite-pipeline.md) — Sprite pipeline workflow: discover → grid → export

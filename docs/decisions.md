@@ -20,7 +20,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### AWS (Global Coordination)
 - Global coordination is **minimized** — AWS handles only what individual peers cannot
-- AWS serves the **static website** (S3, optionally CloudFront)
+- AWS serves the **static website** at **arcade.seanshubin.com** (S3 + CloudFront + ACM) ([decision](architecture-decisions.md#static-site-hosting-s3--cloudfront))
 - AWS runs an always-on **relay** on a cheap cloud VM (e.g., AWS Lightsail, ~$3.50/month) for NAT traversal
 - All clients make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](architecture/network-operations.md))
@@ -62,6 +62,11 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Multiple games run simultaneously** with different player subsets
 - **Unified world state** — the entire arcade is one simulation with one tick stream; no multiplexed sessions ([rationale](architecture/session-architecture.md))
 - **Game isolation (Matryoshka principle)** — each game receives its runtime environment (identity, input, output surfaces, lifecycle) through an explicit contract and never reaches outside it; the game is the invariant, the container is the variable ([decision](architecture-decisions.md))
+
+### Infrastructure Tooling
+- Infrastructure managed with **Terraform** — cloud-agnostic HCL, no bootstrap ceremony, state stored locally ([decision](architecture-decisions.md#terraform-for-infrastructure-management))
+- CI deploys to S3 via **GitHub Actions OIDC** — no long-lived AWS credentials, role assumption scoped to master branch ([decision](architecture-decisions.md#github-actions-oidc-for-deployment))
+- **No Docker or Kubernetes** for static hosting — commodity cloud services (S3, CloudFront) are sufficient; Docker reserved for future relay deployment if needed ([decision](architecture-decisions.md#no-docker-or-kubernetes-for-static-hosting))
 
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
@@ -114,6 +119,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [network-architecture.md](architecture/network-architecture.md)     | Lockstep relay networking model, determinism, latency hiding                     |
 | [network-operations.md](architecture/network-operations.md)         | Diagnostics, debugging, deployment, AWS infrastructure, cost estimates           |
 | [distribution.md](architecture/distribution.md)                     | Distribution, versioning, CI pipeline, auto-update                               |
+| [deployment-pipeline.md](architecture/deployment-pipeline.md)       | CI/CD pipeline: build, deploy to S3, CloudFront invalidation                     |
+| [deployment-setup.md](architecture/deployment-setup.md)             | One-time setup: AWS credentials, Terraform, GitHub secrets                       |
 | [architecture-decisions.md](architecture-decisions.md)              | Formalized technical decisions with rationale                                    |
 | [design-philosophy.md](research/design-philosophy.md)               | Game design principles that motivate technical decisions                         |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md)       | High-level engine pipeline overview                                              |

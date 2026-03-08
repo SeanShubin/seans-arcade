@@ -43,3 +43,34 @@ jobs:
             target/release/arcade.exe
             target/release/relay.exe
             target/release/arcade-cli.exe
+
+  deploy:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binaries
+          path: deploy/
+
+      - name: Copy index.html
+        run: cp infra/index.html.tftpl deploy/index.html
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Upload to S3
+        run: aws s3 sync deploy/ s3://arcade.seanshubin.com/ --delete
+
+      - name: Invalidate CloudFront cache
+        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
