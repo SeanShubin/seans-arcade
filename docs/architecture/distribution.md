@@ -8,12 +8,10 @@ The game client is a single compiled Rust binary per platform, downloaded from a
 
 ## Version Check
 
-> **Not yet implemented.** The version file and auto-update flow described in this section are the decided design but are not yet built. Currently, players download the binary manually from the website.
-
 A single file on S3 serves as the source of truth:
 
 ```
-https://seanshubin.com/version
+https://arcade.seanshubin.com/version
 ```
 
 Contains a git commit hash, e.g., `abc123def456`. Nothing else.

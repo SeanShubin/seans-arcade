@@ -6,6 +6,7 @@ mod chat;
 mod config;
 mod fraktur;
 mod net;
+mod version;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
@@ -23,6 +24,8 @@ fn log_layer(_app: &mut App) -> Option<bevy::log::BoxedLayer> {
 }
 
 fn main() {
+    let version_status = version::check_version();
+
     App::new()
         .add_plugins(DefaultPlugins
             .set(WindowPlugin {
@@ -38,6 +41,7 @@ fn main() {
                 ..default()
             })
         )
+        .insert_resource(version_status)
         .add_plugins(net::NetPlugin)
         .add_plugins(chat::ChatPlugin)
         .run();
