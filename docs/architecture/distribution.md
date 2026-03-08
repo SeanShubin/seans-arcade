@@ -8,6 +8,8 @@ The game client is a single compiled Rust binary (Windows `.exe` for v1), downlo
 
 ## Version Check
 
+> **Not yet implemented.** The version file and auto-update flow described in this section are the decided design but are not yet built. Currently, players download the binary manually from the website.
+
 A single file on S3 serves as the source of truth:
 
 ```
@@ -60,15 +62,14 @@ When a newer version is detected:
 
 The binary knows its own platform at compile time and fetches the correct artifact:
 
-| Platform | Download URL                                      | Binary name        |
-| -------- | ------------------------------------------------- | ------------------ |
-| Windows  | `https://seanshubin.com/seans-arcade-windows.exe` | `seans-arcade.exe` |
-| macOS    | `https://seanshubin.com/seans-arcade-macos`       | `seans-arcade`     |
-| Linux    | `https://seanshubin.com/seans-arcade-linux`       | `seans-arcade`     |
+| Platform | Download URL                                  | Binary name  |
+| -------- | --------------------------------------------- | ------------ |
+| Windows  | `https://arcade.seanshubin.com/arcade.exe`    | `arcade.exe` |
+| macOS    | `https://arcade.seanshubin.com/arcade`        | `arcade`     |
 
 ### Platform-Specific Replacement
 
-**Windows:** Cannot delete or overwrite a running executable. Rename the running exe to `seans-arcade-old.exe`, rename the downloaded temp file to `seans-arcade.exe`, then restart. On next startup, detect and delete `seans-arcade-old.exe` as cleanup.
+**Windows:** Cannot delete or overwrite a running executable. Rename the running exe to `arcade-old.exe`, rename the downloaded temp file to `arcade.exe`, then restart. On next startup, detect and delete `arcade-old.exe` as cleanup.
 
 **macOS / Linux:** Unix allows overwriting or unlinking a running binary (the OS keeps the inode alive until the process exits). Download to a temp file, overwrite the original, then restart. No rename dance or cleanup step needed.
 
@@ -83,12 +84,12 @@ The commit hash in the Hello is also logged to the canonical event log on connec
 When publishing a new version:
 1. Push to GitHub — CI builds per-platform binaries on native runners (cannot cross-compile to macOS)
 2. CI uploads all platform binaries to S3
-3. CI uploads the version file to S3 (`version` containing `$GITHUB_SHA`)
-4. If the relay protocol changed, deploy the new relay binary
+3. CI deploys the relay binary to the Lightsail VM via SSH
+4. *(Future)* CI uploads the version file to S3 (`version` containing `$GITHUB_SHA`)
 
-No manual version bumping — the commit hash is the version. CI writes `$GITHUB_SHA` to the version file automatically.
+No manual version bumping — the commit hash is the version.
 
-**Ordering matters:** All platform binaries must be uploaded (step 2) before the version file (step 3), so no client downloads a stale binary for a new commit hash. All platforms share the same commit hash — a release is not published until all platform binaries are ready.
+**Note:** Step 4 (version file) is not yet implemented. When it is, ordering will matter: all platform binaries must be uploaded (step 2) before the version file (step 4), so no client downloads a stale binary for a new commit hash.
 
 **Why CI, not local builds:** macOS binaries must be built on macOS (the SDK and linker are not freely redistributable). GitHub Actions provides native macOS, Windows, and Linux runners. Bevy has an [official CI template](https://github.com/bevyengine/bevy_github_ci_template) for this.
 
@@ -98,22 +99,23 @@ See the CI Pipeline section below for GitHub Actions implementation details.
 
 The Release Workflow above describes the logical steps. This section describes the GitHub Actions implementation.
 
-**Trigger:** push to `main`
+**Trigger:** push to `master`
 
-**Build jobs** run in parallel (matrix strategy):
-- **Windows** (`windows-latest`)
-- **macOS** (`macos-latest`) — build both x86_64 and aarch64 targets, combine with `lipo` for universal binary
-- **Linux** (`ubuntu-latest`)
+**Build jobs** run in parallel (separate jobs, not a matrix):
+- **`build-windows`** (`windows-latest`) — builds `arcade`, `relay`, and `arcade-cli`
+- **`build-macos`** (`macos-latest`) — builds `arcade`, `relay`, and `arcade-cli`
+- **`build-linux-relay`** (`ubuntu-latest`) — builds `relay` only (for deployment to the Linux VM)
 
 **Deploy job** (depends on all three build jobs succeeding):
-1. Download all platform artifacts
-2. Upload all platform binaries to S3
-3. Write `$GITHUB_SHA` to the S3 version file
-4. If relay code changed: deploy new relay binary
+1. Download all platform artifacts and stage them into a flat `deploy/` directory
+2. Generate `index.html` with build info (commit hash, timestamp)
+3. Upload to S3 (`aws s3 sync`), excluding the Linux relay binary
+4. Invalidate CloudFront cache
+5. Deploy relay binary to the Lightsail VM via SCP + SSH (Docker rebuild and restart)
 
 No manual version bumping. The commit hash is available automatically in CI.
 
-**Version file timing safety:** CI uploads platform binaries BEFORE updating the version file. The version file update is the atomic "go" signal — it only changes after all binaries are in place. This prevents clients from seeing a new version before the binary is available for download.
+**Note:** The version file mechanism described in the Version Check section above is the decided design but is not yet implemented in CI. Currently, there is no `version` file on S3 — the auto-update flow is a future feature. The design is retained here as the intended approach.
 
 ## Version Isolation
 
@@ -144,7 +146,7 @@ Design is cross-platform from the start even though v1 is Windows-only. Key Bevy
 - `#![windows_subsystem = "windows"]` suppresses the console window on Windows (conditionally, so debug builds still get console output)
 - macOS builds should be **universal binaries** (x86_64 + aarch64) to support both Intel and Apple Silicon Macs
 
-**Distribution format:** All platforms are distributed as **bare binaries**, not platform-specific bundles. macOS conventionally uses `.app` bundles, but a bare binary works fine and keeps the auto-update mechanism simple across all platforms. The `assets/` folder ships alongside the binary on all platforms.
+**Distribution format:** All platforms are distributed as **bare binaries**, not platform-specific bundles. macOS conventionally uses `.app` bundles, but a bare binary works fine and keeps the auto-update mechanism simple across all platforms. Assets are embedded in the binary via `include_bytes!` — no external files needed at runtime.
 
 **Platform-specific input quirks:**
 - macOS scroll events produce non-integer values (OS-level acceleration) — do not assume discrete scroll steps

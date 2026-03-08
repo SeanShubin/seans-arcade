@@ -72,7 +72,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 
 ### Assets
 - **Embedded in binary** for v1 — assets compiled into the executable via `include_bytes!`, no external files needed ([decision](architecture-decisions.md#asset-distribution-strategy))
-- Future: **asset download on first launch** when assets grow beyond a few MB
+- Future: **manifest-based asset download** when assets grow beyond a few MB — S3 hosts `assets-manifest.json` (filename + content hash per asset); client compares local vs. remote manifest on startup, downloads only changed/missing assets to the platform data directory
 
 ### Distribution
 - **Windows-only** for v1 — add platforms when needed, but design is cross-platform from the start
@@ -83,9 +83,9 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - If versions differ → **auto-update**: download the platform-specific binary, replace self, restart
 - If version check fails (no internet) → **offline mode**: launch with current version, show offline indicator, retry periodically until reachable
 - The **relay isolates clients by version** — clients with different commit hashes cannot interact
-- **Download URL is platform-specific** — the binary knows its own target at compile time (e.g., `seans-arcade-windows.exe`, `seans-arcade-macos`, `seans-arcade-linux`)
+- **Download URL is platform-specific** — the binary knows its own target at compile time (e.g., `arcade.exe`, `arcade`)
 - **Self-replacement varies by platform** — Windows requires a rename dance (can't delete running exe); macOS/Linux can overwrite directly
-- **Builds via GitHub Actions CI** — push to `main` triggers parallel native builds (Windows, macOS universal, Linux); deploy job uploads all binaries to S3, then updates the version file as the atomic "go" signal
+- **Builds via GitHub Actions CI** — push to `master` triggers parallel native builds (`build-windows`, `build-macos`, `build-linux-relay`); deploy job uploads binaries to S3, invalidates CloudFront, and deploys relay via SSH
 - **All platforms distributed as bare binaries**, not platform-specific bundles (no `.app`, no `.AppImage`)
 - Bevy's `enhanced-determinism` feature flag **enabled for all builds** — required for cross-platform lockstep (forces `libm` software math)
 - Bevy's `dynamic_linking` feature **disabled for all release builds** (breaks macOS and WASM)
