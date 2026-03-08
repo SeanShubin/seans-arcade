@@ -371,6 +371,20 @@ fn process_incoming_messages(
                 });
                 chat.input_mode = InputMode::SecretEntry;
             }
+            RelayMessage::ChatHistory { messages } => {
+                for entry in messages {
+                    if entry.payload.is_empty() {
+                        continue;
+                    }
+                    if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&entry.payload) {
+                        chat.messages.push(ChatMessage {
+                            from: entry.from.clone(),
+                            text,
+                            is_system: false,
+                        });
+                    }
+                }
+            }
             RelayMessage::Welcome { .. } => {}
             RelayMessage::RejectVersion { expected } => {
                 chat.messages.push(ChatMessage {

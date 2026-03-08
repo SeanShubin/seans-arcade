@@ -9,16 +9,17 @@
 mod identity;
 mod logging;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Instant;
 
 use identity::{IdentityRegistry, ValidationResult};
 use logging::LogWriter;
-use protocol::{ClientMessage, ChatPayload, RelayMessage, deserialize, serialize};
+use protocol::{ClientMessage, ChatPayload, HistoryEntry, RelayMessage, deserialize, serialize};
 
 const RECV_BUF_SIZE: usize = 4096;
 const TIMEOUT_SECS: u64 = 30;
+const CHAT_HISTORY_SIZE: usize = 1000;
 
 struct ClientInfo {
     identity_name: String,
@@ -40,6 +41,8 @@ struct RelayState {
     relay_secret: String,
     log_writer: LogWriter,
     registry_path: std::path::PathBuf,
+    /// Per-version chat history buffer. Key is commit_hash.
+    chat_history: HashMap<String, VecDeque<HistoryEntry>>,
 }
 
 impl RelayState {
@@ -119,6 +122,17 @@ impl RelayState {
                     RelayMessage::Welcome { peer_count },
                 ));
 
+                // Send chat history to the new client
+                if let Some(history) = self.chat_history.get(&commit_hash) {
+                    let entries: Vec<HistoryEntry> = history.iter().cloned().collect();
+                    if !entries.is_empty() {
+                        actions.push(RelayAction::SendTo(
+                            src,
+                            RelayMessage::ChatHistory { messages: entries },
+                        ));
+                    }
+                }
+
                 // Broadcast PeerJoined to existing peers
                 let joined = RelayMessage::PeerJoined {
                     name: identity_name.clone(),
@@ -160,6 +174,18 @@ impl RelayState {
                         from: from.clone(),
                         text,
                     });
+                }
+
+                // Buffer non-empty payloads (skip keepalives)
+                if !payload.is_empty() {
+                    let buffer = self.chat_history.entry(commit_hash.clone()).or_default();
+                    buffer.push_back(HistoryEntry {
+                        from: from.clone(),
+                        payload: payload.clone(),
+                    });
+                    if buffer.len() > CHAT_HISTORY_SIZE {
+                        buffer.pop_front();
+                    }
                 }
 
                 let broadcast = RelayMessage::Broadcast { from, payload };
@@ -277,6 +303,7 @@ mod tests {
                 relay_secret: "test_secret".to_string(),
                 log_writer: LogWriter::new(&log_dir),
                 registry_path,
+                chat_history: HashMap::new(),
             };
             Self {
                 state,
@@ -654,6 +681,7 @@ fn main() {
         relay_secret: relay_secret_from_env(),
         log_writer: LogWriter::new(&log_dir),
         registry_path,
+        chat_history: HashMap::new(),
     };
 
     let mut buf = [0u8; RECV_BUF_SIZE];

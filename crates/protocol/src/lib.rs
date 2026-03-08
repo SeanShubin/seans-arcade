@@ -34,6 +34,13 @@ pub enum RelayMessage {
     PeerJoined { name: String },
     PeerLeft { name: String },
     Broadcast { from: String, payload: Vec<u8> },
+    ChatHistory { messages: Vec<HistoryEntry> },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub from: String,
+    pub payload: Vec<u8>,
 }
 
 // ---- Application-level payload (clients only, opaque to relay) --------------
@@ -425,6 +432,7 @@ mod tests {
             RelayMessage::PeerJoined { name: "a".into() },
             RelayMessage::PeerLeft { name: "b".into() },
             RelayMessage::Broadcast { from: "c".into(), payload: vec![0] },
+            RelayMessage::ChatHistory { messages: vec![HistoryEntry { from: "d".into(), payload: vec![1] }] },
         ];
 
         // when we serialize then deserialize each
@@ -444,5 +452,6 @@ mod tests {
         assert!(matches!(roundtripped[4], RelayMessage::PeerJoined { .. }));
         assert!(matches!(roundtripped[5], RelayMessage::PeerLeft { .. }));
         assert!(matches!(roundtripped[6], RelayMessage::Broadcast { .. }));
+        assert!(matches!(roundtripped[7], RelayMessage::ChatHistory { .. }));
     }
 }
