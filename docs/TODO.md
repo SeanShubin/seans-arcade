@@ -60,3 +60,16 @@ Code signing unblocks self-install and removes OS security warnings (SmartScreen
 - [ ] Code signing for macOS — sign and notarize binaries for Gatekeeper
 - [ ] Code signing for Linux — GPG signing for package managers (lower priority)
 - [ ] Self-install on first run — binary copies itself to standard OS location, creates shortcuts, auto-updates in place
+
+## Admin Dashboard
+
+Static web dashboard for monitoring and managing the arcade. Replaces arcade-cli for remote operations. All data flows through S3.
+
+- [ ] Relay writes heartbeat to S3 — `admin/heartbeat.json` with timestamp, uptime, client count
+- [ ] Relay writes connected users to S3 — `admin/connected.json` with names, commit hashes, latency
+- [ ] Relay writes chat history to S3 — `admin/chat-history.json` from the in-memory buffer
+- [ ] Relay writes identity registry to S3 — `admin/identities.json`
+- [ ] Relay polls for command files — `admin/commands/`, executes and deletes
+- [ ] Dashboard static site — HTML/JS served from S3, reads `admin/*` files, renders status
+- [ ] Dashboard authentication — admin secret via CloudFront signed cookie or Lambda@Edge
+- [ ] Dashboard user management — delete user via command file

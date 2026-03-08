@@ -75,6 +75,23 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
+## Admin Dashboard
+
+### S3-mediated admin dashboard (replaces arcade-cli for monitoring)
+
+**Decision:** The admin dashboard is a static website served from S3. All data flows through S3 — the relay periodically writes JSON state files (`admin/heartbeat.json`, `admin/connected.json`, `admin/chat-history.json`, `admin/identities.json`), and the dashboard reads them. Admin commands (e.g. delete user) are written as command files to `admin/commands/` by the dashboard; the relay polls for and executes them. Data may be 5-15 seconds stale. One S3 bucket with key prefixes, not multiple buckets.
+
+**Alternatives rejected:**
+- HTTP/WebSocket endpoint on the relay — mixes admin concerns into the relay, adds HTTP to a UDP-only process.
+- Separate admin API service — another binary to build, deploy, and maintain for minimal benefit.
+- Dashboard directly modifying state in S3 — creates out-of-sync state between S3 and the relay's in-memory registry. The relay must be the single owner of mutable state.
+
+**Rationale:** The relay stays simple — write-only to S3, no admin endpoints, no HTTP. The dashboard is fully static — no backend, deployable to the existing S3 bucket. Near-real-time (5-15 second staleness) is sufficient for operator monitoring. The command-file pattern for write operations keeps the relay as the single owner of mutable state, avoiding sync issues.
+
+**See:** [admin-dashboard.md](architecture/admin-dashboard.md)
+
+---
+
 ## Installation & User Separation
 
 ### Self-installing on first run
