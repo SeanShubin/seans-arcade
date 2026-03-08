@@ -342,6 +342,7 @@ fn handle_text_submit(
 fn process_incoming_messages(
     mut events: MessageReader<RelayEvent>,
     mut chat: ResMut<ChatState>,
+    config: Res<ClientConfig>,
 ) {
     for RelayEvent(msg) in events.read() {
         match msg {
@@ -401,7 +402,14 @@ fn process_incoming_messages(
                     }
                 }
             }
-            RelayMessage::Welcome { .. } => {}
+            RelayMessage::Welcome { .. } => {
+                let config_path = config.data_dir.join("config.toml");
+                chat.messages.push(ChatMessage {
+                    from: String::new(),
+                    text: format!("Your config is at: {}", config_path.display()),
+                    is_system: true,
+                });
+            }
             RelayMessage::RejectVersion { expected } => {
                 chat.messages.push(ChatMessage {
                     from: String::new(),
@@ -1000,7 +1008,7 @@ mod tests {
     }
 
     #[test]
-    fn welcome_produces_no_chat_message() {
+    fn welcome_shows_config_path() {
         // given
         let mut tester = ChatTester::new();
 
@@ -1008,7 +1016,10 @@ mod tests {
         tester.receive_relay_message(RelayMessage::Welcome { peer_count: 2 });
 
         // then
-        assert_eq!(tester.message_count(), 0);
+        assert_eq!(tester.message_count(), 1);
+        assert!(tester.last_message_is_system());
+        assert!(tester.last_message_text().contains("config.toml"),
+            "expected config path in: {}", tester.last_message_text());
     }
 
     // -- handle_text_submit tests --
