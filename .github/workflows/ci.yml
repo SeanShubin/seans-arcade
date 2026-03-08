@@ -60,8 +60,12 @@ jobs:
           name: windows-binaries
           path: deploy/
 
-      - name: Copy index.html
-        run: cp infra/index.html.tftpl deploy/index.html
+      - name: Generate index.html with build info
+        run: |
+          HASH=$(echo "${{ github.sha }}" | head -c 8)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          sed "s/DEPLOY_COMMIT_HASH/$HASH/g; s/DEPLOY_TIMESTAMP/$TIMESTAMP/g" \
+            infra/index.html.tftpl > deploy/index.html
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

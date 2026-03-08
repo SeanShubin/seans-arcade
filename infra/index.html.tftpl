@@ -8,6 +8,8 @@
         body { font-family: sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; }
         h1 { margin-bottom: 0.5em; }
         a { display: block; margin: 12px 0; font-size: 1.1em; }
+        .build-info { color: #888; font-size: 0.85em; margin-top: 2em; }
+        .build-info code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -16,5 +18,32 @@
     <a href="/arcade.exe">arcade.exe</a>
     <a href="/relay.exe">relay.exe</a>
     <a href="/arcade-cli.exe">arcade-cli.exe</a>
+    <p class="build-info">
+        Commit <code>DEPLOY_COMMIT_HASH</code>
+        deployed <time id="deploy-time" datetime="DEPLOY_TIMESTAMP">DEPLOY_TIMESTAMP</time>
+        (<span id="deploy-ago"></span>)
+    </p>
+    <script>
+        (function () {
+            var iso = document.getElementById("deploy-time").getAttribute("datetime");
+            var deployed = new Date(iso);
+            if (isNaN(deployed)) return;
+            document.getElementById("deploy-time").textContent = deployed.toLocaleString();
+            function update() {
+                var seconds = Math.floor((Date.now() - deployed) / 1000);
+                var parts = [];
+                var days = Math.floor(seconds / 86400);
+                if (days > 0) parts.push(days + "d");
+                var hours = Math.floor((seconds % 86400) / 3600);
+                if (hours > 0) parts.push(hours + "h");
+                var minutes = Math.floor((seconds % 3600) / 60);
+                if (minutes > 0) parts.push(minutes + "m");
+                if (parts.length === 0) parts.push(seconds + "s");
+                document.getElementById("deploy-ago").textContent = parts.join(" ") + " ago";
+            }
+            update();
+            setInterval(update, 60000);
+        })();
+    </script>
 </body>
 </html>
