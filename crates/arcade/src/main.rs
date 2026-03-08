@@ -24,7 +24,12 @@ fn log_layer(_app: &mut App) -> Option<bevy::log::BoxedLayer> {
 }
 
 fn main() {
+    version::cleanup_old_binary();
     let version_status = version::check_version();
+    if let version::VersionStatus::UpdateAvailable { .. } = &version_status {
+        version::auto_update();
+        // If auto_update returns, it failed — continue with current version
+    }
 
     App::new()
         .add_plugins(DefaultPlugins
