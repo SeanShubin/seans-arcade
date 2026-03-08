@@ -44,8 +44,44 @@ jobs:
             target/release/relay.exe
             target/release/arcade-cli.exe
 
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: macos-cargo-
+
+      - name: Build arcade
+        run: cargo build --release -p arcade
+
+      - name: Build relay
+        run: cargo build --release -p relay
+
+      - name: Build arcade-cli
+        run: cargo build --release -p arcade-cli
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: |
+            target/release/arcade
+            target/release/relay
+            target/release/arcade-cli
+
   deploy:
-    needs: build-windows
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     permissions:
@@ -54,11 +90,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifacts
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: windows-binaries
-          path: deploy/
+          path: deploy/windows/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries
+          path: deploy/macos/
+
+      - name: Stage deploy directory
+        run: |
+          mv deploy/windows/arcade.exe deploy/arcade-windows.exe
+          mv deploy/windows/relay.exe deploy/relay-windows.exe
+          mv deploy/windows/arcade-cli.exe deploy/arcade-cli-windows.exe
+          mv deploy/macos/arcade deploy/arcade-macos
+          mv deploy/macos/relay deploy/relay-macos
+          mv deploy/macos/arcade-cli deploy/arcade-cli-macos
+          rm -rf deploy/windows deploy/macos
 
       - name: Generate index.html with build info
         run: |
