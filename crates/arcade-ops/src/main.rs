@@ -164,11 +164,7 @@ fn cmd_users(bucket: &str) {
                 "NAME", "VERSION", "IDLE"
             );
             for u in &cu.users {
-                let hash_short = if u.commit_hash.len() > 8 {
-                    &u.commit_hash[..8]
-                } else {
-                    &u.commit_hash
-                };
+                let hash_short = short_hash(&u.commit_hash);
                 println!(
                     "{:<20} {:<12} {:>7}s",
                     u.name, hash_short, u.idle_secs
@@ -221,7 +217,7 @@ fn cmd_history(bucket: &str, args: &[String]) {
             continue;
         };
 
-        let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+        let hash_short = short_hash(hash);
         println!("--- version {hash_short} ({} messages) ---", entries.len());
 
         for entry in protocol::restore_entries(entries) {
@@ -250,57 +246,63 @@ fn cmd_history(bucket: &str, args: &[String]) {
 }
 
 fn cmd_logs(bucket: &str, args: &[String]) {
-    // --remote: fetch logs from S3 instead of local disk
     if args.iter().any(|a| a == "--remote") {
-        let s3 = s3::S3Client::new(bucket);
-        let keys = s3.list_keys("admin/logs/");
-        let log_keys: Vec<&String> = keys
+        cmd_logs_remote(bucket, args);
+    } else {
+        cmd_logs_local(args);
+    }
+}
+
+fn cmd_logs_remote(bucket: &str, args: &[String]) {
+    let s3 = s3::S3Client::new(bucket);
+    let keys = s3.list_keys("admin/logs/");
+    let log_keys: Vec<&String> = keys.iter().filter(|k| k.ends_with(".log")).collect();
+
+    if log_keys.is_empty() {
+        println!("No remote logs found in S3.");
+        return;
+    }
+
+    // If a specific filename is given, show that one
+    let filename_arg: Option<&String> =
+        args.iter().find(|a| *a != "--remote" && *a != "--latest");
+
+    if let Some(filename) = filename_arg {
+        let matching: Vec<&&String> = log_keys
             .iter()
-            .filter(|k| k.ends_with(".log"))
+            .filter(|k| k.ends_with(filename.as_str()))
             .collect();
-
-        if log_keys.is_empty() {
-            println!("No remote logs found in S3.");
-            return;
-        }
-
-        // If a specific filename is given after --remote, show that one
-        let filename_arg: Option<&String> = args.iter().find(|a| *a != "--remote" && *a != "--latest");
-
-        if let Some(filename) = filename_arg {
-            let matching: Vec<&&String> = log_keys.iter().filter(|k| k.ends_with(filename.as_str())).collect();
-            if let Some(key) = matching.first() {
-                if let Some(contents) = s3.get_json::<String>(key) {
-                    print_log_contents(&contents);
-                } else {
-                    eprintln!("Failed to fetch {key} from S3.");
-                }
+        if let Some(key) = matching.first() {
+            if let Some(contents) = s3.get_json::<String>(key) {
+                print_log_contents(&contents);
             } else {
-                eprintln!("No remote log matching '{filename}'");
+                eprintln!("Failed to fetch {key} from S3.");
             }
-            return;
-        }
-
-        // --latest: show the last log file
-        if args.iter().any(|a| a == "--latest") {
-            if let Some(key) = log_keys.last() {
-                println!("--- {} ---", key);
-                if let Some(contents) = s3.get_json::<String>(key) {
-                    print_log_contents(&contents);
-                }
-            }
-            return;
-        }
-
-        // Otherwise list remote log files
-        for key in &log_keys {
-            let name = key.strip_prefix("admin/logs/").unwrap_or(key);
-            println!("{name}");
+        } else {
+            eprintln!("No remote log matching '{filename}'");
         }
         return;
     }
 
-    // Local logs (original behavior)
+    // --latest: show the last log file
+    if args.iter().any(|a| a == "--latest") {
+        if let Some(key) = log_keys.last() {
+            println!("--- {key} ---");
+            if let Some(contents) = s3.get_json::<String>(key) {
+                print_log_contents(&contents);
+            }
+        }
+        return;
+    }
+
+    // List remote log files
+    for key in &log_keys {
+        let name = key.strip_prefix("admin/logs/").unwrap_or(key);
+        println!("{name}");
+    }
+}
+
+fn cmd_logs_local(args: &[String]) {
     let log_dir = log_dir_from_args();
 
     if args.is_empty() {
@@ -543,7 +545,7 @@ fn cmd_stats(bucket: &str) {
     for hash in &hashes {
         let key = format!("admin/versions/{hash}/chat-history.json");
         if let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) {
-            let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+            let hash_short = short_hash(hash);
             println!("{:<12} {:>8}", hash_short, entries.len());
         }
     }
@@ -586,7 +588,7 @@ fn cmd_versions(bucket: &str) {
             }
 
             for (hash, users) in &by_version {
-                let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+                let hash_short = short_hash(hash);
                 println!("{hash_short}: {} clients", users.len());
                 for name in users {
                     println!("  {name}");
@@ -709,12 +711,12 @@ fn data_versions(bucket: &str) {
             .unwrap_or(0);
 
         let size = s3.prefix_size(&format!("admin/versions/{hash}/"));
-        let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+        let hash_short = short_hash(hash);
 
         let schema_key = format!("admin/versions/{hash}/schema.json");
         let schema_label = match s3.get_json::<PayloadSchema>(&schema_key) {
             Some(schema) if schema.fingerprint == our_schema.fingerprint => "compatible".into(),
-            Some(schema) => format!("differs ({})", &schema.fingerprint[..8]),
+            Some(schema) => format!("differs ({})", short_hash(&schema.fingerprint)),
             None => "no schema".into(),
         };
 
@@ -759,7 +761,7 @@ fn data_inspect(bucket: &str, hash_prefix: &str) {
         _ => {
             eprintln!("Ambiguous prefix '{hash_prefix}', matches:");
             for h in &matching {
-                let short = if h.len() > 8 { &h[..8] } else { h };
+                let short = short_hash(h);
                 eprintln!("  {short}");
             }
             return;
@@ -776,14 +778,14 @@ fn data_inspect(bucket: &str, hash_prefix: &str) {
             } else {
                 "different"
             };
-            let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+            let hash_short = short_hash(hash);
             println!("Version:     {hash_short}");
-            println!("Schema:      {compat} (fingerprint: {})", &schema.fingerprint[..8]);
+            println!("Schema:      {compat} (fingerprint: {})", short_hash(&schema.fingerprint));
             println!("Types:       {}", schema.types.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
             println!();
         }
         None => {
-            let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+            let hash_short = short_hash(hash);
             println!("Version:     {hash_short} (no schema metadata)");
             println!();
         }
@@ -845,7 +847,7 @@ fn data_delete(bucket: &str, hash_prefix: &str) {
         _ => {
             eprintln!("Ambiguous prefix '{hash_prefix}', matches:");
             for h in &matching {
-                let short = if h.len() > 8 { &h[..8] } else { h };
+                let short = short_hash(h);
                 eprintln!("  {short}");
             }
             return;
@@ -863,7 +865,7 @@ fn data_delete(bucket: &str, hash_prefix: &str) {
     eprint!(
         "Delete {} files for version {}? [y/N] ",
         keys.len(),
-        if hash.len() > 8 { &hash[..8] } else { hash }
+        short_hash(hash)
     );
     let mut input = String::new();
     if std::io::stdin().read_line(&mut input).is_err()
@@ -903,7 +905,7 @@ fn data_prune(bucket: &str) {
 
     println!("Stale versions (no connected clients):");
     for hash in &stale {
-        let short = if hash.len() > 8 { &hash[..8] } else { hash };
+        let short = short_hash(hash);
         println!("  {short}");
     }
 
@@ -925,7 +927,7 @@ fn data_prune(bucket: &str) {
                 total_deleted += 1;
             }
         }
-        let short = if hash.len() > 8 { &hash[..8] } else { hash };
+        let short = short_hash(hash);
         println!("  Deleted {} files for {short}", keys.len());
     }
     println!("Total: {total_deleted} files deleted.");
@@ -1032,6 +1034,15 @@ fn print_latest_log(log_dir: &std::path::Path) {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+fn short_hash(hash: &str) -> &str {
+    const HASH_DISPLAY_LEN: usize = 8;
+    if hash.len() > HASH_DISPLAY_LEN {
+        &hash[..HASH_DISPLAY_LEN]
+    } else {
+        hash
+    }
+}
 
 fn list_version_hashes(s3: &s3::S3Client) -> Vec<String> {
     let keys = s3.list_keys("admin/versions/");
