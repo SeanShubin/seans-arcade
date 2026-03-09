@@ -6,9 +6,17 @@
 
 use serde::{Deserialize, Serialize};
 
+// Re-export the derive macro so downstream crates use `protocol::HasSchema`.
+pub use protocol_derive::HasSchema;
+
+/// Trait for types that can describe their own schema structure.
+pub trait HasSchema {
+    fn schema() -> SchemaType;
+}
+
 // ---- Client -> Relay --------------------------------------------------------
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, HasSchema)]
 pub enum ClientMessage {
     Hello {
         commit_hash: String,
@@ -25,7 +33,7 @@ pub enum ClientMessage {
 
 // ---- Relay -> Client --------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, HasSchema)]
 pub enum RelayMessage {
     Welcome { peer_count: u32 },
     NameClaimed,
@@ -45,7 +53,7 @@ pub struct HistoryEntry {
 
 // ---- Application-level payload (clients only, opaque to relay) --------------
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, HasSchema)]
 pub enum ChatPayload {
     Text(String),
 }
@@ -229,102 +237,14 @@ pub struct SchemaField {
     pub ty: String,
 }
 
-/// Build the current protocol schema from compile-time knowledge.
+/// Build the current protocol schema from the derived `HasSchema` impls.
 pub fn current_payload_schema(commit_hash: &str) -> PayloadSchema {
     let types = vec![
-        SchemaType {
-            name: "ClientMessage".into(),
-            kind: "enum".into(),
-            variants: vec![
-                SchemaVariant {
-                    name: "Hello".into(),
-                    fields: vec![
-                        SchemaField { name: "commit_hash".into(), ty: "String".into() },
-                        SchemaField { name: "relay_secret".into(), ty: "String".into() },
-                        SchemaField { name: "identity_name".into(), ty: "String".into() },
-                        SchemaField { name: "identity_secret".into(), ty: "String".into() },
-                        SchemaField { name: "new_identity_secret".into(), ty: "Option<String>".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "Input".into(),
-                    fields: vec![
-                        SchemaField { name: "payload".into(), ty: "Vec<u8>".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "Disconnect".into(),
-                    fields: vec![],
-                },
-            ],
-        },
-        SchemaType {
-            name: "RelayMessage".into(),
-            kind: "enum".into(),
-            variants: vec![
-                SchemaVariant {
-                    name: "Welcome".into(),
-                    fields: vec![
-                        SchemaField { name: "peer_count".into(), ty: "u32".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "NameClaimed".into(),
-                    fields: vec![],
-                },
-                SchemaVariant {
-                    name: "RejectSecret".into(),
-                    fields: vec![],
-                },
-                SchemaVariant {
-                    name: "RejectVersion".into(),
-                    fields: vec![
-                        SchemaField { name: "expected".into(), ty: "String".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "PeerJoined".into(),
-                    fields: vec![
-                        SchemaField { name: "name".into(), ty: "String".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "PeerLeft".into(),
-                    fields: vec![
-                        SchemaField { name: "name".into(), ty: "String".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "Broadcast".into(),
-                    fields: vec![
-                        SchemaField { name: "from".into(), ty: "String".into() },
-                        SchemaField { name: "payload".into(), ty: "Vec<u8>".into() },
-                    ],
-                },
-                SchemaVariant {
-                    name: "ChatHistory".into(),
-                    fields: vec![
-                        SchemaField { name: "messages".into(), ty: "Vec<HistoryEntry>".into() },
-                    ],
-                },
-            ],
-        },
-        SchemaType {
-            name: "ChatPayload".into(),
-            kind: "enum".into(),
-            variants: vec![
-                SchemaVariant {
-                    name: "Text".into(),
-                    fields: vec![
-                        SchemaField { name: "0".into(), ty: "String".into() },
-                    ],
-                },
-            ],
-        },
+        ClientMessage::schema(),
+        RelayMessage::schema(),
+        ChatPayload::schema(),
     ];
-
     let fingerprint = schema_fingerprint(&types);
-
     PayloadSchema {
         schema_version: 1,
         commit_hash: commit_hash.to_string(),
@@ -748,5 +668,72 @@ mod tests {
         assert!(matches!(roundtripped[5], RelayMessage::PeerLeft { .. }));
         assert!(matches!(roundtripped[6], RelayMessage::Broadcast { .. }));
         assert!(matches!(roundtripped[7], RelayMessage::ChatHistory { .. }));
+    }
+
+    // ========================================================================
+    // 6. Derived schema correctness
+    // ========================================================================
+
+    #[test]
+    fn derived_schema_has_correct_type_names() {
+        // given the derived schemas
+        let client = ClientMessage::schema();
+        let relay = RelayMessage::schema();
+        let chat = ChatPayload::schema();
+
+        // then type names and kinds are correct
+        assert_eq!(client.name, "ClientMessage");
+        assert_eq!(client.kind, "enum");
+        assert_eq!(relay.name, "RelayMessage");
+        assert_eq!(relay.kind, "enum");
+        assert_eq!(chat.name, "ChatPayload");
+        assert_eq!(chat.kind, "enum");
+    }
+
+    #[test]
+    fn derived_schema_has_correct_variant_counts() {
+        // given the derived schemas
+        let client = ClientMessage::schema();
+        let relay = RelayMessage::schema();
+        let chat = ChatPayload::schema();
+
+        // then variant counts match the actual enums
+        assert_eq!(client.variants.len(), 3, "ClientMessage: Hello, Input, Disconnect");
+        assert_eq!(relay.variants.len(), 8, "RelayMessage: Welcome..ChatHistory");
+        assert_eq!(chat.variants.len(), 1, "ChatPayload: Text");
+    }
+
+    #[test]
+    fn derived_schema_has_correct_field_names() {
+        // given the ClientMessage schema
+        let schema = ClientMessage::schema();
+
+        // then Hello variant has the expected fields
+        let hello = &schema.variants[0];
+        assert_eq!(hello.name, "Hello");
+        let field_names: Vec<&str> = hello.fields.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(
+            field_names,
+            vec!["commit_hash", "relay_secret", "identity_name", "identity_secret", "new_identity_secret"]
+        );
+
+        // and Disconnect has no fields
+        let disconnect = &schema.variants[2];
+        assert_eq!(disconnect.name, "Disconnect");
+        assert!(disconnect.fields.is_empty());
+    }
+
+    #[test]
+    fn derived_schema_fingerprint_is_stable() {
+        // given two calls to current_payload_schema
+        let schema1 = current_payload_schema("test");
+        let schema2 = current_payload_schema("test");
+
+        // then the fingerprint is the same
+        assert_eq!(schema1.fingerprint, schema2.fingerprint);
+
+        // and it's a 16-character hex string
+        assert_eq!(schema1.fingerprint.len(), 16);
+        assert!(schema1.fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

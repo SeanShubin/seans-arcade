@@ -5878,8 +5878,18 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "postcard",
+ "protocol-derive",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "protocol-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
