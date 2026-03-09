@@ -28,6 +28,9 @@ fn main() {
 
     let bucket = std::env::var("ARCADE_OPS_BUCKET").unwrap_or_else(|_| DEFAULT_BUCKET.into());
 
+    // Warn if arcade-ops version doesn't match the deployed relay
+    check_version_mismatch(&bucket);
+
     match positional[0].as_str() {
         // Observe
         "status" => cmd_status(&bucket, &args),
@@ -888,14 +891,19 @@ fn data_prune(bucket: &str) {
     let s3 = s3::S3Client::new(bucket);
     let hashes = list_version_hashes(&s3);
 
-    let connected_hashes: HashSet<String> = s3
+    // Protect versions that are connected or deployed
+    let mut protected: HashSet<String> = s3
         .get_json::<ConnectedUsers>("admin/connected.json")
         .map(|cu| cu.users.iter().map(|u| u.commit_hash.clone()).collect())
         .unwrap_or_default();
 
+    if let Some(relay_hash) = deployed_relay_hash(&s3) {
+        protected.insert(relay_hash);
+    }
+
     let stale: Vec<&String> = hashes
         .iter()
-        .filter(|h| !connected_hashes.contains(h.as_str()))
+        .filter(|h| !protected.contains(h.as_str()))
         .collect();
 
     if stale.is_empty() {
@@ -903,7 +911,7 @@ fn data_prune(bucket: &str) {
         return;
     }
 
-    println!("Stale versions (no connected clients):");
+    println!("Stale versions (no connected clients, not deployed):");
     for hash in &stale {
         let short = short_hash(hash);
         println!("  {short}");
@@ -1034,6 +1042,27 @@ fn print_latest_log(log_dir: &std::path::Path) {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+fn check_version_mismatch(bucket: &str) {
+    let s3 = s3::S3Client::new(bucket);
+    if let Some(hb) = s3.get_json::<Heartbeat>("admin/heartbeat.json") {
+        let ops_hash = env!("GIT_COMMIT_HASH");
+        if hb.commit_hash != ops_hash {
+            eprintln!(
+                "WARNING: arcade-ops ({}) does not match deployed relay ({})",
+                short_hash(ops_hash),
+                short_hash(&hb.commit_hash)
+            );
+            eprintln!();
+        }
+    }
+}
+
+/// Get the deployed relay's commit hash from the heartbeat, if available.
+fn deployed_relay_hash(s3: &s3::S3Client) -> Option<String> {
+    s3.get_json::<Heartbeat>("admin/heartbeat.json")
+        .map(|hb| hb.commit_hash)
+}
 
 fn short_hash(hash: &str) -> &str {
     const HASH_DISPLAY_LEN: usize = 8;
