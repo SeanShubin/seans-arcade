@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use protocol::{
-    AdminCommand, ChatPayload, ConnectedUsers, Heartbeat, PersistedHistoryEntry,
+    AdminCommand, ChatPayload, ConnectedUsers, Heartbeat, PayloadSchema, PersistedHistoryEntry,
     RegisteredIdentities,
 };
 
@@ -34,7 +34,7 @@ fn main() {
         "users" => cmd_users(&bucket),
         "identities" => cmd_identities(&bucket),
         "history" => cmd_history(&bucket, &positional[1..]),
-        "logs" => cmd_logs(&positional[1..]),
+        "logs" => cmd_logs(&bucket, &positional[1..]),
         // Control
         "kick" => cmd_kick(&bucket, &positional[1..]),
         "reset-identity" => cmd_reset_identity(&bucket, &positional[1..]),
@@ -88,7 +88,7 @@ fn print_usage() {
     eprintln!("  users                          Connected users with idle times");
     eprintln!("  identities                     Registered identity names");
     eprintln!("  history [--version HASH]        Chat history");
-    eprintln!("  logs [FILE|--latest]           Chat logs (local)");
+    eprintln!("  logs [FILE|--latest] [--remote] Chat logs (local or S3)");
     eprintln!();
     eprintln!("Control:");
     eprintln!("  kick <user>                    Disconnect and delete user identity");
@@ -131,11 +131,13 @@ fn cmd_status(bucket: &str, args: &[String]) {
             Some(hb) => {
                 let age = heartbeat_age(&hb.timestamp);
                 let status = if age <= 30 { "UP" } else { "DOWN (stale)" };
-                println!("Relay:    {status}");
-                println!("Uptime:   {}", format_duration(hb.uptime_secs));
-                println!("Clients:  {}", hb.client_count);
-                println!("Version:  {}", hb.commit_hash);
-                println!("Last sync: {age}s ago");
+                println!("Relay:      {status}");
+                println!("Uptime:     {}", format_duration(hb.uptime_secs));
+                println!("Clients:    {}", hb.client_count);
+                println!("Version:    {}", hb.commit_hash);
+                println!("Started:    {}", hb.start_time);
+                println!("Messages:   {} total, {} since last sync", hb.total_messages, hb.messages_since_sync);
+                println!("Last sync:  {age}s ago");
             }
             None => {
                 println!("Relay:    DOWN (no heartbeat)");
@@ -247,7 +249,58 @@ fn cmd_history(bucket: &str, args: &[String]) {
     }
 }
 
-fn cmd_logs(args: &[String]) {
+fn cmd_logs(bucket: &str, args: &[String]) {
+    // --remote: fetch logs from S3 instead of local disk
+    if args.iter().any(|a| a == "--remote") {
+        let s3 = s3::S3Client::new(bucket);
+        let keys = s3.list_keys("admin/logs/");
+        let log_keys: Vec<&String> = keys
+            .iter()
+            .filter(|k| k.ends_with(".log"))
+            .collect();
+
+        if log_keys.is_empty() {
+            println!("No remote logs found in S3.");
+            return;
+        }
+
+        // If a specific filename is given after --remote, show that one
+        let filename_arg: Option<&String> = args.iter().find(|a| *a != "--remote" && *a != "--latest");
+
+        if let Some(filename) = filename_arg {
+            let matching: Vec<&&String> = log_keys.iter().filter(|k| k.ends_with(filename.as_str())).collect();
+            if let Some(key) = matching.first() {
+                if let Some(contents) = s3.get_json::<String>(key) {
+                    print_log_contents(&contents);
+                } else {
+                    eprintln!("Failed to fetch {key} from S3.");
+                }
+            } else {
+                eprintln!("No remote log matching '{filename}'");
+            }
+            return;
+        }
+
+        // --latest: show the last log file
+        if args.iter().any(|a| a == "--latest") {
+            if let Some(key) = log_keys.last() {
+                println!("--- {} ---", key);
+                if let Some(contents) = s3.get_json::<String>(key) {
+                    print_log_contents(&contents);
+                }
+            }
+            return;
+        }
+
+        // Otherwise list remote log files
+        for key in &log_keys {
+            let name = key.strip_prefix("admin/logs/").unwrap_or(key);
+            println!("{name}");
+        }
+        return;
+    }
+
+    // Local logs (original behavior)
     let log_dir = log_dir_from_args();
 
     if args.is_empty() {
@@ -502,10 +555,11 @@ fn cmd_uptime(bucket: &str) {
         Some(hb) => {
             let age = heartbeat_age(&hb.timestamp);
             let status = if age <= 30 { "UP" } else { "DOWN" };
-            println!("Status:  {status}");
-            println!("Uptime:  {}", format_duration(hb.uptime_secs));
-            println!("Since:   {}", hb.timestamp);
-            println!("Version: {}", hb.commit_hash);
+            println!("Status:   {status}");
+            println!("Uptime:   {}", format_duration(hb.uptime_secs));
+            println!("Started:  {}", hb.start_time);
+            println!("Version:  {}", hb.commit_hash);
+            println!("Messages: {} total", hb.total_messages);
             if age > 30 {
                 println!("Warning: heartbeat is {age}s old (threshold: 30s)");
             }
@@ -639,9 +693,12 @@ fn data_versions(bucket: &str) {
 
     let current_hash = env!("GIT_COMMIT_HASH");
 
+    // Compute our schema fingerprint for comparison
+    let our_schema = protocol::current_payload_schema(current_hash);
+
     println!(
-        "{:<3} {:<12} {:>8} {:>10}",
-        "", "HASH", "MESSAGES", "SIZE"
+        "{:<3} {:<12} {:>8} {:>10}  {:<18}",
+        "", "HASH", "MESSAGES", "SIZE", "SCHEMA"
     );
 
     for hash in &hashes {
@@ -654,6 +711,13 @@ fn data_versions(bucket: &str) {
         let size = s3.prefix_size(&format!("admin/versions/{hash}/"));
         let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
 
+        let schema_key = format!("admin/versions/{hash}/schema.json");
+        let schema_label = match s3.get_json::<PayloadSchema>(&schema_key) {
+            Some(schema) if schema.fingerprint == our_schema.fingerprint => "compatible".into(),
+            Some(schema) => format!("differs ({})", &schema.fingerprint[..8]),
+            None => "no schema".into(),
+        };
+
         let marker = if hash == current_hash {
             "*"
         } else if connected_hashes.contains(hash) {
@@ -663,11 +727,12 @@ fn data_versions(bucket: &str) {
         };
 
         println!(
-            "{:<3} {:<12} {:>8} {:>10}",
+            "{:<3} {:<12} {:>8} {:>10}  {:<18}",
             marker,
             hash_short,
             msg_count,
-            format_bytes(size)
+            format_bytes(size),
+            schema_label
         );
     }
 
@@ -700,6 +765,29 @@ fn data_inspect(bucket: &str, hash_prefix: &str) {
             return;
         }
     };
+
+    // Show schema info if available
+    let schema_key = format!("admin/versions/{hash}/schema.json");
+    let our_schema = protocol::current_payload_schema(env!("GIT_COMMIT_HASH"));
+    match s3.get_json::<PayloadSchema>(&schema_key) {
+        Some(schema) => {
+            let compat = if schema.fingerprint == our_schema.fingerprint {
+                "compatible"
+            } else {
+                "different"
+            };
+            let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+            println!("Version:     {hash_short}");
+            println!("Schema:      {compat} (fingerprint: {})", &schema.fingerprint[..8]);
+            println!("Types:       {}", schema.types.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
+            println!();
+        }
+        None => {
+            let hash_short = if hash.len() > 8 { &hash[..8] } else { hash };
+            println!("Version:     {hash_short} (no schema metadata)");
+            println!();
+        }
+    }
 
     let key = format!("admin/versions/{hash}/chat-history.json");
     let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) else {

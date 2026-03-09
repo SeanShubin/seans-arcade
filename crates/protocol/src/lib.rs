@@ -154,6 +154,9 @@ pub struct Heartbeat {
     pub uptime_secs: u64,
     pub client_count: usize,
     pub commit_hash: String,
+    pub start_time: String,
+    pub total_messages: u64,
+    pub messages_since_sync: u64,
 }
 
 /// Connected client info for `admin/connected.json`.
@@ -189,6 +192,157 @@ pub enum AdminCommand {
     Broadcast { message: String },
     #[serde(rename = "drain")]
     Drain,
+}
+
+// ---- Schema types -----------------------------------------------------------
+//
+// Informational schema metadata written alongside version data. Not used for
+// decode decisions, but helps operators understand format differences across
+// versions without needing the source code.
+
+/// Schema for the postcard-serialized payloads. Written to
+/// `admin/versions/<hash>/schema.json` on relay startup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PayloadSchema {
+    pub schema_version: u32,
+    pub commit_hash: String,
+    pub types: Vec<SchemaType>,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaType {
+    pub name: String,
+    pub kind: String,
+    pub variants: Vec<SchemaVariant>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaVariant {
+    pub name: String,
+    pub fields: Vec<SchemaField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchemaField {
+    pub name: String,
+    pub ty: String,
+}
+
+/// Build the current protocol schema from compile-time knowledge.
+pub fn current_payload_schema(commit_hash: &str) -> PayloadSchema {
+    let types = vec![
+        SchemaType {
+            name: "ClientMessage".into(),
+            kind: "enum".into(),
+            variants: vec![
+                SchemaVariant {
+                    name: "Hello".into(),
+                    fields: vec![
+                        SchemaField { name: "commit_hash".into(), ty: "String".into() },
+                        SchemaField { name: "relay_secret".into(), ty: "String".into() },
+                        SchemaField { name: "identity_name".into(), ty: "String".into() },
+                        SchemaField { name: "identity_secret".into(), ty: "String".into() },
+                        SchemaField { name: "new_identity_secret".into(), ty: "Option<String>".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "Input".into(),
+                    fields: vec![
+                        SchemaField { name: "payload".into(), ty: "Vec<u8>".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "Disconnect".into(),
+                    fields: vec![],
+                },
+            ],
+        },
+        SchemaType {
+            name: "RelayMessage".into(),
+            kind: "enum".into(),
+            variants: vec![
+                SchemaVariant {
+                    name: "Welcome".into(),
+                    fields: vec![
+                        SchemaField { name: "peer_count".into(), ty: "u32".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "NameClaimed".into(),
+                    fields: vec![],
+                },
+                SchemaVariant {
+                    name: "RejectSecret".into(),
+                    fields: vec![],
+                },
+                SchemaVariant {
+                    name: "RejectVersion".into(),
+                    fields: vec![
+                        SchemaField { name: "expected".into(), ty: "String".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "PeerJoined".into(),
+                    fields: vec![
+                        SchemaField { name: "name".into(), ty: "String".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "PeerLeft".into(),
+                    fields: vec![
+                        SchemaField { name: "name".into(), ty: "String".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "Broadcast".into(),
+                    fields: vec![
+                        SchemaField { name: "from".into(), ty: "String".into() },
+                        SchemaField { name: "payload".into(), ty: "Vec<u8>".into() },
+                    ],
+                },
+                SchemaVariant {
+                    name: "ChatHistory".into(),
+                    fields: vec![
+                        SchemaField { name: "messages".into(), ty: "Vec<HistoryEntry>".into() },
+                    ],
+                },
+            ],
+        },
+        SchemaType {
+            name: "ChatPayload".into(),
+            kind: "enum".into(),
+            variants: vec![
+                SchemaVariant {
+                    name: "Text".into(),
+                    fields: vec![
+                        SchemaField { name: "0".into(), ty: "String".into() },
+                    ],
+                },
+            ],
+        },
+    ];
+
+    let fingerprint = schema_fingerprint(&types);
+
+    PayloadSchema {
+        schema_version: 1,
+        commit_hash: commit_hash.to_string(),
+        types,
+        fingerprint,
+    }
+}
+
+/// FNV-1a hash of the canonical JSON representation of the schema types.
+/// Deterministic and stable across platforms without external dependencies.
+fn schema_fingerprint(types: &[SchemaType]) -> String {
+    let json = serde_json::to_string(types).expect("schema serialization should not fail");
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in json.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 // ---- Serialization helpers --------------------------------------------------

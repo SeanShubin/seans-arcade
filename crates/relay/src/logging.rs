@@ -10,6 +10,7 @@ use chrono::Local;
 
 pub struct LogWriter {
     file: File,
+    log_dir: PathBuf,
 }
 
 impl LogWriter {
@@ -28,7 +29,32 @@ impl LogWriter {
 
         println!("relay: logging to {}", path.display());
 
-        Self { file }
+        Self {
+            file,
+            log_dir: log_dir.to_path_buf(),
+        }
+    }
+
+    /// Return all log files in the log directory as (filename, contents) pairs.
+    pub fn all_log_files(&self) -> Vec<(String, String)> {
+        let Ok(entries) = std::fs::read_dir(&self.log_dir) else {
+            return Vec::new();
+        };
+        let mut files: Vec<(String, String)> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "log")
+            })
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let contents = std::fs::read_to_string(e.path()).ok()?;
+                Some((name, contents))
+            })
+            .collect();
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        files
     }
 
     pub fn log_message(&mut self, from: &str, payload_summary: &str) {

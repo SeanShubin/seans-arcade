@@ -45,6 +45,10 @@ struct RelayState {
     registry_path: std::path::PathBuf,
     /// Per-version chat history buffer. Key is commit_hash.
     chat_history: HashMap<String, VecDeque<HistoryEntry>>,
+    /// Total messages processed since relay start.
+    total_messages: u64,
+    /// Messages processed since last S3 sync.
+    messages_since_sync: u64,
 }
 
 impl RelayState {
@@ -172,6 +176,8 @@ impl RelayState {
 
                 // Buffer non-empty payloads (skip keepalives)
                 if !payload.is_empty() {
+                    self.total_messages += 1;
+                    self.messages_since_sync += 1;
                     let buffer = self.chat_history.entry(commit_hash.clone()).or_default();
                     buffer.push_back(HistoryEntry {
                         from: from.clone(),
@@ -243,9 +249,10 @@ fn execute_actions(
             }
             RelayAction::SyncChatHistory => {
                 if let Some(s3) = s3_client {
-                    let persisted =
-                        protocol::PersistedChatHistory::from_memory(&state.chat_history);
-                    s3.put_json("admin/chat-history.json", &persisted);
+                    for (hash, entries) in &state.chat_history {
+                        let persisted = protocol::persist_entries(entries);
+                        s3.put_json(&format!("admin/versions/{hash}/chat-history.json"), &persisted);
+                    }
                 }
             }
         }
@@ -256,10 +263,10 @@ const S3_SYNC_INTERVAL_SECS: u64 = 15;
 
 /// Write all admin state to S3. Best-effort: logs errors but never crashes.
 /// If any file is deleted from S3, it gets recreated on the next sync cycle.
-fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
+fn sync_to_s3(state: &mut RelayState, s3: &s3::S3Client, start_time: Instant, relay_start_rfc3339: &str) {
     let now = chrono::Utc::now().to_rfc3339();
 
-    // Heartbeat
+    // Heartbeat (with message counters)
     s3.put_json(
         "admin/heartbeat.json",
         &s3::Heartbeat {
@@ -267,8 +274,12 @@ fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
             uptime_secs: start_time.elapsed().as_secs(),
             client_count: state.clients.len(),
             commit_hash: env!("GIT_COMMIT_HASH").to_string(),
+            start_time: relay_start_rfc3339.to_string(),
+            total_messages: state.total_messages,
+            messages_since_sync: state.messages_since_sync,
         },
     );
+    state.messages_since_sync = 0;
 
     // Connected users
     let current_time = Instant::now();
@@ -303,6 +314,12 @@ fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
             names: state.identity_registry.names(),
         },
     );
+
+    // Upload local log files to S3
+    for (filename, contents) in state.log_writer.all_log_files() {
+        let key = format!("admin/logs/{filename}");
+        s3.put_json(&key, &contents);
+    }
 }
 
 const ADMIN_COMMANDS_PREFIX: &str = "admin/commands/";
@@ -457,6 +474,8 @@ mod tests {
                 log_writer: LogWriter::new(&log_dir),
                 registry_path,
                 chat_history: HashMap::new(),
+                total_messages: 0,
+                messages_since_sync: 0,
             };
             Self {
                 state,
@@ -888,10 +907,22 @@ fn main() {
         log_writer: LogWriter::new(&log_dir),
         registry_path,
         chat_history: restored_history,
+        total_messages: 0,
+        messages_since_sync: 0,
     };
+
+    // Write schema.json for our version on startup
+    if let Some(ref s3) = s3_client {
+        let commit_hash = env!("GIT_COMMIT_HASH");
+        let schema = protocol::current_payload_schema(commit_hash);
+        let key = format!("admin/versions/{commit_hash}/schema.json");
+        s3.put_json(&key, &schema);
+        println!("relay: s3: wrote schema for {commit_hash} (fingerprint: {})", schema.fingerprint);
+    }
 
     let mut buf = [0u8; RECV_BUF_SIZE];
     let start_time = Instant::now();
+    let relay_start_rfc3339 = chrono::Utc::now().to_rfc3339();
     let mut s3_sync_timer = Instant::now();
 
     loop {
@@ -905,7 +936,7 @@ fn main() {
             if s3_sync_timer.elapsed().as_secs() >= S3_SYNC_INTERVAL_SECS {
                 let cmd_actions = poll_admin_commands(&mut state, s3);
                 execute_actions(&socket, &mut state, &cmd_actions, &s3_client);
-                sync_to_s3(&state, s3, start_time);
+                sync_to_s3(&mut state, s3, start_time, &relay_start_rfc3339);
                 s3_sync_timer = Instant::now();
             }
         }
