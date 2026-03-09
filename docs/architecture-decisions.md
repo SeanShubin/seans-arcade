@@ -54,7 +54,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Relay deployment: Lightsail VM + Docker + SSH
 
-**Decision:** The relay server runs as a Docker container on a Lightsail nano instance ($5/month, dual-stack). CI builds a Linux relay binary, packages it in a Docker image, pushes to ECR, and triggers deployment via SSH. The relay secret is stored as a file on the VM, set once via SSH. DNS points `relay.seanshubin.com` to the VM's static IP.
+**Decision:** The relay server runs as a Docker container on a Lightsail nano instance ($5/month, dual-stack). CI builds a Linux relay binary, packages it in a Docker image, pushes to ECR, and triggers deployment via SSH. DNS points `relay.seanshubin.com` to the VM's static IP.
 
 **Alternatives rejected:**
 - Lightsail Container Service ($7/month, fully managed) — does not support UDP, only HTTP/HTTPS
@@ -64,6 +64,17 @@ This document records decisions that have been made. It is not a wishlist or a p
 - AWS Systems Manager (SSM) — Lightsail instances are not EC2 instances and do not register with SSM; SSM commands cannot target them
 
 **Rationale:** The relay is a UDP server. Managed container services (Lightsail Container, App Runner, Lambda) don't support UDP. Among the options that do, the Lightsail VM is the cheapest. Docker provides reproducible deployments — the same image runs everywhere. SSH key is stored as a GitHub secret (`RELAY_SSH_KEY`); CI writes it to a temporary file, runs the deploy command, and deletes it. The one-time VM setup (Docker, deploy script) is handled by Terraform user_data, so `terraform apply` creates a ready-to-deploy VM.
+
+### All runtime secrets stored in GitHub Actions secrets
+
+**Decision:** All secrets needed by the relay at runtime — `RELAY_SECRET`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` — are stored as GitHub Actions repository secrets. CI passes them to the Docker container as environment variables during deployment. No secrets are stored as files on the VM.
+
+**Alternatives rejected:**
+- Secrets as files on the VM, set once via SSH — lost when the VM is destroyed or recreated; requires manual re-setup; no audit trail; easy to forget
+- AWS Secrets Manager — $0.40/secret/month; unnecessary cost for this scale
+- AWS SSM Parameter Store — free, but adds AWS API dependency at relay startup; Lightsail instances have limited IAM integration
+
+**Rationale:** GitHub Actions secrets are free, encrypted at rest, masked in logs, and survive VM destruction. The VM becomes fully disposable — `terraform destroy` + `terraform apply` + a CI push produces a working relay with no manual steps beyond the initial Terraform and GitHub secret setup. This follows the same pattern already used for `RELAY_SSH_KEY`, `AWS_DEPLOY_ROLE_ARN`, and `CLOUDFRONT_DISTRIBUTION_ID`.
 
 ### Platform neutrality through commodity services
 

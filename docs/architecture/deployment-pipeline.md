@@ -52,11 +52,17 @@ No long-lived AWS credentials are stored anywhere.
 
 ## GitHub Secrets
 
+All secrets are stored as GitHub Actions repository secrets. No secrets are stored as files on the VM — the VM is fully disposable. See [architecture-decisions.md](../architecture-decisions.md#all-runtime-secrets-stored-in-github-actions-secrets) for rationale.
+
 | Secret | Value | Source |
 |--------|-------|--------|
-| `AWS_DEPLOY_ROLE_ARN` | IAM role ARN | `terraform output deploy_role_arn` |
+| `AWS_DEPLOY_ROLE_ARN` | IAM role ARN for OIDC | `terraform output deploy_role_arn` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution ID | `terraform output cloudfront_distribution_id` |
 | `RELAY_SSH_KEY` | Lightsail SSH private key | `~/.ssh/lightsail-key.pem` |
+| `RELAY_SECRET` | Shared secret for relay handshake | Operator-chosen passphrase |
+| `S3_BUCKET` | S3 bucket for chat persistence and admin | `arcade.seanshubin.com` |
+| `AWS_ACCESS_KEY_ID` | IAM user access key for relay S3 access | IAM Console → Create access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key for relay S3 access | IAM Console → Create access key |
 
 ## Relay Deployment
 
@@ -66,9 +72,9 @@ The relay deploy flow:
 2. CI packages it into a Docker image using `Dockerfile.relay`
 3. CI pushes the image to ECR as `arcade-relay:latest`
 4. CI SSHs into the Lightsail VM (key stored as `RELAY_SSH_KEY` GitHub secret)
-5. The VM pulls the new image, stops the old container, starts the new one
+5. The VM stops the old container and starts a new one with secrets injected as environment variables
 
-The relay secret is stored as a file on the VM (`/opt/arcade-relay/relay-secret`), set once via SSH. It persists across redeployments.
+All runtime secrets (`RELAY_SECRET`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) are passed from GitHub Actions secrets to the Docker container as `-e` flags. No secrets are stored on the VM filesystem.
 
 Relay data (identity registry, logs) is stored at `/opt/arcade-relay/data` on the VM, mounted as a Docker volume.
 

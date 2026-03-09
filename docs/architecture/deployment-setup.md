@@ -83,20 +83,11 @@ This creates:
 
 The ACM certificate validation may take a few minutes. The Lightsail VM takes 1-2 minutes to boot and run its user_data script.
 
-## Set Relay Secret
-
-SSH into the Lightsail VM and set the relay secret:
-
-```
-ssh ec2-user@$(cd infra && terraform output -raw relay_ip)
-echo "your-relay-secret" | sudo tee /opt/arcade-relay/relay-secret
-```
-
-This only needs to be done once. The secret persists across relay restarts and redeployments.
-
 ## Set GitHub Secrets
 
-After `terraform apply` completes, set three secrets on the GitHub repository:
+After `terraform apply` completes, set all secrets on the GitHub repository. **All secrets live here** — nothing is stored on the VM. If the VM is destroyed and recreated, a CI push restores everything automatically.
+
+### Infrastructure secrets (from Terraform)
 
 ```
 gh secret set AWS_DEPLOY_ROLE_ARN --body "$(cd infra && terraform output -raw deploy_role_arn)"
@@ -104,10 +95,21 @@ gh secret set CLOUDFRONT_DISTRIBUTION_ID --body "$(cd infra && terraform output 
 gh secret set RELAY_SSH_KEY --body "$(cat ~/.ssh/lightsail-key.pem)"
 ```
 
+### Relay runtime secrets
+
+```
+gh secret set RELAY_SECRET --body "your-relay-secret"
+gh secret set S3_BUCKET --body "arcade.seanshubin.com"
+gh secret set AWS_ACCESS_KEY_ID --body "your-iam-access-key-id"
+gh secret set AWS_SECRET_ACCESS_KEY --body "your-iam-secret-access-key"
+```
+
+The `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are for an IAM user with S3 read/write access to the `arcade.seanshubin.com` bucket. These are separate from the OIDC role used by CI — the relay needs long-lived credentials because it runs continuously on the VM, not in a GitHub Actions workflow.
+
 Or manually:
-1. `terraform output` — shows the values
+1. `terraform output` — shows infrastructure values
 2. GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-3. Add `AWS_DEPLOY_ROLE_ARN`, `CLOUDFRONT_DISTRIBUTION_ID`, and `RELAY_SSH_KEY` (contents of `~/.ssh/lightsail-key.pem`)
+3. Add all seven secrets listed above
 
 ## Verify
 

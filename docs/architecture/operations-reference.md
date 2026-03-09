@@ -20,23 +20,16 @@ SSH in: `scripts/ssh-relay.sh` or `scripts/ssh-relay.cmd`
 
 | What | Location on VM |
 |------|---------------|
-| Relay secret | `/opt/arcade-relay/relay-secret` |
 | Identity registry | `/opt/arcade-relay/data/identity_registry.toml` |
 | Chat logs | `/opt/arcade-relay/data/logs/` |
 | Deploy script | `/usr/local/bin/deploy-relay.sh` |
-| Get-secret script | `/usr/local/bin/get-relay-secret.sh` |
 | Docker container name | `arcade-relay` |
+
+Runtime secrets (`RELAY_SECRET`, `S3_BUCKET`, AWS credentials) are **not** stored on the VM — they are injected as environment variables from GitHub Actions secrets during deployment. See [deployment-setup.md](deployment-setup.md#set-github-secrets).
 
 ### Common VM commands
 
 ```bash
-# View relay secret
-cat /opt/arcade-relay/relay-secret
-
-# Change relay secret
-echo "new-secret" | sudo tee /opt/arcade-relay/relay-secret
-# Then restart: sudo docker restart arcade-relay
-
 # View relay logs (stdout)
 sudo docker logs arcade-relay
 
@@ -80,6 +73,11 @@ cat /opt/arcade-relay/data/identity_registry.toml
 | Deploy secrets | Settings → Secrets → Actions |
 | `AWS_DEPLOY_ROLE_ARN` | IAM role ARN for OIDC |
 | `CLOUDFRONT_DISTRIBUTION_ID` | `E2CGL5D6QSNH8Y` |
+| `RELAY_SSH_KEY` | Lightsail SSH private key |
+| `RELAY_SECRET` | Shared secret for relay handshake |
+| `S3_BUCKET` | S3 bucket for chat persistence and admin |
+| `AWS_ACCESS_KEY_ID` | IAM user access key for relay S3 access |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key for relay S3 access |
 
 ## Terraform Outputs
 
