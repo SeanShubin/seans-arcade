@@ -160,7 +160,7 @@ jobs:
       - name: Generate assets manifest and copy assets
         run: |
           mkdir -p deploy/assets
-          cp -r assets/fonts assets/local deploy/assets/
+          cp -r assets/fonts deploy/assets/
           manifest="[]"
           while IFS= read -r -d '' file; do
             rel="${file#deploy/assets/}"
