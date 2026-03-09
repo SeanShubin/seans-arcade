@@ -10,7 +10,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Three binaries: game client, relay server, operator CLI
 
-**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (an operator tool with subcommands for deployment, monitoring, and debugging: `deploy`, `status`, `logs`, `desync-check`, `save push`, `save pull`, `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`).
+**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (a local operator tool with `logs` for relay log browsing and `version` for version information). Monitoring and management are handled by the static S3-based admin dashboard, not the CLI.
 
 **Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
 

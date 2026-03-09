@@ -41,9 +41,9 @@ Connect the CI pipeline to AWS. Binaries go to S3, relay goes to Lightsail, DNS 
 
 Chat messages currently exist only in memory. Persist them to S3 so they survive restarts and new joiners can see history.
 
-- [ ] Chat history persistence — save chat state to S3, restore on relay startup
-- [ ] Chat history catch-up — send previous messages to newly joining peers
-- [ ] Chat history bounding — decide and implement a limit (last N messages, session-only, or unlimited)
+- [x] Chat history persistence — save chat state to S3, restore on relay startup
+- [x] Chat history catch-up — client downloads history from S3 on join
+- [x] Chat history bounding — 1000-message ring buffer per version group
 
 ## Logging Infrastructure
 
@@ -65,11 +65,11 @@ Code signing unblocks self-install and removes OS security warnings (SmartScreen
 
 Static web dashboard for monitoring and managing the arcade. Replaces arcade-cli for remote operations. All data flows through S3.
 
-- [ ] Relay writes heartbeat to S3 — `admin/heartbeat.json` with timestamp, uptime, client count
-- [ ] Relay writes connected users to S3 — `admin/connected.json` with names, commit hashes, latency
-- [ ] Relay writes chat history to S3 — `admin/chat-history.json` from the in-memory buffer
-- [ ] Relay writes identity registry to S3 — `admin/identities.json`
-- [ ] Relay polls for command files — `admin/commands/`, executes and deletes
+- [x] Relay writes heartbeat to S3 — `admin/heartbeat.json` with timestamp, uptime, client count
+- [x] Relay writes connected users to S3 — `admin/connected.json` with names, commit hashes, idle time
+- [x] Relay writes chat history to S3 — `admin/chat-history.json` from the write cache
+- [x] Relay writes identity registry to S3 — `admin/identities.json`
+- [x] Relay polls for command files — `admin/commands/`, executes and deletes
 - [ ] Dashboard static site — HTML/JS served from S3, reads `admin/*` files, renders status
 - [ ] Dashboard authentication — admin secret via CloudFront signed cookie or Lambda@Edge
 - [ ] Dashboard user management — delete user via command file

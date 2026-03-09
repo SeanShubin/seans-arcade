@@ -17,7 +17,7 @@ User types message
     → Each client displays the message
 ```
 
-Messages are plain text with a sender name and timestamp. No history is stored on the relay (stateless). Chat history is world state — joining peers receive it as part of the S3 save download, the same way they'd receive player positions in a game.
+Messages are plain text with a sender name and timestamp. Chat history is persisted to S3 (the canonical store). The relay maintains a write cache that is flushed to S3 periodically and immediately on client join. Joining peers download chat history from S3, the same way they'd receive player positions in a game.
 
 ## Arcade Model
 
@@ -38,7 +38,7 @@ The game client and relay are the runtime system. The CLI is the operator's inte
 A simple window with:
 - A text area showing chat messages (sender name + message)
 - An input field at the bottom for typing
-- A status bar showing: connection state, your name, number of connected peers
+- A status bar showing: connection state, your name, names of connected peers
 - A name entry on first launch — identity secret is auto-generated and stored locally (the player never sees it unless they set up a second machine)
 
 The game client is built with Bevy from the start, including v1 chat. Bevy's ECS and rendering pipeline are used immediately, so there's no framework migration when games are added later.

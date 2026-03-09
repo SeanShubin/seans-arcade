@@ -182,7 +182,7 @@ There are two distinct scenarios that cause clients to lose their relay connecti
 
 The relay runs on AWS. If it crashes, the hosting platform restarts it. No player takes over as the relay — the relay is infrastructure, not a player role.
 
-The relay is stateless — no game state is lost when it restarts. Every client already has the full authoritative simulation. The only thing lost is the relay's in-memory connection state (connected clients, input buffer, recent input history).
+The relay holds no authoritative state — S3 is the canonical store. The relay maintains a write cache for batching S3 writes, flushed periodically and on client join. On restart, the relay recovers its write cache from S3. The only data that can be lost is messages received since the last S3 flush (at most 15 seconds). Every client already has the full authoritative simulation.
 
 **What happens:**
 1. Relay process crashes
