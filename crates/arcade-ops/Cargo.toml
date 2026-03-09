@@ -13,3 +13,4 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 chrono = "0.4"
 base64 = "0.22"
 postcard = { version = "1", features = ["alloc"] }
+ureq = "3"

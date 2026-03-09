@@ -7,6 +7,7 @@
 mod s3;
 
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::process::Command;
 
 use protocol::{
@@ -29,7 +30,10 @@ fn main() {
     let bucket = std::env::var("ARCADE_OPS_BUCKET").unwrap_or_else(|_| DEFAULT_BUCKET.into());
 
     // Warn if arcade-ops version doesn't match the deployed relay
-    check_version_mismatch(&bucket);
+    let skip_check = matches!(positional[0].as_str(), "update" | "version");
+    if !skip_check {
+        check_version_mismatch(&bucket);
+    }
 
     match positional[0].as_str() {
         // Observe
@@ -47,13 +51,14 @@ fn main() {
         "relay" => cmd_relay(&positional[1..]),
         "infra" => cmd_infra(&positional[1..]),
         // Analytics
-        "stats" => cmd_stats(&bucket),
+        "stats" => cmd_stats(&bucket, &positional[1..]),
         "uptime" => cmd_uptime(&bucket),
         "versions" => cmd_versions(&bucket),
         "health" => cmd_health(&bucket),
         // Data management
         "data" => cmd_data(&bucket, &positional[1..]),
         // Meta
+        "update" => cmd_update(),
         "version" => println!("arcade-ops {}", env!("GIT_COMMIT_HASH")),
         other => {
             eprintln!("Unknown command: {other}");
@@ -90,7 +95,7 @@ fn print_usage() {
     eprintln!("  status [--watch]               Relay health (uptime, clients, version)");
     eprintln!("  users                          Connected users with idle times");
     eprintln!("  identities                     Registered identity names");
-    eprintln!("  history [--version HASH]        Chat history");
+    eprintln!("  history [--version HASH|--all]  Chat history (default: this version)");
     eprintln!("  logs [FILE|--latest] [--remote] Chat logs (local or S3)");
     eprintln!();
     eprintln!("Control:");
@@ -104,7 +109,7 @@ fn print_usage() {
     eprintln!("  infra plan|apply|destroy");
     eprintln!();
     eprintln!("Analytics:");
-    eprintln!("  stats                          Message volume and activity");
+    eprintln!("  stats [--version HASH|--all]    Message volume (default: this version)");
     eprintln!("  uptime                         Relay uptime from heartbeat");
     eprintln!("  versions                       Client version distribution");
     eprintln!("  health                         Composite system health check");
@@ -115,6 +120,7 @@ fn print_usage() {
     eprintln!("  data delete <hash>             Delete all data for a version");
     eprintln!("  data prune                     Delete data for inactive versions");
     eprintln!();
+    eprintln!("  update                         Download latest arcade-ops binary");
     eprintln!("  version                        Print arcade-ops version");
     eprintln!();
     eprintln!("Environment:");
@@ -199,8 +205,17 @@ fn cmd_identities(bucket: &str) {
 fn cmd_history(bucket: &str, args: &[String]) {
     let s3 = s3::S3Client::new(bucket);
 
-    // If --version specified, show that version. Otherwise show all.
-    let version_filter = args.iter().position(|a| a == "--version").and_then(|i| args.get(i + 1));
+    // --all: show all versions. --version HASH: specific version. Default: arcade-ops version.
+    let show_all = args.iter().any(|a| a == "--all");
+    let version_filter = args
+        .iter()
+        .position(|a| a == "--version")
+        .and_then(|i| args.get(i + 1).map(|s| s.to_string()));
+    let target = if show_all {
+        None
+    } else {
+        Some(version_filter.unwrap_or_else(|| env!("GIT_COMMIT_HASH").to_string()))
+    };
 
     let hashes = list_version_hashes(&s3);
     if hashes.is_empty() {
@@ -209,7 +224,7 @@ fn cmd_history(bucket: &str, args: &[String]) {
     }
 
     for hash in &hashes {
-        if let Some(filter) = version_filter {
+        if let Some(ref filter) = target {
             if !hash.starts_with(filter.as_str()) {
                 continue;
             }
@@ -514,12 +529,34 @@ fn cmd_infra(args: &[String]) {
 // Analytics commands
 // =============================================================================
 
-fn cmd_stats(bucket: &str) {
+fn cmd_stats(bucket: &str, args: &[String]) {
     let s3 = s3::S3Client::new(bucket);
-    let hashes = list_version_hashes(&s3);
+    let all_hashes = list_version_hashes(&s3);
+
+    if all_hashes.is_empty() {
+        println!("No data found.");
+        return;
+    }
+
+    // --all: all versions. --version HASH: specific. Default: arcade-ops version.
+    let show_all = args.iter().any(|a| a == "--all");
+    let version_filter = args
+        .iter()
+        .position(|a| a == "--version")
+        .and_then(|i| args.get(i + 1).map(|s| s.to_string()));
+    let target = if show_all {
+        None
+    } else {
+        Some(version_filter.unwrap_or_else(|| env!("GIT_COMMIT_HASH").to_string()))
+    };
+
+    let hashes: Vec<&String> = all_hashes
+        .iter()
+        .filter(|h| target.as_ref().map_or(true, |t| h.starts_with(t.as_str())))
+        .collect();
 
     if hashes.is_empty() {
-        println!("No data found.");
+        println!("No data found for specified version.");
         return;
     }
 
@@ -542,14 +579,15 @@ fn cmd_stats(bucket: &str) {
     println!("Unique senders:  {}", total_users.len());
     println!("Version groups:  {}", hashes.len());
 
-    // Per-version breakdown
-    println!("\nPer version:");
-    println!("{:<12} {:>8}", "VERSION", "MESSAGES");
-    for hash in &hashes {
-        let key = format!("admin/versions/{hash}/chat-history.json");
-        if let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) {
-            let hash_short = short_hash(hash);
-            println!("{:<12} {:>8}", hash_short, entries.len());
+    if hashes.len() > 1 {
+        println!("\nPer version:");
+        println!("{:<12} {:>8}", "VERSION", "MESSAGES");
+        for hash in &hashes {
+            let key = format!("admin/versions/{hash}/chat-history.json");
+            if let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) {
+                let hash_short = short_hash(hash);
+                println!("{:<12} {:>8}", hash_short, entries.len());
+            }
         }
     }
 }
@@ -1040,6 +1078,85 @@ fn print_latest_log(log_dir: &std::path::Path) {
 }
 
 // =============================================================================
+// Self-update
+// =============================================================================
+
+const DOWNLOAD_BASE_URL: &str = "https://arcade.seanshubin.com";
+
+fn cmd_update() {
+    let current_exe = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Failed to determine current executable path: {e}");
+            return;
+        }
+    };
+
+    let platform = if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    };
+
+    let binary_name = if cfg!(target_os = "windows") {
+        "arcade-ops.exe"
+    } else {
+        "arcade-ops"
+    };
+
+    let url = format!("{DOWNLOAD_BASE_URL}/{platform}/{binary_name}");
+    println!("Downloading from {url}...");
+
+    let bytes = match download_binary(&url) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Download failed: {e}");
+            return;
+        }
+    };
+
+    // Replace the running executable.
+    // On Windows, rename the current exe first (can't overwrite a running exe).
+    let backup = current_exe.with_extension("old");
+    if cfg!(target_os = "windows") {
+        if let Err(e) = std::fs::rename(&current_exe, &backup) {
+            eprintln!("Failed to rename current binary: {e}");
+            return;
+        }
+    }
+
+    if let Err(e) = std::fs::write(&current_exe, &bytes) {
+        eprintln!("Failed to write new binary: {e}");
+        // Restore backup on Windows
+        if cfg!(target_os = "windows") {
+            let _ = std::fs::rename(&backup, &current_exe);
+        }
+        return;
+    }
+
+    // Set executable permission on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&current_exe, std::fs::Permissions::from_mode(0o755));
+    }
+
+    // Clean up backup
+    let _ = std::fs::remove_file(&backup);
+
+    println!("Updated arcade-ops at {}", current_exe.display());
+}
+
+fn download_binary(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut response = ureq::get(url).call()?;
+    let mut bytes = Vec::new();
+    response.body_mut().as_reader().read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
@@ -1053,6 +1170,7 @@ fn check_version_mismatch(bucket: &str) {
                 short_hash(ops_hash),
                 short_hash(&hb.commit_hash)
             );
+            eprintln!("  To update: arcade-ops update");
             eprintln!();
         }
     }
