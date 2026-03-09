@@ -155,7 +155,7 @@ This is exactly how Factorio debugs desyncs — replay the input log, checksum e
 
 **"One player's inputs keep getting dropped but their connection seems fine"** — check the client timestamps on that player's inputs. If timestamps are consistently late relative to the expected wall-clock time for each tick, the client's simulation is falling behind (processing starvation) — inputs are computed after the relay's broadcast deadline, not because the network is slow but because the client can't sustain the tick rate. This points to a performance problem on that specific machine, not a network problem.
 
-**"Someone is using my name"** — the normal path is that the client prompted the player to enter their identity secret when the relay responded with "name claimed." If they're on a second machine, they need their secret from the first machine (`arcade-cli identity secret` on machine A). If the name was genuinely claimed by someone else (e.g., someone claimed a friend's name before they connected), the operator can reset the claim with `arcade-cli identity reset <name>`, and the rightful owner re-claims on next connection.
+**"Someone is using my name"** — the normal path is that the client prompted the player to enter their identity secret when the relay responded with "name claimed." If they're on a second machine, they need their secret from the first machine (`arcade-ops identity secret` on machine A). If the name was genuinely claimed by someone else (e.g., someone claimed a friend's name before they connected), the operator can reset the claim with `arcade-ops identity reset <name>`, and the rightful owner re-claims on next connection.
 
 **"A player reconnected but lost their game entities"** — verify the connection event shows the same identity name as the previous connection. If the name is different (typo, different config), the game layer can't reassociate the new connection with the old player's entities. Entity reassociation uses identity name as the persistent key — same name means same player, different name means different player regardless of intent.
 
@@ -325,7 +325,7 @@ The relay maintains an identity registry that maps identity names to hashed iden
 | Location           | Data                                       | Details                                                                                                                                                               |
 | ------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Relay local disk   | identity_name → hash(identity_secret)      | The identity registry. Access control state, not game state. Lost if relay VM is replaced.                                                                            |
-| Client config.toml | identity_name, identity_secret (plaintext) | Auto-generated on first launch (4 BIP-39 words), stored locally. Changeable via `arcade-cli identity secret <new-secret>` (any passphrase, not restricted to BIP-39). |
+| Client config.toml | identity_name, identity_secret (plaintext) | Auto-generated on first launch (4 BIP-39 words), stored locally. Changeable via `arcade-ops identity secret <new-secret>` (any passphrase, not restricted to BIP-39). |
 
 **Client-side identity flow:**
 
@@ -334,7 +334,7 @@ The relay maintains an identity registry that maps identity names to hashed iden
 - **Name claimed (wrong secret):** Relay responds "name claimed." Client shows: "That name is already taken. If it's yours, enter your identity secret." Player enters their secret → retry Hello with the provided secret, or picks a different name.
 - **Subsequent launches:** Config already populated — connect automatically with the stored name and secret.
 
-**`arcade-cli identity` subcommands:**
+**`arcade-ops identity` subcommands:**
 
 | Subcommand                     | What it does                                                                                                        |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |

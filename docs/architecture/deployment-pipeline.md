@@ -7,8 +7,8 @@ How code goes from a git push to running services.
 ```
 git push master
     → GitHub Actions (parallel builds):
-        → build-windows: cargo build --release (arcade, relay, arcade-cli)
-        → build-macos: cargo build --release (arcade, relay, arcade-cli)
+        → build-windows: cargo build --release (arcade, relay, arcade-ops)
+        → build-macos: cargo build --release (arcade, relay, arcade-ops)
         → build-linux-relay: cargo build --release (relay only)
     → GitHub Actions: deploy job (depends on all builds)
         → authenticate to AWS via OIDC

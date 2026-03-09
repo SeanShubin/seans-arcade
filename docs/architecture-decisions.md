@@ -10,7 +10,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Three binaries: game client, relay server, operator CLI
 
-**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (the operator's single interface for monitoring, management, analytics, and infrastructure control).
+**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-ops` (the operator's single interface for monitoring, management, analytics, and infrastructure control).
 
 **Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
 
@@ -90,7 +90,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Admin CLI replaces web dashboard
 
-**Decision:** `arcade-cli` is the single operator interface for monitoring, management, analytics, and infrastructure control. It reads S3 state files, writes S3 command files, and shells out to SSH/Terraform for infrastructure operations. There is no separate web dashboard. The S3 data flow is unchanged from the earlier dashboard design — only the consumer changed from a browser to a CLI.
+**Decision:** `arcade-ops` is the single operator interface for monitoring, management, analytics, and infrastructure control. It reads S3 state files, writes S3 command files, and shells out to SSH/Terraform for infrastructure operations. There is no separate web dashboard. The S3 data flow is unchanged from the earlier dashboard design — only the consumer changed from a browser to a CLI.
 
 **Previous decision (superseded):** A static web dashboard served from S3. Rejected because it required building, hosting, and securing a web frontend with browser-based auth, while the operator already has AWS credentials and SSH keys on their machine.
 
@@ -395,7 +395,7 @@ Cross-game interaction flows through the container, never directly between games
 
 ### Player identity: self-service first-claim with auto-generated identity secret
 
-**Decision:** Each player has a persistent identity name (up to 20 characters), used everywhere as their sole identifier. On first launch the client prompts for a name only — the client auto-generates 4 random BIP-39 words as the identity secret, stores both in config.toml, and the player never sees the secret during onboarding. The relay stores identity_name → hash(identity_secret) in a local registry file. On subsequent connections: unclaimed name → register and accept; correct secret → accept; wrong secret → relay responds with a "name claimed" rejection (the client has already passed shared secret validation, so it's trusted). The client then prompts the player to enter their identity secret or pick a different name. The player can view or change their secret later via `arcade-cli identity secret [<new-secret>]` (any passphrase, not restricted to BIP-39 or 4 words).
+**Decision:** Each player has a persistent identity name (up to 20 characters), used everywhere as their sole identifier. On first launch the client prompts for a name only — the client auto-generates 4 random BIP-39 words as the identity secret, stores both in config.toml, and the player never sees the secret during onboarding. The relay stores identity_name → hash(identity_secret) in a local registry file. On subsequent connections: unclaimed name → register and accept; correct secret → accept; wrong secret → relay responds with a "name claimed" rejection (the client has already passed shared secret validation, so it's trusted). The client then prompts the player to enter their identity secret or pick a different name. The player can view or change their secret later via `arcade-ops identity secret [<new-secret>]` (any passphrase, not restricted to BIP-39 or 4 words).
 
 **Alternatives rejected:** Account registration via web portal (contradicts download-launch-play for 0-10 people), operator-managed identity list (bottleneck on operator for every player), cryptographic key pairs (key loss = permanent identity loss with no recourse), prompting for an identity secret on first launch (the player has no context for why they need one, will type something throwaway and forget it).
 
@@ -419,11 +419,11 @@ Cross-game interaction flows through the container, never directly between games
 
 ### New-machine identity recovery via claimed-name prompt
 
-**Decision:** When a player connects from a new machine, the client auto-generates a new secret (as with any first launch), sends Hello, and receives a "name claimed" rejection because the auto-generated secret doesn't match the relay's stored hash. The client then prompts: "This name is already taken. Enter your identity secret to prove it's yours." The player reads their `identity_secret` from `config.toml` on their old machine and types it on the new machine. The client sends Hello again with the entered secret. On success, the new machine's `config.toml` is written with the correct name and secret. If the old machine is inaccessible, the operator runs `arcade-cli identity reset <name>` to clear the relay's stored hash, and the player re-claims the name on next connect via first-claim registration.
+**Decision:** When a player connects from a new machine, the client auto-generates a new secret (as with any first launch), sends Hello, and receives a "name claimed" rejection because the auto-generated secret doesn't match the relay's stored hash. The client then prompts: "This name is already taken. Enter your identity secret to prove it's yours." The player reads their `identity_secret` from `config.toml` on their old machine and types it on the new machine. The client sends Hello again with the entered secret. On success, the new machine's `config.toml` is written with the correct name and secret. If the old machine is inaccessible, the operator runs `arcade-ops identity reset <name>` to clear the relay's stored hash, and the player re-claims the name on next connect via first-claim registration.
 
 **Alternatives rejected:** Automatic multi-device sync (requires sync infrastructure that doesn't exist for 0-10 users), export/import key file (extra steps for a 4-word string the user can just read and type), or email/SMS recovery (requires account infrastructure that doesn't exist).
 
-**Rationale:** The secret is already stored in plaintext in `config.toml` — the user just reads 4 words and types them. No recovery tool, no export step, no QR code. The claimed-name prompt is the same one that fires for any wrong-secret Hello, so no new UI is needed. The operator reset fallback (`arcade-cli identity reset <name>`) handles the lost-machine case without building recovery infrastructure; at 0-10 friends this is a quick ask, not a support ticket. The flow reuses the existing Hello retry mechanism — the client already handles "name claimed" rejections and re-prompts.
+**Rationale:** The secret is already stored in plaintext in `config.toml` — the user just reads 4 words and types them. No recovery tool, no export step, no QR code. The claimed-name prompt is the same one that fires for any wrong-secret Hello, so no new UI is needed. The operator reset fallback (`arcade-ops identity reset <name>`) handles the lost-machine case without building recovery infrastructure; at 0-10 friends this is a quick ask, not a support ticket. The flow reuses the existing Hello retry mechanism — the client already handles "name claimed" rejections and re-prompts.
 
 ---
 
@@ -447,7 +447,7 @@ Cross-game interaction flows through the container, never directly between games
 
 **Alternatives rejected:** Config file next to the binary (binary self-replaces on update, complicating the update dance or risking config loss) and Windows registry (not portable, harder to inspect, platform-specific API).
 
-**Rationale:** Platform app data directories survive application updates, are user-discoverable, and work the same conceptual way across platforms. TOML is human-readable and trivially editable. The file contains no secrets that need encryption — the relay secret is a shared passphrase, not a credential, and the identity secret has the same security posture — auto-generated on first launch (4 BIP-39 words), stored locally, changeable via `arcade-cli identity secret <new-secret>` (any passphrase, not restricted to BIP-39).
+**Rationale:** Platform app data directories survive application updates, are user-discoverable, and work the same conceptual way across platforms. TOML is human-readable and trivially editable. The file contains no secrets that need encryption — the relay secret is a shared passphrase, not a credential, and the identity secret has the same security posture — auto-generated on first launch (4 BIP-39 words), stored locally, changeable via `arcade-ops identity secret <new-secret>` (any passphrase, not restricted to BIP-39).
 
 ---
 

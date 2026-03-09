@@ -101,9 +101,9 @@ The Release Workflow above describes the logical steps. This section describes t
 **Trigger:** push to `master`
 
 **Build jobs** run in parallel (separate jobs, not a matrix):
-- **`build-windows`** (`windows-latest`) — builds `arcade`, `relay`, and `arcade-cli`
-- **`build-macos`** (`macos-latest`) — builds `arcade`, `relay`, and `arcade-cli`
-- **`build-linux`** (`ubuntu-latest`) — builds `arcade`, `relay`, and `arcade-cli`
+- **`build-windows`** (`windows-latest`) — builds `arcade`, `relay`, and `arcade-ops`
+- **`build-macos`** (`macos-latest`) — builds `arcade`, `relay`, and `arcade-ops`
+- **`build-linux`** (`ubuntu-latest`) — builds `arcade`, `relay`, and `arcade-ops`
 
 **Deploy job** (depends on all three build jobs succeeding):
 1. Download all platform artifacts into platform subdirectories (`windows/`, `macos/`, `linux/`)

@@ -266,7 +266,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "arcade-cli"
+name = "arcade-ops"
 version = "0.1.0"
 dependencies = [
  "chrono",

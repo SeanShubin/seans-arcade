@@ -1,6 +1,6 @@
 //! Shared protocol types for the chat relay.
 //!
-//! All three binaries (arcade, relay, arcade-cli) depend on this crate.
+//! All three binaries (arcade, relay, arcade-ops) depend on this crate.
 //! Messages are serialized with `postcard` (compact, serde-based, no framing
 //! needed since UDP is message-oriented).
 

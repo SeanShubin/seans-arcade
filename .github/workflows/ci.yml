@@ -32,8 +32,8 @@ jobs:
       - name: Build relay
         run: cargo build --release -p relay
 
-      - name: Build arcade-cli
-        run: cargo build --release -p arcade-cli
+      - name: Build arcade-ops
+        run: cargo build --release -p arcade-ops
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -42,7 +42,7 @@ jobs:
           path: |
             target/release/arcade.exe
             target/release/relay.exe
-            target/release/arcade-cli.exe
+            target/release/arcade-ops.exe
 
   build-macos:
     runs-on: macos-latest
@@ -68,8 +68,8 @@ jobs:
       - name: Build relay
         run: cargo build --release -p relay
 
-      - name: Build arcade-cli
-        run: cargo build --release -p arcade-cli
+      - name: Build arcade-ops
+        run: cargo build --release -p arcade-ops
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -78,7 +78,7 @@ jobs:
           path: |
             target/release/arcade
             target/release/relay
-            target/release/arcade-cli
+            target/release/arcade-ops
 
   build-linux:
     runs-on: ubuntu-latest
@@ -107,8 +107,8 @@ jobs:
       - name: Build relay
         run: cargo build --release -p relay
 
-      - name: Build arcade-cli
-        run: cargo build --release -p arcade-cli
+      - name: Build arcade-ops
+        run: cargo build --release -p arcade-ops
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -117,7 +117,7 @@ jobs:
           path: |
             target/release/arcade
             target/release/relay
-            target/release/arcade-cli
+            target/release/arcade-ops
 
   deploy:
     needs: [build-windows, build-macos, build-linux]

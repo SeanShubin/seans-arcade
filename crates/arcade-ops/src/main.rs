@@ -27,19 +27,19 @@ fn main() {
 
     match positional[0].as_str() {
         "logs" => handle_logs(&positional[1..]),
-        "version" => println!("arcade-cli {}", env!("GIT_COMMIT_HASH")),
+        "version" => println!("arcade-ops {}", env!("GIT_COMMIT_HASH")),
         _ => print_usage(),
     }
 }
 
 fn print_usage() {
-    eprintln!("arcade-cli {}", env!("GIT_COMMIT_HASH"));
+    eprintln!("arcade-ops {}", env!("GIT_COMMIT_HASH"));
     eprintln!();
     eprintln!("Usage:");
-    eprintln!("  arcade-cli [--data-dir DIR] logs              List log files");
-    eprintln!("  arcade-cli [--data-dir DIR] logs <filename>   Print log file contents");
-    eprintln!("  arcade-cli [--data-dir DIR] logs --latest     Print most recent log file");
-    eprintln!("  arcade-cli version                            Print version");
+    eprintln!("  arcade-ops [--data-dir DIR] logs              List log files");
+    eprintln!("  arcade-ops [--data-dir DIR] logs <filename>   Print log file contents");
+    eprintln!("  arcade-ops [--data-dir DIR] logs --latest     Print most recent log file");
+    eprintln!("  arcade-ops version                            Print version");
 }
 
 fn handle_logs(args: &[String]) {

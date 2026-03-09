@@ -29,7 +29,7 @@ Think of a physical arcade — everyone can hear each other, and players wander 
 | ---------------- | --------------------------------------------------------------- | ----------------- |
 | **`arcade`**     | Game client — the Bevy application players download and run     | Player machines   |
 | **`relay`**      | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM            |
-| **`arcade-cli`** | Operator tooling — monitor, manage, debug, analytics, infra control | Developer machine |
+| **`arcade-ops`** | Operator tooling — monitor, manage, debug, analytics, infra control | Developer machine |
 
 The game client and relay are the runtime system. The CLI is the operator's single interface to everything else: checking relay health (`status`), viewing connected users (`users`), browsing chat history (`history`), managing identities (`kick`, `reset-identity`), running analytics (`stats`, `health`), and controlling infrastructure (`relay restart`, `infra apply`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer, and [admin-cli.md](architecture/admin-cli.md) for the full command reference.
 
@@ -58,7 +58,7 @@ Each phase builds on the previous infrastructure. Chat is the always-on social l
 
 **Scope:** Drop-in text chat. No accounts, no login — download, launch, claim your name, talk.
 
-**What ships:** Bevy game client with chat UI, relay server (UDP, opaque forwarding, version isolation, shared secret), auto-update, `arcade-cli` with `deploy`/`status`/`logs`.
+**What ships:** Bevy game client with chat UI, relay server (UDP, opaque forwarding, version isolation, shared secret), auto-update, `arcade-ops` with `deploy`/`status`/`logs`.
 
 **Infrastructure introduced:** AWS (Lightsail, S3, Route 53), GitHub Actions CI, lockstep protocol, Hello handshake.
 

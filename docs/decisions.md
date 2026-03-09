@@ -13,10 +13,10 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Evolution: Chat → Chat + Pong → Game library → Persistence ([plan](project-overview.md))
 
 ### Project Structure
-- Three binaries: **`arcade`** (game client, Bevy), **`relay`** (input coordinator, runs on AWS), **`arcade-cli`** (local tooling)
+- Three binaries: **`arcade`** (game client, Bevy), **`relay`** (input coordinator, runs on AWS), **`arcade-ops`** (local tooling)
 - The relay stays minimal — internet-facing, packet forwarding only, writes state to S3 periodically
-- Admin monitoring, management, analytics, and infrastructure control via **`arcade-cli`** — one tool, no separate web dashboard ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
-- `arcade-cli` reads state from S3, writes commands to S3, and shells out to AWS/SSH/Terraform for infrastructure operations
+- Admin monitoring, management, analytics, and infrastructure control via **`arcade-ops`** — one tool, no separate web dashboard ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
+- `arcade-ops` reads state from S3, writes commands to S3, and shells out to AWS/SSH/Terraform for infrastructure operations
 
 ### AWS (Global Coordination)
 - Global coordination is **minimized** — AWS handles only what individual peers cannot
@@ -40,14 +40,14 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Identity is a **persistent identity name** — name chosen on first launch, identity secret auto-generated, first-claim enforced by relay
 - Local config (identity name, identity secret, relay secret) stored in **platform app data directory** (`%APPDATA%\seans-arcade\config.toml` on Windows) ([decision](architecture-decisions.md))
 - Game entities reference **identity name as persistent owner key** — entity reassociation on reconnect is game-layer logic
-- `arcade-cli` identity management: `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`
+- `arcade-ops` identity management: `identity list`, `identity reset <name>`, `identity secret [<new-secret>]`
 - **Identity secret rotation** via two-field config — player adds `new_identity_secret` to `config.toml`, client sends both in Hello, relay rotates the stored hash, client removes the field after success; Hello gains an optional `new_secret` field (backward-compatible) ([decision](architecture-decisions.md))
 - **New-machine identity recovery** via claimed-name prompt — new machine auto-generates a secret, gets rejected, prompts "enter your identity secret"; player reads the 4 words from `config.toml` on old machine and types them; if old machine is gone, operator runs `identity reset` ([decision](architecture-decisions.md))
 
 ### Logging
 - **Minimal logging, emergencies only** — no verbose operational logs, just panics and errors
 - **`arcade`** logs to a file in `%APPDATA%\seans-arcade\` (next to `config.toml`) — no console window in release builds
-- **`relay`** and **`arcade-cli`** log to stderr — console output is accessible directly
+- **`relay`** and **`arcade-ops`** log to stderr — console output is accessible directly
 
 ### Design
 - Prefer **diegetic design** — interactions happen in the game world through the avatar, not in menus or overlays ([philosophy](research/design-philosophy.md))
@@ -72,7 +72,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - Default relay address is **relay.seanshubin.com:7700** — overridable in `config.toml` for local development
 
 ### Admin CLI
-- **`arcade-cli` is the single operator interface** — monitoring, management, analytics, and infrastructure control in one tool ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
+- **`arcade-ops` is the single operator interface** — monitoring, management, analytics, and infrastructure control in one tool ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
 - **All data flows through S3** — relay writes state every 5-15 seconds, CLI reads; data may be stale but never inconsistent
 - Relay health via **heartbeat file** — relay writes `admin/heartbeat.json` with timestamp; CLI shows relay as down if timestamp is >30 seconds old
 - Admin commands via **command files** — CLI writes to `admin/commands/`, relay polls and executes; relay is the single owner of mutable state
