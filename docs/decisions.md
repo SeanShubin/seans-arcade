@@ -15,8 +15,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 ### Project Structure
 - Three binaries: **`arcade`** (game client, Bevy), **`relay`** (input coordinator, runs on AWS), **`arcade-cli`** (local tooling)
 - The relay stays minimal — internet-facing, packet forwarding only, writes state to S3 periodically
-- Admin monitoring and management via a **static web dashboard** served from S3, not a CLI ([decision](architecture-decisions.md#s3-mediated-admin-dashboard-replaces-arcade-cli-for-monitoring))
-- `arcade-cli` remains for local-only tooling needs (log browsing, future local utilities)
+- Admin monitoring, management, analytics, and infrastructure control via **`arcade-cli`** — one tool, no separate web dashboard ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
+- `arcade-cli` reads state from S3, writes commands to S3, and shells out to AWS/SSH/Terraform for infrastructure operations
 
 ### AWS (Global Coordination)
 - Global coordination is **minimized** — AWS handles only what individual peers cannot
@@ -71,13 +71,15 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **All runtime secrets in GitHub Actions secrets** — relay secret, S3 bucket, AWS credentials; no secrets stored on the VM; VM is fully disposable ([decision](architecture-decisions.md#all-runtime-secrets-stored-in-github-actions-secrets))
 - Default relay address is **relay.seanshubin.com:7700** — overridable in `config.toml` for local development
 
-### Admin Dashboard
-- **Static website on S3** — no backend, reads JSON state files written by the relay ([decision](architecture-decisions.md#s3-mediated-admin-dashboard-replaces-arcade-cli-for-monitoring), [details](architecture/admin-dashboard.md))
-- **All data flows through S3** — relay writes state every 5-15 seconds, dashboard reads; data may be stale but never inconsistent
-- Relay health via **heartbeat file** — relay writes `admin/heartbeat.json` with timestamp; dashboard shows relay as down if timestamp is >30 seconds old
-- Admin commands via **command files** — dashboard writes to `admin/commands/`, relay polls and executes; relay is the single owner of mutable state
+### Admin CLI
+- **`arcade-cli` is the single operator interface** — monitoring, management, analytics, and infrastructure control in one tool ([decision](architecture-decisions.md#admin-cli-replaces-web-dashboard), [details](architecture/admin-cli.md))
+- **All data flows through S3** — relay writes state every 5-15 seconds, CLI reads; data may be stale but never inconsistent
+- Relay health via **heartbeat file** — relay writes `admin/heartbeat.json` with timestamp; CLI shows relay as down if timestamp is >30 seconds old
+- Admin commands via **command files** — CLI writes to `admin/commands/`, relay polls and executes; relay is the single owner of mutable state
 - One S3 bucket with **key prefixes** (`admin/`), not multiple buckets
-- **Replaces arcade-cli** for monitoring and management; arcade-cli remains for local-only tooling
+- **Infrastructure control** — restart, redeploy, destroy via SSH and Terraform from the same tool
+- **Analytics** — message volume, uptime history, version distribution, composite health checks
+- **Supersedes the static web dashboard** — same S3 data flow, simpler consumer
 
 ### Assets
 - **Manifest-based asset download** — S3 hosts `assets-manifest.json` (filename + SHA-256 hash per asset); client compares local vs. remote manifest on startup, downloads only changed/missing assets to the platform data directory ([decision](architecture-decisions.md#asset-distribution-strategy))
@@ -138,7 +140,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [deployment-pipeline.md](architecture/deployment-pipeline.md)       | CI/CD pipeline: build, deploy to S3, CloudFront invalidation                     |
 | [deployment-setup.md](architecture/deployment-setup.md)             | One-time setup: AWS credentials, Terraform, GitHub secrets                       |
 | [operations-reference.md](architecture/operations-reference.md)     | Where everything lives, VM commands, debugging checklist                         |
-| [admin-dashboard.md](architecture/admin-dashboard.md)               | Admin dashboard architecture: S3-mediated monitoring, command files              |
+| [admin-cli.md](architecture/admin-cli.md)                           | Admin CLI design: monitoring, management, analytics, infrastructure control     |
+| [admin-dashboard.md](architecture/admin-dashboard.md)               | *(Superseded)* — replaced by admin CLI                                          |
 | [architecture-decisions.md](architecture-decisions.md)              | Formalized technical decisions with rationale                                    |
 | [design-philosophy.md](research/design-philosophy.md)               | Game design principles that motivate technical decisions                         |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md)       | High-level engine pipeline overview                                              |

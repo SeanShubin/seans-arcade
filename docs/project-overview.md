@@ -29,9 +29,9 @@ Think of a physical arcade — everyone can hear each other, and players wander 
 | ---------------- | --------------------------------------------------------------- | ----------------- |
 | **`arcade`**     | Game client — the Bevy application players download and run     | Player machines   |
 | **`relay`**      | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM            |
-| **`arcade-cli`** | Operator tooling — deploy, monitor, debug, manage saves         | Developer machine |
+| **`arcade-cli`** | Operator tooling — monitor, manage, debug, analytics, infra control | Developer machine |
 
-The game client and relay are the runtime system. The CLI is the operator's interface to everything else: deploying the relay (`deploy`), checking its health (`status`), tailing logs (`logs`), investigating desyncs (`desync-check`), and managing S3 saves (`save push`, `save pull`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer.
+The game client and relay are the runtime system. The CLI is the operator's single interface to everything else: checking relay health (`status`), viewing connected users (`users`), browsing chat history (`history`), managing identities (`kick`, `reset-identity`), running analytics (`stats`, `health`), and controlling infrastructure (`relay restart`, `infra apply`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer, and [admin-cli.md](architecture/admin-cli.md) for the full command reference.
 
 ## What the Game Client Looks Like (v1 — Chat)
 
@@ -120,6 +120,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [session-architecture.md](architecture/session-architecture.md) — Session architecture decision: unified world state, not multiplexed sessions
 - [sprite-pipeline.md](architecture/sprite-pipeline.md) — Sprite pipeline workflow: discover → grid → export
 - [sprite-metadata-format.md](architecture/sprite-metadata-format.md) — Sprite metadata TOML format specification
+- [admin-cli.md](architecture/admin-cli.md) — Admin CLI design: monitoring, management, analytics, infrastructure control
 
 ### Research — Game Design
 - [design-philosophy.md](research/design-philosophy.md) — Core game design principles

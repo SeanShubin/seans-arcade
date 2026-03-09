@@ -10,7 +10,7 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ### Three binaries: game client, relay server, operator CLI
 
-**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (a local operator tool with `logs` for relay log browsing and `version` for version information). Monitoring and management are handled by the static S3-based admin dashboard, not the CLI.
+**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-cli` (the operator's single interface for monitoring, management, analytics, and infrastructure control).
 
 **Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
 
@@ -86,20 +86,22 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ---
 
-## Admin Dashboard
+## Admin CLI (replaces web dashboard)
 
-### S3-mediated admin dashboard (replaces arcade-cli for monitoring)
+### Admin CLI replaces web dashboard
 
-**Decision:** The admin dashboard is a static website served from S3. All data flows through S3 — the relay periodically writes JSON state files (`admin/heartbeat.json`, `admin/connected.json`, `admin/chat-history.json`, `admin/identities.json`), and the dashboard reads them. Admin commands (e.g. delete user) are written as command files to `admin/commands/` by the dashboard; the relay polls for and executes them. Data may be 5-15 seconds stale. One S3 bucket with key prefixes, not multiple buckets.
+**Decision:** `arcade-cli` is the single operator interface for monitoring, management, analytics, and infrastructure control. It reads S3 state files, writes S3 command files, and shells out to SSH/Terraform for infrastructure operations. There is no separate web dashboard. The S3 data flow is unchanged from the earlier dashboard design — only the consumer changed from a browser to a CLI.
+
+**Previous decision (superseded):** A static web dashboard served from S3. Rejected because it required building, hosting, and securing a web frontend with browser-based auth, while the operator already has AWS credentials and SSH keys on their machine.
 
 **Alternatives rejected:**
 - HTTP/WebSocket endpoint on the relay — mixes admin concerns into the relay, adds HTTP to a UDP-only process.
 - Separate admin API service — another binary to build, deploy, and maintain for minimal benefit.
-- Dashboard directly modifying state in S3 — creates out-of-sync state between S3 and the relay's in-memory registry. The relay must be the single owner of mutable state.
+- Static web dashboard — additional artifact to build and deploy; requires browser auth (signed cookies or Lambda@Edge); operator already has CLI credentials.
 
-**Rationale:** The relay stays simple — write-only to S3, no admin endpoints, no HTTP. The dashboard is fully static — no backend, deployable to the existing S3 bucket. Near-real-time (5-15 second staleness) is sufficient for operator monitoring. The command-file pattern for write operations keeps the relay as the single owner of mutable state, avoiding sync issues.
+**Rationale:** The relay stays simple — write-only to S3, no admin endpoints, no HTTP. The CLI reuses existing operator credentials (AWS for S3, SSH key for Lightsail, Terraform state for infra). No web frontend to build, host, or secure. Near-real-time (5-15 second staleness) is sufficient for operator monitoring. The command-file pattern for write operations keeps the relay as the single owner of mutable state.
 
-**See:** [admin-dashboard.md](architecture/admin-dashboard.md)
+**See:** [admin-cli.md](architecture/admin-cli.md)
 
 ---
 
