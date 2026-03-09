@@ -51,7 +51,13 @@ impl S3Client {
                     .ok()
             }
             Err(e) => {
-                eprintln!("s3: failed to get {key}: {e}");
+                // NoSuchKey is expected for missing keys — don't log it.
+                let is_not_found = e
+                    .as_service_error()
+                    .map_or(false, |se| se.is_no_such_key());
+                if !is_not_found {
+                    eprintln!("s3: failed to get {key}: {e}");
+                }
                 None
             }
         }
