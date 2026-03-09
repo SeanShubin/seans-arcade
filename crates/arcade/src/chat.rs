@@ -436,8 +436,6 @@ fn process_incoming_messages(
             RelayMessage::Welcome { .. } => {
                 if !chat.welcomed {
                     chat.welcomed = true;
-                    // Download chat history from S3 (canonical store).
-                    fetch_chat_history_from_s3(&mut chat);
 
                     let config_path = config.data_dir.join("config.toml");
                     chat.messages.push(ChatMessage {
@@ -445,6 +443,9 @@ fn process_incoming_messages(
                         text: format!("Your config is at: {}", config_path.display()),
                         is_system: true,
                     });
+
+                    // Download chat history from S3 (canonical store).
+                    fetch_chat_history_from_s3(&mut chat);
                 }
             }
             RelayMessage::RejectVersion { expected } => {
