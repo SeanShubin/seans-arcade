@@ -111,6 +111,86 @@ impl PersistedChatHistory {
     }
 }
 
+// ---- Per-version persistence helpers ----------------------------------------
+//
+// Used for reading/writing individual version groups to S3.
+// Each version's data lives at admin/versions/<hash>/chat-history.json.
+
+/// Convert a single version group to persisted format.
+pub fn persist_entries(entries: &VecDeque<HistoryEntry>) -> Vec<PersistedHistoryEntry> {
+    entries
+        .iter()
+        .map(|e| PersistedHistoryEntry {
+            from: e.from.clone(),
+            payload: BASE64.encode(&e.payload),
+        })
+        .collect()
+}
+
+/// Restore a single version group from persisted format.
+/// Entries with invalid base64 are silently skipped.
+pub fn restore_entries(persisted: Vec<PersistedHistoryEntry>) -> VecDeque<HistoryEntry> {
+    persisted
+        .into_iter()
+        .filter_map(|e| {
+            let payload = BASE64.decode(&e.payload).ok()?;
+            Some(HistoryEntry {
+                from: e.from,
+                payload,
+            })
+        })
+        .collect()
+}
+
+// ---- Admin types (shared between relay and arcade-ops) ----------------------
+//
+// These types define the S3-based admin interface. The relay writes state files
+// and polls for command files. arcade-ops reads state and writes commands.
+
+/// Relay heartbeat: written to `admin/heartbeat.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Heartbeat {
+    pub timestamp: String,
+    pub uptime_secs: u64,
+    pub client_count: usize,
+    pub commit_hash: String,
+}
+
+/// Connected client info for `admin/connected.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedUsers {
+    pub timestamp: String,
+    pub users: Vec<ConnectedUser>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedUser {
+    pub name: String,
+    pub commit_hash: String,
+    pub idle_secs: u64,
+}
+
+/// Registered identities for `admin/identities.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisteredIdentities {
+    pub timestamp: String,
+    pub names: Vec<String>,
+}
+
+/// Admin command written to `admin/commands/` and polled by the relay.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "command")]
+pub enum AdminCommand {
+    #[serde(rename = "delete-user")]
+    DeleteUser { name: String },
+    #[serde(rename = "reset-identity")]
+    ResetIdentity { name: String },
+    #[serde(rename = "broadcast")]
+    Broadcast { message: String },
+    #[serde(rename = "drain")]
+    Drain,
+}
+
 // ---- Serialization helpers --------------------------------------------------
 
 pub fn serialize<T: Serialize>(value: &T) -> Vec<u8> {

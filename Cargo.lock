@@ -269,10 +269,15 @@ dependencies = [
 name = "arcade-ops"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
+ "base64",
  "chrono",
+ "postcard",
  "protocol",
  "serde",
- "toml",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

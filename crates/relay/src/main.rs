@@ -289,9 +289,11 @@ fn sync_to_s3(state: &RelayState, s3: &s3::S3Client, start_time: Instant) {
         },
     );
 
-    // Chat history
-    let persisted = s3::PersistedChatHistory::from_memory(&state.chat_history);
-    s3.put_json("admin/chat-history.json", &persisted);
+    // Per-version chat history
+    for (hash, entries) in &state.chat_history {
+        let persisted = protocol::persist_entries(entries);
+        s3.put_json(&format!("admin/versions/{hash}/chat-history.json"), &persisted);
+    }
 
     // Registered identities (names only, no secrets)
     s3.put_json(
@@ -352,6 +354,41 @@ fn poll_admin_commands(state: &mut RelayState, s3: &s3::S3Client) -> Vec<RelayAc
                         );
                     }
                 }
+            }
+            s3::AdminCommand::ResetIdentity { name } => {
+                if state.identity_registry.remove(&name) {
+                    state.identity_registry.save(&state.registry_path);
+                    println!("relay: reset identity: {name}");
+                } else {
+                    println!("relay: identity not found: {name}");
+                }
+            }
+            s3::AdminCommand::Broadcast { message } => {
+                let payload = serialize(&ChatPayload::Text(message.clone()));
+                // Add to each version group's chat history
+                for entries in state.chat_history.values_mut() {
+                    entries.push_back(HistoryEntry {
+                        from: String::new(),
+                        payload: payload.clone(),
+                    });
+                    if entries.len() > CHAT_HISTORY_SIZE {
+                        entries.pop_front();
+                    }
+                }
+                // Send to all connected clients
+                let msg = RelayMessage::Broadcast {
+                    from: String::new(),
+                    payload,
+                };
+                for addr in state.clients.keys() {
+                    actions.push(RelayAction::SendTo(*addr, msg.clone()));
+                }
+                println!("relay: broadcast: {message}");
+            }
+            s3::AdminCommand::Drain => {
+                let count = state.clients.len();
+                state.clients.clear();
+                println!("relay: drained {count} clients");
             }
         }
 
@@ -813,16 +850,31 @@ fn main() {
         }
     };
 
-    // Try to restore chat history from S3.
-    // If S3 is unavailable or the file doesn't exist, start with empty history.
+    // Restore per-version chat history from S3.
     let restored_history = s3_client
         .as_ref()
-        .and_then(|s3| {
+        .map(|s3| {
             println!("relay: s3: restoring chat history...");
-            s3.get_json::<s3::PersistedChatHistory>("admin/chat-history.json")
-        })
-        .map(|persisted| {
-            let history = persisted.into_memory();
+            let keys = s3.list_keys("admin/versions/");
+            let hashes: std::collections::HashSet<String> = keys
+                .iter()
+                .filter_map(|k| {
+                    k.strip_prefix("admin/versions/")
+                        .and_then(|rest| rest.split('/').next())
+                        .filter(|h| !h.is_empty())
+                        .map(|h| h.to_string())
+                })
+                .collect();
+            let mut history: HashMap<String, VecDeque<HistoryEntry>> = HashMap::new();
+            for hash in &hashes {
+                let key = format!("admin/versions/{hash}/chat-history.json");
+                if let Some(entries) = s3.get_json::<Vec<protocol::PersistedHistoryEntry>>(&key) {
+                    let restored = protocol::restore_entries(entries);
+                    if !restored.is_empty() {
+                        history.insert(hash.clone(), restored);
+                    }
+                }
+            }
             let total: usize = history.values().map(|v| v.len()).sum();
             println!("relay: s3: restored {total} messages across {} version groups", history.len());
             history

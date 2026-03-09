@@ -1,4 +1,4 @@
-//! Optional S3 client for state persistence and admin dashboard.
+//! Optional S3 client for state persistence.
 //!
 //! All operations are best-effort: failures are logged but never crash the relay.
 //! S3 is the canonical store for persisted state. The relay's in-memory buffer
@@ -8,11 +8,12 @@
 use std::time::Duration;
 
 use aws_sdk_s3::Client;
-use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
-// Re-export persistence types from protocol (shared with client).
-pub use protocol::PersistedChatHistory;
+// Re-export admin types from protocol (shared with arcade-ops).
+pub use protocol::{
+    AdminCommand, ConnectedUser, ConnectedUsers, Heartbeat, RegisteredIdentities,
+};
 
 /// Best-effort S3 client. Every operation logs errors and returns None/false
 /// on failure — never panics or propagates errors.
@@ -136,53 +137,9 @@ impl S3Client {
     }
 }
 
-// -- Admin dashboard types ---------------------------------------------------
-
-/// Relay heartbeat: written to `admin/heartbeat.json`.
-#[derive(Serialize, Deserialize)]
-pub struct Heartbeat {
-    pub timestamp: String,
-    pub uptime_secs: u64,
-    pub client_count: usize,
-    pub commit_hash: String,
-}
-
-/// Connected client info for `admin/connected.json`.
-#[derive(Serialize, Deserialize)]
-pub struct ConnectedUsers {
-    pub timestamp: String,
-    pub users: Vec<ConnectedUser>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ConnectedUser {
-    pub name: String,
-    pub commit_hash: String,
-    pub idle_secs: u64,
-}
-
-/// Registered identities for `admin/identities.json`.
-#[derive(Serialize, Deserialize)]
-pub struct RegisteredIdentities {
-    pub timestamp: String,
-    pub names: Vec<String>,
-}
-
-// -- Admin command types -----------------------------------------------------
-
-/// A command written by the dashboard to `admin/commands/`.
-/// The relay polls for these, executes them, and deletes the file.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "command")]
-pub enum AdminCommand {
-    #[serde(rename = "delete-user")]
-    DeleteUser { name: String },
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use protocol::{HistoryEntry, PersistedHistoryEntry};
+    use protocol::{HistoryEntry, PersistedChatHistory, PersistedHistoryEntry};
     use std::collections::{HashMap, VecDeque};
 
     use base64::Engine;
