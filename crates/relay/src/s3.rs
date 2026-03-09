@@ -87,6 +87,7 @@ impl S3Client {
                 .key(key)
                 .body(json.into())
                 .content_type("application/json")
+                .cache_control("no-cache")
                 .send(),
         );
         if let Err(e) = result {
