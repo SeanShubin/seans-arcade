@@ -73,6 +73,7 @@ struct ChatState {
     input_buffer: String,
     spawned_count: usize,
     input_mode: InputMode,
+    welcomed: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -258,6 +259,21 @@ fn read_text_input(
             KeyCode::Backspace => {
                 chat.input_buffer.pop();
             }
+            KeyCode::KeyC if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) => {
+                let history = chat.messages.iter()
+                    .map(|m| {
+                        if m.from.is_empty() {
+                            m.text.clone()
+                        } else {
+                            format!("{}: {}", m.from, m.text)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    let _ = clipboard.set_text(history);
+                }
+            }
             KeyCode::KeyV if keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight) => {
                 if let Ok(mut clipboard) = arboard::Clipboard::new() {
                     if let Ok(text) = clipboard.get_text() {
@@ -418,15 +434,18 @@ fn process_incoming_messages(
                 // over UDP. This variant is kept for protocol compatibility.
             }
             RelayMessage::Welcome { .. } => {
-                // Download chat history from S3 (canonical store).
-                fetch_chat_history_from_s3(&mut chat);
+                if !chat.welcomed {
+                    chat.welcomed = true;
+                    // Download chat history from S3 (canonical store).
+                    fetch_chat_history_from_s3(&mut chat);
 
-                let config_path = config.data_dir.join("config.toml");
-                chat.messages.push(ChatMessage {
-                    from: String::new(),
-                    text: format!("Your config is at: {}", config_path.display()),
-                    is_system: true,
-                });
+                    let config_path = config.data_dir.join("config.toml");
+                    chat.messages.push(ChatMessage {
+                        from: String::new(),
+                        text: format!("Your config is at: {}", config_path.display()),
+                        is_system: true,
+                    });
+                }
             }
             RelayMessage::RejectVersion { expected } => {
                 chat.messages.push(ChatMessage {
