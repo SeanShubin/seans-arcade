@@ -300,11 +300,11 @@ Cross-game interaction flows through the container, never directly between games
 
 ### Transition function identity via MIR hash
 
-**Decision:** Each game's transition function is identified by a hash of its Rust MIR (Mid-level Intermediate Representation). The build system extracts MIR for each game crate, hashes it, and embeds the hash in the binary. Inputs are tagged with the MIR hash of the transition function that interprets them, not the commit hash of the overall build.
+**Decision:** Each game's transition function is identified by a hash of its Rust MIR (Mid-level Intermediate Representation). CI extracts MIR for each game crate (`-Z unpretty=mir`, requires nightly toolchain), hashes it, and writes the hash as a build artifact alongside the binary. Inputs are tagged with the MIR hash of the transition function that interprets them, not the commit hash of the overall build.
 
 The MIR hash is per-game, not per-build. A commit that changes Chat code does not change the Pong MIR hash, so Pong replays remain valid. A commit that changes Pong logic produces a new Pong MIR hash, correctly invalidating old Pong replays without affecting other games.
 
-Games do not know their own MIR hash. The hash is metadata *about* the game, computed by the build system and injected into the host (arcade or standalone harness). The host tags inputs and replay logs with the hash. The game crate has no dependency on the hashing mechanism.
+Games do not know their own MIR hash. The hash is metadata *about* the game, not embedded in the binary. It is computed by CI and stored as a build artifact. The host (arcade or standalone harness) reads the hash file at startup and uses it to tag inputs and replay logs. The game crate has no dependency on the hashing mechanism.
 
 **Alternatives rejected:**
 
@@ -313,12 +313,16 @@ Games do not know their own MIR hash. The hash is metadata *about* the game, com
 | **Commit hash** | Entire repository | Too coarse — unrelated changes invalidate replays. Already used for overall build identity, but not suitable for per-game transition function identity. |
 | **Manual version bump** | Developer's memory | Error-prone — forgetting to bump silently allows incompatible clients. |
 | **Source hash** | Source files | False positives from comment and formatting changes that don't affect behavior. |
-| **AST hash** | Parsed syntax tree | False positives from syntactic differences that compile to identical behavior. |
+| **AST hash** | Parsed syntax tree | Fewer false positives than source hash, but more than MIR. AST changes on any refactor (rename, reorder, extract function) even when behavior is identical. Refactors happen more often than toolchain upgrades, so AST produces more false positives in practice. |
 | **LLVM IR hash** | LLVM intermediate representation | More sensitive to compiler internals than MIR without being more useful. |
 | **Object code hash** | Compiled `.o` files | Too many false positives — optimization level, debug flags, and link order change output without changing behavior. |
 | **Separate repositories per game** | Per-repo commit hash | Solves the granularity problem but unnecessary once MIR hashing provides per-game identity within a monorepo. Adds operational overhead of multi-repo management. |
 
-**Rationale:** MIR is the sweet spot in the compilation pipeline. It represents actual computation — post-desugaring, post-monomorphization — so it ignores comments, formatting, and syntactic sugar. It is pre-optimization, so it is not affected by optimization level or debug flags. Combined with a pinned compiler version (already required for cross-platform determinism), MIR changes when and only when the transition function's behavior changes. The crate boundary (one crate per game) provides a natural scope for MIR extraction. The existing runtime checksum infrastructure catches anything the MIR hash misses.
+**Key tradeoff — MIR vs AST:** Every option has false positives. The question is which trigger fires more often. AST changes on every refactor (variable rename, function extraction, parameter reorder) — things that happen frequently and don't change behavior. MIR changes on toolchain upgrades — infrequent, deliberate events where everything is already being validated. Since refactors happen far more often than toolchain upgrades, MIR produces fewer false positives in practice despite its theoretical instability.
+
+**MIR extraction requires nightly Rust.** `-Z unpretty=mir` is an unstable compiler flag. The toolchain is pinned to a specific nightly version (e.g., `nightly-2026-03-01` via `rust-toolchain.toml`). MIR representation can change between Rust versions, but nothing changes on the developer's machine until they choose to update `rust-toolchain.toml`. A toolchain upgrade is a deliberate act — the developer chooses when it happens, tests everything at that point, and accepts any hash invalidation as part of the upgrade.
+
+**Rationale:** MIR represents actual computation — post-desugaring, post-monomorphization — so it ignores comments, formatting, and syntactic sugar. It is pre-optimization, so it is not affected by optimization level or debug flags. The crate boundary (one crate per game) provides a natural scope for MIR extraction. The existing runtime checksum infrastructure catches anything the MIR hash misses.
 
 **See:** [network-architecture.md](architecture/network-architecture.md) — Simulation Context: When Lockstep Applies
 
