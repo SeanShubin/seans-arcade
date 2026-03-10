@@ -46,6 +46,34 @@ A progressive walkthrough of the networking concepts specific to our chosen stra
 
 Two players on different machines need to see the same game. Data takes time to travel between them. Everything else follows from this.
 
+### Simulation Context: When Lockstep Applies
+
+Not everything in the arcade needs deterministic lockstep. The dividing line is **causal state dependency** — does the output of step N feed into step N+1, with multiple clients computing independently?
+
+A **simulation context** is the minimal unit that requires lockstep: a bounded combination of state, a state transition function, and an input stream. Each simulation context is:
+
+- **Isolated** — its state is not readable or writable by any other context
+- **Deterministic** — same prior state + same inputs = same next state
+- **Identified** — so infrastructure can route inputs to the right context and logs remain meaningful
+
+A pong match is one simulation context. Two simultaneous pong matches are two separate contexts (same transition function code, different state and inputs). Chat is not a simulation context at all — messages are independent events where one does not affect another, so there is no state to drift even if delivery is out of order.
+
+The question for any feature: "Are multiple clients independently computing the next state from the current state?" If yes, it needs a simulation context with all the determinism guarantees. If clients are just reacting to authoritative messages from a server, it doesn't.
+
+Everything outside simulation contexts — chat, lobbies, matchmaking, presence — is conventional client-server messaging. The relay and logging infrastructure must be **context-aware**: inputs are tagged with which simulation context they belong to, and input logs record which game type (and version of its transition function) produced them. Without this, logged inputs are uninterpretable and unreplayable.
+
+### Application Spaces
+
+The application is organized into named spaces, each with different networking characteristics:
+
+| Space        | Description                                                                                             | Simulation context? |
+| ------------ | ------------------------------------------------------------------------------------------------------- | ------------------- |
+| **Arcade**   | The shared navigable space where players exist as avatars. Uses diegetic UI — players walk up to game cabinets to join games rather than clicking menus. All connected players share this space. | Yes                 |
+| **Chat**     | Text communication available everywhere. Messages are independent events — one message does not affect another, so there is no state to drift even if delivery is out of order.                  | No                  |
+| **\<Game\>** | Individual game sessions (e.g., Pong). Each session is its own simulation context with its own state, transition function, and input stream. Players enter from the Arcade.                     | Yes (per session)   |
+
+Chat is conventional client-server messaging. The Arcade and each game session are separate simulation contexts — isolated state, deterministic transition functions, identified input streams. A player in the Arcade who walks up to a Pong cabinet and joins transitions from the Arcade simulation context into a Pong simulation context.
+
 ### Ticks: A Shared Clock That Isn't a Clock
 
 The simulation doesn't advance in real-world time — it advances in **ticks**. Tick 150 means "the game state after 150 simulation steps." Every client agrees on what tick 150 means in terms of game state, but they don't process tick 150 at the same wall-clock moment.

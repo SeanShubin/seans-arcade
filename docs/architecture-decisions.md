@@ -8,13 +8,30 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 ## Project Structure
 
-### Three binaries: game client, relay server, operator CLI
+### Crate structure
 
-**Decision:** The project produces three separate Rust binaries: `arcade` (the Bevy game client players run), `relay` (the lightweight input coordinator on AWS), and `arcade-ops` (the operator's single interface for monitoring, management, analytics, and infrastructure control).
+**Decision:** The project is a monorepo with the following crate layers:
 
-**Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server).
+| Crate | Kind | Depends on | Purpose |
+| --- | --- | --- | --- |
+| **`game-interface`** | lib | nothing | The trait that every game implements. Defines the contract: state type, input type, transition function. No Bevy dependency, no networking, no hosting knowledge. |
+| **`pong`** (one per game) | lib | `game-interface` | Implements the trait. Pure transition function. Cannot tell whether it is running standalone or inside the arcade. |
+| **`standalone`** | lib | `game-interface` | Generic host harness for running any game outside the arcade. Provides window setup, local input capture, simulation loop, rendering, replay recording/playback — all generic over the `game-interface` trait. |
+| **`pong-standalone`** (one per game) | bin | `standalone`, `pong` | Entry point that wires a game to the standalone harness. Minimal code — typically one line: `standalone::run::<PongGame>()`. |
+| **`protocol`** | lib | nothing | Wire format between client and relay. Serialization, admin types, S3 persistence types. |
+| **`arcade`** | bin | `game-interface`, `protocol`, all game crates | The Bevy game client. Hosts all games, provides the navigable Arcade space, chat, networking. Acts as the production container for game plugins. |
+| **`relay`** | bin | `protocol` | The lightweight input coordinator on AWS. Routes inputs by simulation context ID. No game state, no game logic. |
+| **`arcade-ops`** | bin | `protocol` | Operator CLI for monitoring, management, analytics, and infrastructure control. |
 
-**Rationale:** The game client and relay have different deployment targets (player machines vs. AWS VM) and different security postures (local vs. internet-facing). The operator CLI consolidates all admin tasks because they share configuration (AWS credentials, relay address, S3 bucket) and are all developer-facing. Keeping admin out of the relay means the relay binary stays minimal with no admin attack surface. Three binaries is the minimum — fewer conflates concerns, more fragments shared config.
+**Key properties:**
+- Game crates depend only on `game-interface` — never on `arcade`, `standalone`, `protocol`, or each other.
+- `game-interface` has no dependencies on any other project crate.
+- The `standalone` crate and the `arcade` crate are both hosts that satisfy the same `game-interface` contract. Games cannot distinguish between them.
+- Each game has two crates: the game logic (lib) and its standalone entry point (bin). The standalone crates contain almost no code — just the dependency wiring.
+
+**Alternatives rejected:** A single binary with mode flags (conflates player-facing and operator concerns, ships admin tooling to every player), many small scripts (scattered config, duplicated credential handling), or baking admin features into the relay (exposes admin surface on an internet-facing server). Separate repositories per game (unnecessary once MIR hashing provides per-game transition function identity without needing per-repo commit hashes).
+
+**Rationale:** The game client and relay have different deployment targets (player machines vs. AWS VM) and different security postures (local vs. internet-facing). The operator CLI consolidates all admin tasks because they share configuration (AWS credentials, relay address, S3 bucket) and are all developer-facing. Keeping admin out of the relay means the relay binary stays minimal with no admin attack surface. The two-crate-per-game pattern (lib + standalone bin) follows from the Matryoshka principle — the game is the invariant, the host is the variable. The standalone harness crate eliminates duplication across standalone entry points.
 
 ---
 
@@ -184,13 +201,15 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **See:** [network-architecture.md](architecture/network-architecture.md) — Stalls vs. Dropping
 
-### Commit hash as the single code identifier
+### Commit hash as the build identifier
 
-**Decision:** The git commit hash is the single identifier for "this exact code." It is embedded at build time (build script reads `git rev-parse HEAD`), included in the Hello handshake, and logged on connection events. It replaces both the manually-bumped application version integer and any derived code/spec hashes.
+**Decision:** The git commit hash identifies the overall build. It is embedded at build time (build script reads `git rev-parse HEAD`), included in the Hello handshake, and logged on connection events. It replaces the manually-bumped application version integer.
 
-**Alternatives rejected:** Manually-bumped version integer (`VERSION: u32 = 7`) — requires remembering to bump, and forgetting silently allows incompatible clients. Spec hash derived from event type definitions — only detects wire format changes, not gameplay logic changes (e.g., changing paddle speed doesn't change the spec hash, but produces different simulation results from the same inputs). Code hash derived from source files — the commit hash already identifies the exact source, making a separate source hash redundant.
+The commit hash identifies the build, not individual transition functions. For per-game transition function identity, see [Transition function identity via MIR hash](#transition-function-identity-via-mir-hash). The two work together: the commit hash tells you which code to check out and build; the MIR hash tells you whether a specific game's logic actually changed.
 
-**Rationale:** In deterministic lockstep, any code change — wire format, gameplay logic, constants, physics — produces different simulation results from the same inputs. The commit hash captures all of these because it identifies the exact source code. It changes automatically on every commit without anyone remembering to bump anything. For replay, the commit hash tells you exactly which code to check out and build. For session compatibility, same commit hash = same code = same simulation. The CI pipeline writes `$GITHUB_SHA` to the S3 version file, eliminating the manual version bump step entirely.
+**Alternatives rejected:** Manually-bumped version integer (`VERSION: u32 = 7`) — requires remembering to bump, and forgetting silently allows incompatible clients. Using the commit hash as the transition function identity — too coarse, since unrelated changes (Chat, Arcade, docs) change the hash even when a game's logic is unchanged, invalidating replays unnecessarily.
+
+**Rationale:** The commit hash changes automatically on every commit without anyone remembering to bump anything. It tells you exactly which code to check out and build. The CI pipeline writes `$GITHUB_SHA` to the S3 version file, eliminating the manual version bump step entirely. Per-game compatibility is handled by MIR hashes, not the commit hash.
 
 **See:** [distribution.md](architecture/distribution.md) — Version Check, [network-operations.md](architecture/network-operations.md) — Version Index
 
@@ -276,6 +295,30 @@ Cross-game interaction flows through the container, never directly between games
 **Alternatives rejected:** `thread_rng()` or `StdRng` for gameplay randomness (`StdRng`'s algorithm is not guaranteed stable across Rust versions), a single shared PRNG for both gameplay and cosmetics (cosmetic draw count divergence causes gameplay desync), or avoiding randomness entirely.
 
 **Rationale:** Deterministic lockstep requires identical simulation across all clients. A seeded PRNG produces the same sequence on every client given the same seed and the same draw order. Distributing the seed as a game input means it travels through the existing tick-ordered input stream — no new infrastructure. Separating gameplay and cosmetic PRNGs ensures that visual-only randomness (which may vary with frame rate or rendering differences) cannot perturb the gameplay sequence. The existing checksum infrastructure catches any divergence if PRNG draw order accidentally differs between clients.
+
+### Transition function identity via MIR hash
+
+**Decision:** Each game's transition function is identified by a hash of its Rust MIR (Mid-level Intermediate Representation). The build system extracts MIR for each game crate, hashes it, and embeds the hash in the binary. Inputs are tagged with the MIR hash of the transition function that interprets them, not the commit hash of the overall build.
+
+The MIR hash is per-game, not per-build. A commit that changes Chat code does not change the Pong MIR hash, so Pong replays remain valid. A commit that changes Pong logic produces a new Pong MIR hash, correctly invalidating old Pong replays without affecting other games.
+
+Games do not know their own MIR hash. The hash is metadata *about* the game, computed by the build system and injected into the host (arcade or standalone harness). The host tags inputs and replay logs with the hash. The game crate has no dependency on the hashing mechanism.
+
+**Alternatives rejected:**
+
+| Approach | What gets hashed | Why rejected |
+| --- | --- | --- |
+| **Commit hash** | Entire repository | Too coarse — unrelated changes invalidate replays. Already used for overall build identity, but not suitable for per-game transition function identity. |
+| **Manual version bump** | Developer's memory | Error-prone — forgetting to bump silently allows incompatible clients. |
+| **Source hash** | Source files | False positives from comment and formatting changes that don't affect behavior. |
+| **AST hash** | Parsed syntax tree | False positives from syntactic differences that compile to identical behavior. |
+| **LLVM IR hash** | LLVM intermediate representation | More sensitive to compiler internals than MIR without being more useful. |
+| **Object code hash** | Compiled `.o` files | Too many false positives — optimization level, debug flags, and link order change output without changing behavior. |
+| **Separate repositories per game** | Per-repo commit hash | Solves the granularity problem but unnecessary once MIR hashing provides per-game identity within a monorepo. Adds operational overhead of multi-repo management. |
+
+**Rationale:** MIR is the sweet spot in the compilation pipeline. It represents actual computation — post-desugaring, post-monomorphization — so it ignores comments, formatting, and syntactic sugar. It is pre-optimization, so it is not affected by optimization level or debug flags. Combined with a pinned compiler version (already required for cross-platform determinism), MIR changes when and only when the transition function's behavior changes. The crate boundary (one crate per game) provides a natural scope for MIR extraction. The existing runtime checksum infrastructure catches anything the MIR hash misses.
+
+**See:** [network-architecture.md](architecture/network-architecture.md) — Simulation Context: When Lockstep Applies
 
 ---
 
