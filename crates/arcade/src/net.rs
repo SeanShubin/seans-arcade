@@ -247,6 +247,7 @@ fn send_keepalive(
     timer.0.tick(time.delta());
     if timer.0.just_finished() {
         let msg = serialize(&ClientMessage::Input {
+            context: String::new(),
             payload: Vec::new(),
         });
         let _ = net.socket.send_to(&msg, net.relay_addr);
@@ -256,7 +257,10 @@ fn send_keepalive(
 pub fn send_chat_message(net: &NetSocket, text: &str) {
     use protocol::ChatPayload;
     let payload = serialize(&ChatPayload::Text(text.to_string()));
-    let msg = serialize(&ClientMessage::Input { payload });
+    let msg = serialize(&ClientMessage::Input {
+        context: protocol::context::CHAT.to_string(),
+        payload,
+    });
     let _ = net.socket.send_to(&msg, net.relay_addr);
 }
 

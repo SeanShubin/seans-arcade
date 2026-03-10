@@ -6,7 +6,7 @@
 
 mod s3;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, HashMap};
 use std::io::Read;
 use std::process::Command;
 
@@ -95,7 +95,7 @@ fn print_usage() {
     eprintln!("  status [--watch]               Relay health (uptime, clients, version)");
     eprintln!("  users                          Connected users with idle times");
     eprintln!("  identities                     Registered identity names");
-    eprintln!("  history [--version HASH|--all]  Chat history (default: this version)");
+    eprintln!("  history                        Chat history");
     eprintln!("  logs [FILE|--latest] [--remote] Chat logs (local or S3)");
     eprintln!();
     eprintln!("Control:");
@@ -109,7 +109,7 @@ fn print_usage() {
     eprintln!("  infra plan|apply|destroy");
     eprintln!();
     eprintln!("Analytics:");
-    eprintln!("  stats [--version HASH|--all]    Message volume (default: this version)");
+    eprintln!("  stats                          Message volume");
     eprintln!("  uptime                         Relay uptime from heartbeat");
     eprintln!("  versions                       Client version distribution");
     eprintln!("  health                         Composite system health check");
@@ -202,62 +202,35 @@ fn cmd_identities(bucket: &str) {
     }
 }
 
-fn cmd_history(bucket: &str, args: &[String]) {
+fn cmd_history(bucket: &str, _args: &[String]) {
     let s3 = s3::S3Client::new(bucket);
 
-    // --all: show all versions. --version HASH: specific version. Default: arcade-ops version.
-    let show_all = args.iter().any(|a| a == "--all");
-    let version_filter = args
-        .iter()
-        .position(|a| a == "--version")
-        .and_then(|i| args.get(i + 1).map(|s| s.to_string()));
-    let target = if show_all {
-        None
-    } else {
-        Some(version_filter.unwrap_or_else(|| env!("GIT_COMMIT_HASH").to_string()))
-    };
-
-    let hashes = list_version_hashes(&s3);
-    if hashes.is_empty() {
+    let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>("admin/chat-history.json") else {
         println!("No chat history found.");
         return;
-    }
+    };
 
-    for hash in &hashes {
-        if let Some(ref filter) = target {
-            if !hash.starts_with(filter.as_str()) {
-                continue;
-            }
-        }
+    println!("--- chat history ({} messages) ---", entries.len());
 
-        let key = format!("admin/versions/{hash}/chat-history.json");
-        let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) else {
+    for entry in protocol::restore_entries(entries) {
+        if entry.payload.is_empty() {
             continue;
-        };
-
-        let hash_short = short_hash(hash);
-        println!("--- version {hash_short} ({} messages) ---", entries.len());
-
-        for entry in protocol::restore_entries(entries) {
-            if entry.payload.is_empty() {
-                continue;
+        }
+        match protocol::deserialize::<ChatPayload>(&entry.payload) {
+            Some(ChatPayload::Text(text)) => {
+                let from = if entry.from.is_empty() {
+                    "[system]"
+                } else {
+                    &entry.from
+                };
+                println!("  {from}: {text}");
             }
-            match protocol::deserialize::<ChatPayload>(&entry.payload) {
-                Some(ChatPayload::Text(text)) => {
-                    let from = if entry.from.is_empty() {
-                        "[system]"
-                    } else {
-                        &entry.from
-                    };
-                    println!("  {from}: {text}");
-                }
-                None => {
-                    println!(
-                        "  {}: [undecoded: {} bytes]",
-                        if entry.from.is_empty() { "[system]" } else { &entry.from },
-                        entry.payload.len()
-                    );
-                }
+            None => {
+                println!(
+                    "  {}: [undecoded: {} bytes]",
+                    if entry.from.is_empty() { "[system]" } else { &entry.from },
+                    entry.payload.len()
+                );
             }
         }
     }
@@ -529,67 +502,23 @@ fn cmd_infra(args: &[String]) {
 // Analytics commands
 // =============================================================================
 
-fn cmd_stats(bucket: &str, args: &[String]) {
+fn cmd_stats(bucket: &str, _args: &[String]) {
     let s3 = s3::S3Client::new(bucket);
-    let all_hashes = list_version_hashes(&s3);
 
-    if all_hashes.is_empty() {
+    let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>("admin/chat-history.json") else {
         println!("No data found.");
         return;
-    }
-
-    // --all: all versions. --version HASH: specific. Default: arcade-ops version.
-    let show_all = args.iter().any(|a| a == "--all");
-    let version_filter = args
-        .iter()
-        .position(|a| a == "--version")
-        .and_then(|i| args.get(i + 1).map(|s| s.to_string()));
-    let target = if show_all {
-        None
-    } else {
-        Some(version_filter.unwrap_or_else(|| env!("GIT_COMMIT_HASH").to_string()))
     };
 
-    let hashes: Vec<&String> = all_hashes
-        .iter()
-        .filter(|h| target.as_ref().map_or(true, |t| h.starts_with(t.as_str())))
-        .collect();
-
-    if hashes.is_empty() {
-        println!("No data found for specified version.");
-        return;
-    }
-
-    let mut total_messages = 0usize;
     let mut total_users: HashSet<String> = HashSet::new();
-
-    for hash in &hashes {
-        let key = format!("admin/versions/{hash}/chat-history.json");
-        if let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) {
-            total_messages += entries.len();
-            for entry in &entries {
-                if !entry.from.is_empty() {
-                    total_users.insert(entry.from.clone());
-                }
-            }
+    for entry in &entries {
+        if !entry.from.is_empty() {
+            total_users.insert(entry.from.clone());
         }
     }
 
-    println!("Total messages:  {total_messages}");
+    println!("Total messages:  {}", entries.len());
     println!("Unique senders:  {}", total_users.len());
-    println!("Version groups:  {}", hashes.len());
-
-    if hashes.len() > 1 {
-        println!("\nPer version:");
-        println!("{:<12} {:>8}", "VERSION", "MESSAGES");
-        for hash in &hashes {
-            let key = format!("admin/versions/{hash}/chat-history.json");
-            if let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) {
-                let hash_short = short_hash(hash);
-                println!("{:<12} {:>8}", hash_short, entries.len());
-            }
-        }
-    }
 }
 
 fn cmd_uptime(bucket: &str) {
@@ -740,17 +669,11 @@ fn data_versions(bucket: &str) {
     let our_schema = protocol::current_payload_schema(current_hash);
 
     println!(
-        "{:<3} {:<12} {:>8} {:>10}  {:<18}",
-        "", "HASH", "MESSAGES", "SIZE", "SCHEMA"
+        "{:<3} {:<12} {:>10}  {:<18}",
+        "", "HASH", "SIZE", "SCHEMA"
     );
 
     for hash in &hashes {
-        let key = format!("admin/versions/{hash}/chat-history.json");
-        let msg_count = s3
-            .get_json::<Vec<PersistedHistoryEntry>>(&key)
-            .map(|e| e.len())
-            .unwrap_or(0);
-
         let size = s3.prefix_size(&format!("admin/versions/{hash}/"));
         let hash_short = short_hash(hash);
 
@@ -770,10 +693,9 @@ fn data_versions(bucket: &str) {
         };
 
         println!(
-            "{:<3} {:<12} {:>8} {:>10}  {:<18}",
+            "{:<3} {:<12} {:>10}  {:<18}",
             marker,
             hash_short,
-            msg_count,
             format_bytes(size),
             schema_label
         );
@@ -823,51 +745,21 @@ fn data_inspect(bucket: &str, hash_prefix: &str) {
             println!("Version:     {hash_short}");
             println!("Schema:      {compat} (fingerprint: {})", short_hash(&schema.fingerprint));
             println!("Types:       {}", schema.types.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", "));
-            println!();
         }
         None => {
             let hash_short = short_hash(hash);
             println!("Version:     {hash_short} (no schema metadata)");
-            println!();
         }
     }
 
-    let key = format!("admin/versions/{hash}/chat-history.json");
-    let Some(entries) = s3.get_json::<Vec<PersistedHistoryEntry>>(&key) else {
-        eprintln!("No chat history for version {hash_prefix}");
-        return;
-    };
-
-    let restored = protocol::restore_entries(entries);
-    let mut decoded = 0usize;
-    let mut undecoded = 0usize;
-
-    for entry in &restored {
-        if entry.payload.is_empty() {
-            continue;
-        }
-        let from = if entry.from.is_empty() {
-            "[system]"
-        } else {
-            &entry.from
-        };
-        match protocol::deserialize::<ChatPayload>(&entry.payload) {
-            Some(ChatPayload::Text(text)) => {
-                println!("  {from}: {text}");
-                decoded += 1;
-            }
-            None => {
-                println!("  {from}: [undecoded: {} bytes]", entry.payload.len());
-                undecoded += 1;
-            }
-        }
+    // List S3 keys for this version
+    let prefix = format!("admin/versions/{hash}/");
+    let keys = s3.list_keys(&prefix);
+    println!("Files:       {}", keys.len());
+    for key in &keys {
+        let name = key.strip_prefix(&prefix).unwrap_or(key);
+        println!("  {name}");
     }
-
-    println!();
-    println!(
-        "{} messages: {decoded} decoded, {undecoded} undecoded",
-        decoded + undecoded
-    );
 }
 
 fn data_delete(bucket: &str, hash_prefix: &str) {

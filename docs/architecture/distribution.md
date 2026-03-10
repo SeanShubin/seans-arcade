@@ -74,9 +74,9 @@ The binary knows its own platform at compile time and fetches the correct artifa
 
 ## Relay Version Isolation
 
-The relay reads the commit hash from each client's Hello handshake and groups clients by version. Clients with different commit hashes cannot interact — each version group operates independently. There is no rejection; a client running an old version simply won't see clients running a newer version (and vice versa). This naturally handles any number of concurrent versions.
+The relay reads the commit hash from each client's Hello handshake. Version isolation applies to **simulation context inputs only** — inputs routed to a specific simulation context (Arcade, Pong, etc.) are broadcast only to clients with the same commit hash, because deterministic lockstep requires identical code. **Chat is not version-isolated** — chat messages are broadcast to all connected clients regardless of version, because chat has no simulation context and messages are independent events (see [network-architecture.md](network-architecture.md) — Simulation Context: When Lockstep Applies).
 
-The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the single code identifier.
+The commit hash in the Hello is also logged to the canonical event log on connection events, enabling deterministic replay — the log tells you exactly which code to check out and build. See [architecture-decisions.md](../architecture-decisions.md) — Commit hash as the build identifier.
 
 ## Release Workflow (Developer Side)
 
@@ -120,9 +120,7 @@ The version file is generated into the `deploy/` directory and uploaded alongsid
 
 Running clients continue on their current version until the user relaunches. There are no mid-session updates, no background downloads, and no grace period. The startup auto-update flow (above) ensures that every new launch gets the latest version.
 
-The relay groups clients by commit hash. Clients with different commit hashes cannot interact — each version group operates independently. Multiple versions can coexist simultaneously. For a small invite-only group, coordinating a relaunch is trivial; the complexity of live update machinery is not justified.
-
-Logs are split by version — every entry in a given log shares the same commit hash. The commit hash is recorded once per log, and replaying requires checking out the corresponding commit.
+The relay groups clients by commit hash for simulation context routing. Simulation context inputs (game inputs, Arcade inputs) are only broadcast to clients with the same commit hash. Chat messages are broadcast to all clients regardless of version. Multiple versions can coexist simultaneously. For a small invite-only group, coordinating a relaunch is trivial; the complexity of live update machinery is not justified.
 
 **Envelope vs. payload — why most updates skip the relay:**
 The relay understands the **protocol envelope** — message type, tick number, player slot, commit hash in Hello — but treats input **payloads as opaque bytes**. Game logic changes (new input types, new features, balance tweaks) only change the payload; the relay forwards them without knowing or caring. Only changes to the envelope itself (new message types, framing format, handshake changes) require a relay update. This is why "client code changed, relay protocol unchanged" is the common case in the table below.
@@ -131,7 +129,7 @@ The relay understands the **protocol envelope** — message type, tick number, p
 
 | Scenario                                          | What happens                                                                                                                                                          |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash and form a new version group. Old-version clients continue undisturbed. No relay downtime.             |
+| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash. Chat continues to work across versions. Simulation contexts are version-isolated. No relay downtime.             |
 | **Relay protocol changed**                        | CI deploys new relay binary. Relay restart disconnects all clients. Clients auto-update on next launch via the startup flow, then reconnect with the correct version. |
 
 ## Cross-Platform Considerations (Bevy)

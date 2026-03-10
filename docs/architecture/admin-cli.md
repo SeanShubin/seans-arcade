@@ -23,7 +23,7 @@ The relay remains unchanged — it writes JSON state files to S3 and polls `admi
 
 ## S3 Layout
 
-All admin data lives under the `admin/` prefix in the existing `arcade.seanshubin.com` bucket. Global state (relay health, connected users, identities, commands) lives at the top level. Per-version data (chat history, schema, logs) is nested under `admin/versions/<hash>/`.
+All admin data lives under the `admin/` prefix in the existing `arcade.seanshubin.com` bucket. Global state (relay health, connected users, identities, chat history, commands) lives at the top level. Per-version data (schema) is nested under `admin/versions/<hash>/`.
 
 ```
 s3://arcade.seanshubin.com/
@@ -31,27 +31,20 @@ s3://arcade.seanshubin.com/
     heartbeat.json                       # relay health — timestamp, uptime, client count
     connected.json                       # who's online — names, commit hashes, idle times
     identities.json                      # registered identity names (no secrets)
+    chat-history.json                    # chat messages — shared across all versions
     commands/                            # command files written by the CLI, consumed by relay
     versions/
       abc123/
         schema.json                      # payload type description for this version
-        chat-history.json                # chat messages for this version only
-        logs/                            # chat log files for this version (future)
       def456/
         schema.json
-        chat-history.json
-        logs/
 ```
 
-### Why per-version nesting
+### Why chat history is version-independent
 
-Previously, all versions shared one `admin/chat-history.json` file with an internal HashMap keyed by commit hash. The nested layout is better because:
+Chat has no simulation context — messages are independent events where one does not affect another. There is no state to drift even if delivery is out of order. Chat history persists across version changes because it was never tied to a transition function. Only simulation context inputs (game inputs, Arcade inputs) are version-isolated.
 
-- **`data versions`** is a single `list_keys("admin/versions/")` — no downloading or parsing
-- **`data delete <hash>`** is a prefix delete — no read-modify-write of a shared file
-- **Schema lives next to the data it describes** — self-contained per version
-- **Per-version files stay small** — no monolithic file growing with every deployment
-- **Client join** only fetches its own version's history — no downloading other versions' data
+Per-version nesting under `admin/versions/<hash>/` is retained for schema metadata, which describes the payload types for that version's simulation contexts.
 
 ### Schema file
 
@@ -87,8 +80,8 @@ The schema is generated from the protocol crate's type definitions (the source o
 | `status` | Relay health: uptime, client count, commit hash, last sync age. `--watch` for auto-refresh. | `admin/heartbeat.json` |
 | `users` | Connected users with idle times, client versions. | `admin/connected.json` |
 | `identities` | All registered identity names. No secrets shown. | `admin/identities.json` |
-| `history` | Chat history, filterable by version or user. | `admin/versions/<hash>/chat-history.json` |
-| `logs` | Chat logs. Currently local-only; remote via S3 once relay uploads logs. | `admin/versions/<hash>/logs/` (future) or local filesystem |
+| `history` | Chat history. | `admin/chat-history.json` |
+| `logs` | Chat logs. Currently local-only; remote via S3 once relay uploads logs. | Local filesystem or S3 (future) |
 
 ### Control (write commands to S3)
 
@@ -117,7 +110,7 @@ Commands are written as JSON files to `admin/commands/`. The relay polls, execut
 
 | Command | Description | Data Source |
 |---------|-------------|-------------|
-| `stats` | Message volume over time, peak hours, active users per day. | `admin/versions/*/chat-history.json`, `admin/versions/*/logs/` |
+| `stats` | Message volume, active users. | `admin/chat-history.json` |
 | `uptime` | Relay uptime history — when it was up, when it went down, total availability. | `admin/heartbeat.json` (track over time) |
 | `versions` | Which client versions are connected, who's outdated. | `admin/connected.json` |
 | `health` | Composite check: relay responding? S3 syncing? cert valid? DNS resolving? | Multiple sources. |
@@ -128,58 +121,28 @@ Analytics commands interpret raw data rather than just displaying it. `stats` sh
 
 | Command | Description | Mechanism |
 |---------|-------------|-----------|
-| `data versions` | List commit hashes with stored data. Shows message count, schema notes, last activity, storage size. | `list_keys("admin/versions/")` + read each version's `schema.json` and `chat-history.json` metadata. |
-| `data inspect <hash>` | Show messages for a version: who sent what, when. Decodes each payload individually — most messages decode across versions. | Reads `from` fields from JSON (always works). Attempts `postcard` deserialization of each payload; shows decoded text on success, `[undecoded: N bytes]` on failure. |
+| `data versions` | List commit hashes with stored data. Shows schema notes and storage size. | `list_keys("admin/versions/")` + read each version's `schema.json`. |
+| `data inspect <hash>` | Show schema info and stored files for a version. | Reads `admin/versions/<hash>/schema.json` and lists files. |
 | `data delete <hash>` | Delete all stored data for a version (with confirmation). | Prefix delete of `admin/versions/<hash>/`. |
 | `data prune` | Delete data for all versions with no connected clients (with confirmation). Combines `data versions` with `users` to find stale versions. | S3 key enumeration + prefix deletion. |
 
 #### Cross-version compatibility
 
-Each version's data directory contains a `schema.json` alongside its `chat-history.json`. The chat history JSON wrapper (`from`, `payload` as base64) is stable across versions — only the payload blob inside is version-specific.
+Chat history is version-independent — it lives at `admin/chat-history.json`, shared across all versions. The JSON wrapper (`from`, `payload` as base64) is stable. Chat payloads are decoded per-message; most messages decode across versions since schema evolution is typically additive.
 
-**Most messages decode across versions.** Postcard encodes enum variants by index. Normal schema evolution is additive — new variants for new game types, new payload kinds. Additive changes mean:
-
-- **New binary reading old data** — always works. The new binary knows all old variants.
-- **Current binary reading newer data** — messages using unchanged variants (e.g. `ChatPayload::Text`) still decode. Only messages using variants the current binary doesn't know about fail.
-
-The only truly breaking changes are reordering variant indices, changing field types of existing variants, or removing variants — things that would never happen accidentally.
-
-**Per-message, not per-version.** Decoding is attempted on every message individually. A version with 200 chat messages and 50 game-input messages will show all 200 chat messages decoded and 50 as `[undecoded: N bytes]` — not 250 failures because the schema "doesn't match."
-
-**Schema is informational, not a gate.** The schema diff tells the operator what changed between versions (e.g. "added variant `GameInput` at index 1") so they can predict which messages won't decode. It never prevents decoding from being attempted.
+**Schema is informational, not a gate.** Each version's `schema.json` describes the payload types for that version's simulation contexts. Schema fingerprints allow quick compatibility checks between versions.
 
 - **Same fingerprint** — identical schema, all payloads will decode.
-- **Different fingerprint** — schema evolved. The diff shows what changed. Most messages likely still decode (additive changes). The CLI decodes each message and reports individual failures.
-- **Missing schema** — old version written before schema support. The CLI decodes each message with no advance info and handles failures gracefully.
-
-Example output:
-
-```
-$ arcade-ops data versions
-  HASH      MESSAGES  SCHEMA                              LAST ACTIVITY         SIZE
-  abc123    47        identical                           2026-03-08 14:22:01   12 KB
-  def456    250       +GameInput (1 new variant)          2026-03-07 09:15:03   48 KB
-  * 9c8acd7 12        current                             2026-03-08 16:00:00   3 KB
-
-$ arcade-ops data inspect def456
-  Schema: +GameInput at index 1 (1 new variant; Text unchanged)
-  Alice  2026-03-07 09:15:00  Hello!
-  Bob    2026-03-07 09:15:03  Hey Alice!
-  Alice  2026-03-07 09:16:12  [undecoded: 48 bytes]  (variant 1)
-  Bob    2026-03-07 09:16:15  Nice shot!
-  ...
-  250 messages: 203 decoded, 47 undecoded
-```
+- **Different fingerprint** — schema evolved. The diff shows what changed.
+- **Missing schema** — old version written before schema support.
 
 ## What the Relay Needs
 
-The relay already writes `heartbeat.json`, `connected.json`, `identities.json` to S3, writes chat history (currently as one monolithic file), and supports `delete-user` commands. New relay work:
+The relay already writes `heartbeat.json`, `connected.json`, `identities.json`, and `chat-history.json` to S3, and supports admin commands (`delete-user`, `reset-identity`, `broadcast`, `drain`). Chat history is stored as a single flat file at `admin/chat-history.json`, shared across all versions.
 
-- **Per-version S3 layout:** write chat history to `admin/versions/<hash>/chat-history.json` instead of one shared `admin/chat-history.json`. One write per active version group per sync cycle.
 - **Schema file:** write `admin/versions/<hash>/schema.json` once on startup. Generated from the protocol crate's payload type definitions.
-- **New command types:** `reset-identity`, `broadcast`, `drain`
-- **Richer heartbeat data:** message counts since last sync, cumulative message count, start time (for uptime history)
-- **Log upload to S3** (future): periodic upload of chat log files to `admin/versions/<hash>/logs/`
+- **Context-based routing:** inputs tagged with context `"chat"` are broadcast to all clients; other inputs are broadcast only to same-version clients.
+- **Log upload to S3** (future): periodic upload of chat log files.
 
 ## What Stays Out
 

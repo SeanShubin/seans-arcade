@@ -144,8 +144,8 @@ impl S3Client {
 
 #[cfg(test)]
 mod tests {
-    use protocol::{HistoryEntry, PersistedChatHistory, PersistedHistoryEntry};
-    use std::collections::{HashMap, VecDeque};
+    use protocol::{HistoryEntry, PersistedHistoryEntry};
+    use std::collections::VecDeque;
 
     use base64::Engine;
     use base64::engine::general_purpose::STANDARD as BASE64;
@@ -153,7 +153,6 @@ mod tests {
     #[test]
     fn persisted_history_roundtrip() {
         // given an in-memory chat history
-        let mut history: HashMap<String, VecDeque<HistoryEntry>> = HashMap::new();
         let mut entries = VecDeque::new();
         entries.push_back(HistoryEntry {
             from: "alice".into(),
@@ -163,31 +162,29 @@ mod tests {
             from: "bob".into(),
             payload: vec![4, 5, 6],
         });
-        history.insert("abc123".into(), entries);
 
         // when we convert to persisted format and back
-        let persisted = PersistedChatHistory::from_memory(&history);
+        let persisted = protocol::persist_entries(&entries);
         let json = serde_json::to_string(&persisted).unwrap();
-        let restored: PersistedChatHistory = serde_json::from_str(&json).unwrap();
-        let result = restored.into_memory();
+        let restored: Vec<PersistedHistoryEntry> = serde_json::from_str(&json).unwrap();
+        let result = protocol::restore_entries(restored);
 
         // then the history matches
-        let group = result.get("abc123").unwrap();
-        assert_eq!(group.len(), 2);
-        assert_eq!(group[0].from, "alice");
-        assert_eq!(group[0].payload, vec![1, 2, 3]);
-        assert_eq!(group[1].from, "bob");
-        assert_eq!(group[1].payload, vec![4, 5, 6]);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].from, "alice");
+        assert_eq!(result[0].payload, vec![1, 2, 3]);
+        assert_eq!(result[1].from, "bob");
+        assert_eq!(result[1].payload, vec![4, 5, 6]);
     }
 
     #[test]
     fn persisted_history_empty_roundtrip() {
         // given an empty chat history
-        let history: HashMap<String, VecDeque<protocol::HistoryEntry>> = HashMap::new();
+        let entries: VecDeque<HistoryEntry> = VecDeque::new();
 
         // when we convert to persisted format and back
-        let persisted = PersistedChatHistory::from_memory(&history);
-        let result = persisted.into_memory();
+        let persisted = protocol::persist_entries(&entries);
+        let result = protocol::restore_entries(persisted);
 
         // then the result is empty
         assert!(result.is_empty());
@@ -195,34 +192,28 @@ mod tests {
 
     #[test]
     fn invalid_base64_entries_are_skipped() {
-        // given a persisted history with an invalid base64 entry
-        let persisted = PersistedChatHistory {
-            groups: HashMap::from([(
-                "abc123".into(),
-                vec![
-                    PersistedHistoryEntry {
-                        from: "alice".into(),
-                        payload: BASE64.encode(&[1, 2, 3]),
-                    },
-                    PersistedHistoryEntry {
-                        from: "bob".into(),
-                        payload: "not valid base64!!!".into(),
-                    },
-                    PersistedHistoryEntry {
-                        from: "charlie".into(),
-                        payload: BASE64.encode(&[7, 8, 9]),
-                    },
-                ],
-            )]),
-        };
+        // given persisted entries with an invalid base64 entry
+        let persisted = vec![
+            PersistedHistoryEntry {
+                from: "alice".into(),
+                payload: BASE64.encode(&[1, 2, 3]),
+            },
+            PersistedHistoryEntry {
+                from: "bob".into(),
+                payload: "not valid base64!!!".into(),
+            },
+            PersistedHistoryEntry {
+                from: "charlie".into(),
+                payload: BASE64.encode(&[7, 8, 9]),
+            },
+        ];
 
         // when we restore to memory
-        let result = persisted.into_memory();
+        let result = protocol::restore_entries(persisted);
 
         // then the valid entries are kept and the invalid one is skipped
-        let group = result.get("abc123").unwrap();
-        assert_eq!(group.len(), 2);
-        assert_eq!(group[0].from, "alice");
-        assert_eq!(group[1].from, "charlie");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].from, "alice");
+        assert_eq!(result[1].from, "charlie");
     }
 }

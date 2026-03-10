@@ -1,8 +1,9 @@
-//! UDP relay server for chat.
+//! UDP relay server.
 //!
-//! Coordinates message exchange between clients. The relay never interprets
-//! application-level payloads — it broadcasts Input messages to all peers
-//! with the same commit hash.
+//! Coordinates message exchange between clients. The relay reads the `context`
+//! tag on each Input to determine routing: chat inputs are broadcast to all
+//! connected clients; simulation context inputs are broadcast only to clients
+//! with the same commit hash. Payloads are treated as opaque bytes.
 //!
 //! Usage: `RELAY_SECRET=test cargo run -p relay [-- --data-dir local/relay --bind 0.0.0.0:7700]`
 
@@ -43,8 +44,8 @@ struct RelayState {
     relay_secret: String,
     log_writer: LogWriter,
     registry_path: std::path::PathBuf,
-    /// Per-version chat history buffer. Key is commit_hash.
-    chat_history: HashMap<String, VecDeque<HistoryEntry>>,
+    /// Chat history buffer. Shared across all versions.
+    chat_history: VecDeque<HistoryEntry>,
     /// Total messages processed since relay start.
     total_messages: u64,
     /// Messages processed since last S3 sync.
@@ -70,6 +71,18 @@ impl RelayState {
             .filter(|(addr, client)| {
                 client.commit_hash == commit_hash && exclude.map_or(true, |ex| *addr != ex)
             })
+            .map(|(addr, _)| RelayAction::SendTo(*addr, msg.clone()))
+            .collect()
+    }
+
+    fn broadcast_to_all(
+        &self,
+        msg: &RelayMessage,
+        exclude: Option<&SocketAddr>,
+    ) -> Vec<RelayAction> {
+        self.clients
+            .iter()
+            .filter(|(addr, _)| exclude.map_or(true, |ex| *addr != ex))
             .map(|(addr, _)| RelayAction::SendTo(*addr, msg.clone()))
             .collect()
     }
@@ -158,7 +171,7 @@ impl RelayState {
                     },
                 );
             }
-            ClientMessage::Input { payload } => {
+            ClientMessage::Input { context, payload } => {
                 let Some(client) = self.clients.get_mut(&src) else {
                     return actions;
                 };
@@ -167,29 +180,38 @@ impl RelayState {
                 let from = client.identity_name.clone();
                 let commit_hash = client.commit_hash.clone();
 
-                if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&payload) {
-                    actions.push(RelayAction::LogChat {
-                        from: from.clone(),
-                        text,
-                    });
+                let is_chat = context == protocol::context::CHAT;
+
+                if is_chat {
+                    if let Some(ChatPayload::Text(text)) = deserialize::<ChatPayload>(&payload) {
+                        actions.push(RelayAction::LogChat {
+                            from: from.clone(),
+                            text,
+                        });
+                    }
                 }
 
-                // Buffer non-empty payloads (skip keepalives)
-                if !payload.is_empty() {
+                // Buffer non-empty chat payloads (skip keepalives)
+                if is_chat && !payload.is_empty() {
                     self.total_messages += 1;
                     self.messages_since_sync += 1;
-                    let buffer = self.chat_history.entry(commit_hash.clone()).or_default();
-                    buffer.push_back(HistoryEntry {
+                    self.chat_history.push_back(HistoryEntry {
                         from: from.clone(),
                         payload: payload.clone(),
                     });
-                    if buffer.len() > CHAT_HISTORY_SIZE {
-                        buffer.pop_front();
+                    if self.chat_history.len() > CHAT_HISTORY_SIZE {
+                        self.chat_history.pop_front();
                     }
                 }
 
                 let broadcast = RelayMessage::Broadcast { from, payload };
-                actions.extend(self.broadcast_actions(&broadcast, &commit_hash, None));
+                if is_chat {
+                    // Chat broadcasts to all connected clients regardless of version
+                    actions.extend(self.broadcast_to_all(&broadcast, None));
+                } else {
+                    // Simulation context inputs route to same-version clients only
+                    actions.extend(self.broadcast_actions(&broadcast, &commit_hash, None));
+                }
             }
             ClientMessage::Disconnect => {
                 if let Some(info) = self.clients.remove(&src) {
@@ -249,10 +271,8 @@ fn execute_actions(
             }
             RelayAction::SyncChatHistory => {
                 if let Some(s3) = s3_client {
-                    for (hash, entries) in &state.chat_history {
-                        let persisted = protocol::persist_entries(entries);
-                        s3.put_json(&format!("admin/versions/{hash}/chat-history.json"), &persisted);
-                    }
+                    let persisted = protocol::persist_entries(&state.chat_history);
+                    s3.put_json("admin/chat-history.json", &persisted);
                 }
             }
         }
@@ -300,11 +320,9 @@ fn sync_to_s3(state: &mut RelayState, s3: &s3::S3Client, start_time: Instant, re
         },
     );
 
-    // Per-version chat history
-    for (hash, entries) in &state.chat_history {
-        let persisted = protocol::persist_entries(entries);
-        s3.put_json(&format!("admin/versions/{hash}/chat-history.json"), &persisted);
-    }
+    // Chat history (shared across all versions)
+    let persisted = protocol::persist_entries(&state.chat_history);
+    s3.put_json("admin/chat-history.json", &persisted);
 
     // Registered identities (names only, no secrets)
     s3.put_json(
@@ -382,15 +400,13 @@ fn poll_admin_commands(state: &mut RelayState, s3: &s3::S3Client) -> Vec<RelayAc
             }
             s3::AdminCommand::Broadcast { message } => {
                 let payload = serialize(&ChatPayload::Text(message.clone()));
-                // Add to each version group's chat history
-                for entries in state.chat_history.values_mut() {
-                    entries.push_back(HistoryEntry {
-                        from: String::new(),
-                        payload: payload.clone(),
-                    });
-                    if entries.len() > CHAT_HISTORY_SIZE {
-                        entries.pop_front();
-                    }
+                // Add to chat history
+                state.chat_history.push_back(HistoryEntry {
+                    from: String::new(),
+                    payload: payload.clone(),
+                });
+                if state.chat_history.len() > CHAT_HISTORY_SIZE {
+                    state.chat_history.pop_front();
                 }
                 // Send to all connected clients
                 let msg = RelayMessage::Broadcast {
@@ -473,7 +489,7 @@ mod tests {
                 relay_secret: "test_secret".to_string(),
                 log_writer: LogWriter::new(&log_dir),
                 registry_path,
-                chat_history: HashMap::new(),
+                chat_history: VecDeque::new(),
                 total_messages: 0,
                 messages_since_sync: 0,
             };
@@ -692,6 +708,7 @@ mod tests {
         let actions = tester.handle(
             addr("1.0.0.1:1001"),
             ClientMessage::Input {
+                context: protocol::context::CHAT.to_string(),
                 payload: chat_payload.clone(),
             },
         );
@@ -726,6 +743,7 @@ mod tests {
         let actions = tester.handle(
             addr("1.0.0.1:1001"),
             ClientMessage::Input {
+                context: protocol::context::CHAT.to_string(),
                 payload: vec![1, 2, 3],
             },
         );
@@ -869,34 +887,15 @@ fn main() {
         }
     };
 
-    // Restore per-version chat history from S3.
+    // Restore chat history from S3.
     let restored_history = s3_client
         .as_ref()
-        .map(|s3| {
+        .and_then(|s3| {
             println!("relay: s3: restoring chat history...");
-            let keys = s3.list_keys("admin/versions/");
-            let hashes: std::collections::HashSet<String> = keys
-                .iter()
-                .filter_map(|k| {
-                    k.strip_prefix("admin/versions/")
-                        .and_then(|rest| rest.split('/').next())
-                        .filter(|h| !h.is_empty())
-                        .map(|h| h.to_string())
-                })
-                .collect();
-            let mut history: HashMap<String, VecDeque<HistoryEntry>> = HashMap::new();
-            for hash in &hashes {
-                let key = format!("admin/versions/{hash}/chat-history.json");
-                if let Some(entries) = s3.get_json::<Vec<protocol::PersistedHistoryEntry>>(&key) {
-                    let restored = protocol::restore_entries(entries);
-                    if !restored.is_empty() {
-                        history.insert(hash.clone(), restored);
-                    }
-                }
-            }
-            let total: usize = history.values().map(|v| v.len()).sum();
-            println!("relay: s3: restored {total} messages across {} version groups", history.len());
-            history
+            let entries = s3.get_json::<Vec<protocol::PersistedHistoryEntry>>("admin/chat-history.json")?;
+            let restored = protocol::restore_entries(entries);
+            println!("relay: s3: restored {} messages", restored.len());
+            Some(restored)
         })
         .unwrap_or_default();
 

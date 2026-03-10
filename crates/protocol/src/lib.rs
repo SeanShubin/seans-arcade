@@ -26,9 +26,17 @@ pub enum ClientMessage {
         new_identity_secret: Option<String>,
     },
     Input {
+        context: String,
         payload: Vec<u8>,
     },
     Disconnect,
+}
+
+/// Well-known context identifiers for routing.
+/// The relay uses these to determine broadcast scope.
+pub mod context {
+    /// Chat messages — broadcast to all connected clients regardless of version.
+    pub const CHAT: &str = "chat";
 }
 
 // ---- Relay -> Client --------------------------------------------------------
@@ -65,12 +73,7 @@ pub enum ChatPayload {
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use std::collections::{HashMap, VecDeque};
-
-#[derive(Serialize, Deserialize)]
-pub struct PersistedChatHistory {
-    pub groups: HashMap<String, Vec<PersistedHistoryEntry>>,
-}
+use std::collections::VecDeque;
 
 #[derive(Serialize, Deserialize)]
 pub struct PersistedHistoryEntry {
@@ -78,51 +81,10 @@ pub struct PersistedHistoryEntry {
     pub payload: String,
 }
 
-impl PersistedChatHistory {
-    /// Snapshot in-memory chat history into a serializable format.
-    pub fn from_memory(history: &HashMap<String, VecDeque<HistoryEntry>>) -> Self {
-        let groups = history
-            .iter()
-            .map(|(hash, entries)| {
-                let persisted = entries
-                    .iter()
-                    .map(|e| PersistedHistoryEntry {
-                        from: e.from.clone(),
-                        payload: BASE64.encode(&e.payload),
-                    })
-                    .collect();
-                (hash.clone(), persisted)
-            })
-            .collect();
-        Self { groups }
-    }
-
-    /// Restore in-memory chat history from a persisted snapshot.
-    /// Entries with invalid base64 are silently skipped.
-    pub fn into_memory(self) -> HashMap<String, VecDeque<HistoryEntry>> {
-        self.groups
-            .into_iter()
-            .map(|(hash, entries)| {
-                let memory = entries
-                    .into_iter()
-                    .filter_map(|e| {
-                        let payload = BASE64.decode(&e.payload).ok()?;
-                        Some(HistoryEntry {
-                            from: e.from,
-                            payload,
-                        })
-                    })
-                    .collect();
-                (hash, memory)
-            })
-            .collect()
-    }
-}
-
-// ---- Per-version persistence helpers ----------------------------------------
+// ---- Chat persistence helpers -----------------------------------------------
 //
-// Used for reading/writing individual version groups to S3.
-// Each version's data lives at admin/versions/<hash>/chat-history.json.
+// Used for reading/writing chat history to S3.
+// Chat history lives at admin/chat-history.json (shared across all versions).
 
 /// Convert a single version group to persisted format.
 pub fn persist_entries(entries: &VecDeque<HistoryEntry>) -> Vec<PersistedHistoryEntry> {
@@ -348,6 +310,7 @@ mod tests {
     fn client_input_with_payload_roundtrip() {
         // given an Input with a non-empty payload
         let msg = ClientMessage::Input {
+            context: "chat".into(),
             payload: vec![1, 2, 3, 4, 5],
         };
 
@@ -355,9 +318,10 @@ mod tests {
         let bytes = serialize(&msg);
         let result: ClientMessage = deserialize(&bytes).expect("should deserialize");
 
-        // then the payload matches
+        // then the context and payload match
         match result {
-            ClientMessage::Input { payload } => {
+            ClientMessage::Input { context, payload } => {
+                assert_eq!(context, "chat");
                 assert_eq!(payload, vec![1, 2, 3, 4, 5]);
             }
             other => panic!("expected Input, got {:?}", other),
@@ -367,7 +331,7 @@ mod tests {
     #[test]
     fn client_input_empty_payload_roundtrip() {
         // given an Input with an empty payload (keepalive)
-        let msg = ClientMessage::Input { payload: vec![] };
+        let msg = ClientMessage::Input { context: String::new(), payload: vec![] };
 
         // when we serialize then deserialize
         let bytes = serialize(&msg);
@@ -375,7 +339,7 @@ mod tests {
 
         // then the payload is empty
         match result {
-            ClientMessage::Input { payload } => {
+            ClientMessage::Input { payload, .. } => {
                 assert!(payload.is_empty());
             }
             other => panic!("expected Input, got {:?}", other),
@@ -606,6 +570,7 @@ mod tests {
             new_identity_secret: None,
         };
         let input = ClientMessage::Input {
+            context: "chat".into(),
             payload: vec![1],
         };
         let disconnect = ClientMessage::Disconnect;

@@ -25,7 +25,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - All clients make **outbound connections** to the AWS relay — no port forwarding, no UPnP, no STUN/TURN
 - Relay protocol is **UDP** — plain socket application, no HTTP, no WebSocket ([details](architecture/network-operations.md))
 - Relay access is **invite-only** via **shared secret in the Hello handshake** — operator distributes a passphrase out-of-band, relay rejects connections without it ([decision](architecture-decisions.md))
-- Hello handshake carries **commit hash, shared secret, identity name, and identity secret** — one message, one round-trip; relay validates secret, validates identity, groups by version ([decision](architecture-decisions.md))
+- Hello handshake carries **commit hash, shared secret, identity name, and identity secret** — one message, one round-trip; relay validates secret, validates identity, records version ([decision](architecture-decisions.md))
 - **Identity registry** on the relay — maps identity names to hashed secrets, persisted to local disk, access control state not game state
 - Identity is a **persistent identity name** with an auto-generated identity secret (4 BIP-39 words) — first-claim registration, enforced by the relay; secret changeable via CLI
 - **Fixed 30-second retry** for all connectivity failures — version check, relay connection, S3 sync ([decision](architecture-decisions.md))
@@ -92,7 +92,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - If versions match → proceed normally
 - If versions differ → **auto-update**: download the platform-specific binary, replace self, restart
 - If version check fails (no internet) → **offline mode**: launch with current version, show offline indicator, retry periodically until reachable
-- The **relay isolates clients by version** — clients with different commit hashes cannot interact
+- The **relay isolates simulation contexts by version** — simulation context inputs are version-scoped; chat is broadcast to all clients regardless of version
 - **Download URL is platform-specific** — platform subdirectories on S3 (e.g., `windows/arcade.exe`, `macos/arcade`, `linux/arcade`); the binary knows its own target at compile time
 - **Self-replacement varies by platform** — Windows requires a rename dance (can't delete running exe); macOS/Linux can overwrite directly
 - **Builds via GitHub Actions CI** — push to `master` triggers parallel native builds (`build-windows`, `build-macos`, `build-linux`); deploy job uploads binaries to S3 in platform subdirectories, invalidates CloudFront, and deploys relay via SSH
@@ -105,7 +105,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Self-installing on first run** (future) — binary copies itself to a standard OS location (`%LOCALAPPDATA%\seans-arcade\` on Windows, `~/Applications/seans-arcade/` on macOS, `~/.local/bin/` on Linux), creates shortcuts, and launches from there; auto-updates happen in that location. Blocked on code signing — unsigned self-installing binaries trigger OS security warnings.
 - **OS user separation** for multi-user machines — each OS account gets its own data directory automatically (`%APPDATA%`, `~/Library/Application Support/`, `~/.config/`). No profiles feature needed; the `--data-dir` flag covers testing with multiple identities on one OS account.
 - Running clients **continue on their current version** until relaunch — no mid-session updates, no background downloads
-- The relay groups clients by commit hash — **multiple versions coexist** independently; each version group operates in isolation
+- The relay groups simulation context inputs by commit hash — **multiple versions coexist** independently; chat crosses version boundaries
 - The relay treats game inputs as **opaque bytes** — only protocol-level changes (message framing, handshake) require relay redeployment; game logic changes are relay-transparent
 - ([mechanism details](architecture/distribution.md))
 

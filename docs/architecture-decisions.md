@@ -215,21 +215,23 @@ The commit hash identifies the build, not individual transition functions. For p
 
 ### Version isolation (no mid-session updates)
 
-**Decision:** Running clients continue on their current version until relaunch. The relay groups clients by commit hash — different versions coexist independently with no interaction. No mid-session update notification, no background download, no grace period.
+**Decision:** Running clients continue on their current version until relaunch. The relay groups simulation context inputs by commit hash — different versions coexist independently. Chat is not version-isolated; chat messages are broadcast to all connected clients regardless of version. No mid-session update notification, no background download, no grace period.
 
-**Alternatives rejected:** Live update orchestration (relay polls version file, notifies clients, background download, grace period with version-aware routing).
+**Alternatives rejected:** Live update orchestration (relay polls version file, notifies clients, background download, grace period with version-aware routing). Full version isolation including chat (unnecessarily partitions conversation across versions).
 
-**Rationale:** For a small invite-only group, coordinating a relaunch is trivial. The live update machinery adds substantial complexity for minimal benefit. Version isolation is simpler to implement and reason about, and naturally handles any number of concurrent versions.
+**Rationale:** For a small invite-only group, coordinating a relaunch is trivial. The live update machinery adds substantial complexity for minimal benefit. Simulation context inputs require version isolation because deterministic lockstep demands identical code. Chat does not — messages are independent events with no causal state dependency, so they can cross version boundaries safely.
 
-**See:** [distribution.md](architecture/distribution.md) — Version Isolation
+**See:** [distribution.md](architecture/distribution.md) — Version Isolation, [network-architecture.md](architecture/network-architecture.md) — Simulation Context: When Lockstep Applies
 
-### Chat messages as game inputs
+### Context-based input routing
 
-**Decision:** Chat is an Input with a chat-typed payload. The relay never distinguishes chat from game inputs. Chat gets tick ordering, logging, replay, and persistence from the existing architecture with zero relay changes.
+**Decision:** Each `Input` message carries a `context` tag that determines broadcast scope. The relay uses the context to route: inputs with context `"chat"` are broadcast to all connected clients regardless of version. All other context values are treated as simulation context inputs and broadcast only to clients with the same commit hash.
 
-**Alternatives rejected:** Separate `ClientMessage::Chat` variant — leaks game concepts into the relay protocol, requires relay changes for each new message type.
+**Previous decision (superseded):** Chat was an opaque Input payload indistinguishable from game inputs. The relay broadcast all inputs to same-version clients only. This unnecessarily partitioned chat across versions.
 
-**Rationale:** The relay treats all inputs as opaque bytes. A chat message is just a payload variant that the client interprets. Chat automatically inherits tick ordering, full message logging, deterministic replay, and S3 persistence without any relay modifications. Adding new message types is a client-only change.
+**Alternatives rejected:** Separate `ClientMessage::Chat` variant — leaks application semantics into the relay protocol. Having the relay deserialize payloads to detect chat — violates the opaque payload principle.
+
+**Rationale:** The relay remains payload-opaque. It reads the context tag (a string) to determine routing scope, but never interprets the payload. The client's focus system determines which context tag is attached to each input. Chat history persists across version changes because it was never tied to a simulation context.
 
 ---
 
