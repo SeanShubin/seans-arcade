@@ -354,14 +354,11 @@ fn handle_text_submit(
 }
 
 /// Download chat history from S3 and push messages into the chat state.
-/// Fetches only this version's history from the per-version S3 layout.
+/// Chat history is shared across all versions at `admin/chat-history.json`.
 /// Best-effort: if the download or parse fails, we just skip history.
 fn fetch_chat_history_from_s3(chat: &mut ChatState) {
-    let commit_hash = crate::version::COMMIT_HASH;
-    let url = format!(
-        "https://arcade.seanshubin.com/admin/versions/{commit_hash}/chat-history.json"
-    );
-    let body = match ureq::get(&url).call() {
+    let url = "https://arcade.seanshubin.com/admin/chat-history.json";
+    let body = match ureq::get(url).call() {
         Ok(mut resp) => match resp.body_mut().read_to_string() {
             Ok(s) => s,
             Err(_) => return,

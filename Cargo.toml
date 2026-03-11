@@ -4,6 +4,7 @@ members = [
     "crates/arcade",
     "crates/relay",
     "crates/arcade-ops",
+    "crates/ast-hash",
     "prototypes/relay",
     "prototypes/net_pong",
 ]

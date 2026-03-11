@@ -1,0 +1,9 @@
+[package]
+name = "ast-hash"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
+sha2 = "0.10"
+glob = "0.3"

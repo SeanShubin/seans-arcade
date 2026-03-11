@@ -340,6 +340,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ast-hash"
+version = "0.1.0"
+dependencies = [
+ "glob",
+ "sha2",
+ "syn",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
