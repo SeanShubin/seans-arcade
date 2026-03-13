@@ -21,6 +21,119 @@ const VIEWPORT_PX: f32 = 1024.0;
 const ORB_RADIUS: f32 = 14.0;
 const GLOW_RADIUS: f32 = 22.0;
 const AVATAR_SPEED: f32 = 400.0;
+const STICK_DEADZONE: f32 = 0.2;
+
+// ---------------------------------------------------------------------------
+// XInput FFI — bypasses Bevy's gilrs (see docs/gilrs-dual-gamepad-bug.md)
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+struct XInputGamepad {
+    buttons: u16,
+    left_trigger: u8,
+    right_trigger: u8,
+    thumb_lx: i16,
+    thumb_ly: i16,
+    thumb_rx: i16,
+    thumb_ry: i16,
+}
+
+#[repr(C)]
+struct XInputState {
+    packet_number: u32,
+    gamepad: XInputGamepad,
+}
+
+const XINPUT_GAMEPAD_DPAD_UP: u16 = 0x0001;
+const XINPUT_GAMEPAD_DPAD_DOWN: u16 = 0x0002;
+const XINPUT_GAMEPAD_DPAD_LEFT: u16 = 0x0004;
+const XINPUT_GAMEPAD_DPAD_RIGHT: u16 = 0x0008;
+
+const ERROR_SUCCESS: u32 = 0;
+
+type XInputGetStateFn = unsafe extern "system" fn(u32, *mut XInputState) -> u32;
+
+fn load_xinput() -> Option<XInputGetStateFn> {
+    use std::ffi::CString;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(name: *const u8) -> *mut std::ffi::c_void;
+        fn GetProcAddress(
+            module: *mut std::ffi::c_void,
+            name: *const u8,
+        ) -> *mut std::ffi::c_void;
+    }
+
+    for dll in &[b"xinput1_4.dll\0" as &[u8], b"xinput9_1_0.dll\0"] {
+        let module = unsafe { LoadLibraryA(dll.as_ptr()) };
+        if module.is_null() {
+            continue;
+        }
+        let proc_name = CString::new("XInputGetState").unwrap();
+        let proc = unsafe { GetProcAddress(module, proc_name.as_ptr() as *const u8) };
+        if !proc.is_null() {
+            return Some(unsafe { std::mem::transmute(proc) });
+        }
+    }
+    None
+}
+
+fn normalize_thumb(value: i16) -> f32 {
+    if value >= 0 {
+        value as f32 / 32767.0
+    } else {
+        value as f32 / 32768.0
+    }
+}
+
+#[derive(Resource, Default)]
+struct GamepadState {
+    left_stick: Vec2,
+    dpad_up: bool,
+    dpad_down: bool,
+    dpad_left: bool,
+    dpad_right: bool,
+}
+
+fn read_gamepad_input(
+    mut state: ResMut<GamepadState>,
+    mut xinput_fn: Local<Option<Option<XInputGetStateFn>>>,
+) {
+    let get_state = match *xinput_fn {
+        Some(Some(f)) => f,
+        Some(None) => return,
+        None => {
+            let loaded = load_xinput();
+            if loaded.is_none() {
+                warn!("Failed to load XInput DLL — gamepad input unavailable");
+            }
+            *xinput_fn = Some(loaded);
+            match loaded {
+                Some(f) => f,
+                None => return,
+            }
+        }
+    };
+
+    let mut xinput_state = std::mem::MaybeUninit::<XInputState>::uninit();
+    let result = unsafe { get_state(0, xinput_state.as_mut_ptr()) };
+
+    if result != ERROR_SUCCESS {
+        *state = GamepadState::default();
+        return;
+    }
+
+    let xs = unsafe { xinput_state.assume_init() };
+    let gp = &xs.gamepad;
+    let btn = |mask: u16| gp.buttons & mask != 0;
+
+    state.left_stick = Vec2::new(normalize_thumb(gp.thumb_lx), normalize_thumb(gp.thumb_ly));
+    state.dpad_up = btn(XINPUT_GAMEPAD_DPAD_UP);
+    state.dpad_down = btn(XINPUT_GAMEPAD_DPAD_DOWN);
+    state.dpad_left = btn(XINPUT_GAMEPAD_DPAD_LEFT);
+    state.dpad_right = btn(XINPUT_GAMEPAD_DPAD_RIGHT);
+}
 
 fn main() {
     App::new()
@@ -38,13 +151,15 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<CameraPos>()
         .init_resource::<ScrollConfig>()
+        .init_resource::<GamepadState>()
+        .init_resource::<MovementInput>()
         .insert_resource(CameraHome(Vec2::new(
             ARENA_PX / 2.0 + TILE_PX / 2.0,
             ARENA_PX / 2.0 + TILE_PX / 2.0,
         )))
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, hud_system)
-        .add_systems(Update, (animate_orb, move_avatar, update_camera, wrap_tiles, wrap_avatar, sync_borders).chain())
+        .add_systems(Update, (read_gamepad_input, gather_input, animate_orb, move_avatar, update_camera, wrap_tiles, wrap_avatar, sync_borders).chain())
         .run();
 }
 
@@ -62,6 +177,11 @@ struct Tile {
     grid_x: usize,
     grid_y: usize,
 }
+
+/// Abstract movement direction (unit vector or zero). Written by `gather_input`,
+/// read by anything that needs to know which way the player wants to go.
+#[derive(Resource, Default)]
+struct MovementInput(Vec2);
 
 /// Logical camera position, separate from the Transform so we can wrap cleanly.
 #[derive(Resource, Default)]
@@ -290,30 +410,53 @@ fn animate_orb(
     }
 }
 
+/// Merge all input sources into a single abstract direction vector.
+fn gather_input(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    gamepad: Res<GamepadState>,
+    mut movement: ResMut<MovementInput>,
+) {
+    let mut dir = Vec2::ZERO;
+
+    // Keyboard
+    if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp) {
+        dir.y += 1.0;
+    }
+    if keyboard.pressed(KeyCode::KeyS) || keyboard.pressed(KeyCode::ArrowDown) {
+        dir.y -= 1.0;
+    }
+    if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
+        dir.x -= 1.0;
+    }
+    if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
+        dir.x += 1.0;
+    }
+
+    // Gamepad d-pad
+    if gamepad.dpad_up { dir.y += 1.0; }
+    if gamepad.dpad_down { dir.y -= 1.0; }
+    if gamepad.dpad_left { dir.x -= 1.0; }
+    if gamepad.dpad_right { dir.x += 1.0; }
+
+    // Gamepad left stick
+    if gamepad.left_stick.length() > STICK_DEADZONE {
+        dir += gamepad.left_stick;
+    }
+
+    movement.0 = if dir == Vec2::ZERO { Vec2::ZERO } else { dir.normalize() };
+}
+
 fn move_avatar(
     time: Res<Time>,
     config: Res<ScrollConfig>,
-    input: Res<ButtonInput<KeyCode>>,
+    movement: Res<MovementInput>,
     mut avatar_q: Query<&mut Transform, (With<Avatar>, Without<Glow>)>,
     mut glow_q: Query<&mut Transform, (With<Glow>, Without<Avatar>)>,
 ) {
-    let mut dir = Vec2::ZERO;
-    if input.pressed(KeyCode::KeyW) || input.pressed(KeyCode::ArrowUp) {
-        dir.y += 1.0;
-    }
-    if input.pressed(KeyCode::KeyS) || input.pressed(KeyCode::ArrowDown) {
-        dir.y -= 1.0;
-    }
-    if input.pressed(KeyCode::KeyA) || input.pressed(KeyCode::ArrowLeft) {
-        dir.x -= 1.0;
-    }
-    if input.pressed(KeyCode::KeyD) || input.pressed(KeyCode::ArrowRight) {
-        dir.x += 1.0;
-    }
+    let dir = movement.0;
     if dir == Vec2::ZERO {
         return;
     }
-    dir = dir.normalize();
 
     let Ok(mut tf) = avatar_q.single_mut() else { return };
     let delta = dir * AVATAR_SPEED * config.speed_mult * time.delta_secs();
