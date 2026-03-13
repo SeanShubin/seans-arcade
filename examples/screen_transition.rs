@@ -37,7 +37,7 @@ fn main() {
         .init_resource::<ScrollConfig>()
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, hud_system)
-        .add_systems(Update, (sync_borders, move_avatar, update_camera, wrap_tiles).chain())
+        .add_systems(Update, (move_avatar, update_camera, wrap_tiles, sync_borders).chain())
         .run();
 }
 
@@ -64,7 +64,7 @@ struct ScrollConfig {
 
 impl Default for ScrollConfig {
     fn default() -> Self {
-        Self { buffer_frac: 0.05 }
+        Self { buffer_frac: 0.25 }
     }
 }
 
