@@ -1,8 +1,8 @@
 //! Plasma circle: arcs of connected points born at center, traveling outward.
 //!
-//! 2D version — all math is in Vec2, rendered with Camera2d and Sprite-based
-//! mesh quads. Each arc is a polyline of points that fly outward from the center
-//! and die when they pass the circle radius.
+//! 2D version — all math is in Vec2, rendered with Camera2d. Each arc is a
+//! polyline of points that fly outward from the center and die at the circle edge.
+//! Segments are subdivided with midpoint displacement to look like lightning.
 //!
 //! Run with: `cargo run --example animated_sphere_2`
 
@@ -16,6 +16,8 @@ use std::f32::consts::TAU;
 /// Max simultaneous arcs (pool size for mesh allocation).
 const MAX_ARCS: usize = 512;
 const MAX_POINTS: usize = 20;
+/// Max subdivision depth (each level doubles the segment count)
+const MAX_SUBDIVISIONS: usize = 5;
 
 fn main() {
     App::new()
@@ -32,11 +34,14 @@ fn main() {
         .init_resource::<Config>()
         .init_resource::<ArcPool>()
         .add_systems(Startup, setup)
-        .add_systems(Update, toggle_pause)
+        .add_systems(Update, toggle_pause_keyboard)
         .add_systems(EguiPrimaryContextPass, ui_system)
-        .add_systems(Update, (spawn_arcs, advance_and_cull_arcs, build_mesh)
-            .chain()
-            .run_if(|paused: Res<Paused>| !paused.0))
+        .add_systems(Update, (
+            spawn_arcs,
+            advance_and_cull_arcs,
+            build_mesh,
+            re_pause_after_step,
+        ).chain().run_if(|paused: Res<Paused>| !paused.paused))
         .run();
 }
 
@@ -53,6 +58,10 @@ struct Config {
     /// Circle radius as a fraction of half the window's smaller dimension (0.0–1.0)
     circle_radius_frac: f32,
     ribbon_width: f32,
+    /// Recursive midpoint displacement passes (0 = straight lines, 3-4 = good lightning)
+    subdivisions: usize,
+    /// How far midpoints displace, as fraction of segment length
+    jitter: f32,
 }
 
 impl Default for Config {
@@ -66,19 +75,32 @@ impl Default for Config {
             speed_variation: 60.0,
             circle_radius_frac: 0.8,
             ribbon_width: 1.0,
+            subdivisions: 3,
+            jitter: 5.0,
         }
     }
 }
 
 #[derive(Resource, Default)]
-struct Paused(bool);
+struct Paused {
+    paused: bool,
+    step: bool,
+}
 
-fn toggle_pause(
+fn toggle_pause_keyboard(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut paused: ResMut<Paused>,
 ) {
     if keyboard.just_pressed(KeyCode::Space) {
-        paused.0 = !paused.0;
+        paused.paused = !paused.paused;
+    }
+}
+
+/// Runs at the end of the simulation chain — re-pauses after a step frame.
+fn re_pause_after_step(mut paused: ResMut<Paused>) {
+    if paused.step {
+        paused.step = false;
+        paused.paused = true;
     }
 }
 
@@ -87,7 +109,7 @@ fn toggle_pause(
 fn ui_system(
     mut contexts: EguiContexts,
     mut config: ResMut<Config>,
-    paused: Res<Paused>,
+    mut paused: ResMut<Paused>,
     mut pool: ResMut<ArcPool>,
     time: Res<Time>,
 ) {
@@ -133,11 +155,25 @@ fn ui_system(
                 ui.label("Ribbon width");
                 ui.add(egui::DragValue::new(&mut config.ribbon_width).range(0.1..=20.0).speed(0.1));
                 ui.end_row();
+
+                ui.label("Subdivisions");
+                let mut sub = config.subdivisions as f64;
+                ui.add(egui::DragValue::new(&mut sub).range(0.0..=MAX_SUBDIVISIONS as f64).speed(0.1));
+                config.subdivisions = sub as usize;
+                ui.end_row();
+
+                ui.label("Jitter");
+                ui.add(egui::DragValue::new(&mut config.jitter).range(0.0..=20.0).speed(0.1));
+                ui.end_row();
             });
 
             ui.separator();
-            if paused.0 {
+            if paused.paused {
                 ui.colored_label(egui::Color32::YELLOW, "PAUSED (Space)");
+                if ui.button("Step 1 frame").clicked() {
+                    paused.paused = false;
+                    paused.step = true;
+                }
             } else {
                 ui.label("Space to pause");
             }
@@ -196,11 +232,8 @@ fn new_arc(rng: &mut impl rand::Rng, config: &Config) -> Arc {
     let shared_speed = config.speed_base
         + rng.random_range(-config.speed_variation..config.speed_variation) * (1.0 - variation);
 
-    // Max angular spread in radians, controlled by variation (0 = no spread, 1 = up to ±90°)
     let max_angle = variation * std::f32::consts::FRAC_PI_2;
 
-    // Pre-generate per-point random angle offsets, then sort them so point order
-    // matches spatial order (leftmost deviation → rightmost deviation)
     let mut angle_offsets: Vec<f32> = (0..count)
         .map(|_| rng.random_range(-max_angle..max_angle))
         .collect();
@@ -218,7 +251,6 @@ fn new_arc(rng: &mut impl rand::Rng, config: &Config) -> Arc {
         .iter()
         .enumerate()
         .map(|(i, &angle)| {
-            // Rotate shared_dir by the sorted angle offset
             let (sin, cos) = angle.sin_cos();
             let dir = Vec2::new(
                 shared_dir.x * cos - shared_dir.y * sin,
@@ -236,6 +268,54 @@ fn new_arc(rng: &mut impl rand::Rng, config: &Config) -> Arc {
     Arc { points }
 }
 
+/// Recursively subdivide a segment with midpoint displacement (2D).
+/// Pushes subdivided points into `out` (does NOT push `a`, only intermediates and `b`).
+fn subdivide_2d(
+    a: Vec2,
+    b: Vec2,
+    depth: usize,
+    jitter_frac: f32,
+    rng: &mut impl rand::Rng,
+    out: &mut Vec<Vec2>,
+) {
+    if depth == 0 {
+        out.push(b);
+        return;
+    }
+    let mid = (a + b) * 0.5;
+    let seg = b - a;
+    let seg_len = seg.length();
+    // Perpendicular in 2D
+    let perp = Vec2::new(-seg.y, seg.x).normalize_or(Vec2::Y);
+    let offset = perp * rng.random_range(-1.0..1.0_f32) * jitter_frac * seg_len;
+    let displaced = mid + offset;
+
+    subdivide_2d(a, displaced, depth - 1, jitter_frac, rng, out);
+    subdivide_2d(displaced, b, depth - 1, jitter_frac, rng, out);
+}
+
+/// Subdivide an entire polyline into an existing buffer (avoids allocation per arc).
+fn subdivide_polyline_into(
+    points: &[Vec2],
+    depth: usize,
+    jitter_frac: f32,
+    rng: &mut impl rand::Rng,
+    out: &mut Vec<Vec2>,
+) {
+    if points.len() < 2 {
+        out.extend_from_slice(points);
+        return;
+    }
+    if depth == 0 {
+        out.extend_from_slice(points);
+        return;
+    }
+    out.push(points[0]);
+    for window in points.windows(2) {
+        subdivide_2d(window[0], window[1], depth, jitter_frac, rng, out);
+    }
+}
+
 // ── Systems ──
 
 fn setup(
@@ -245,20 +325,13 @@ fn setup(
 ) {
     commands.spawn(Camera2d);
 
-    // Pre-allocate mesh
-    let max_segments_per_arc = MAX_POINTS - 1;
-    let max_verts_per_arc = max_segments_per_arc * 4;
-    let max_indices_per_arc = max_segments_per_arc * 6;
-    let total_verts = MAX_ARCS * max_verts_per_arc;
-    let total_indices = MAX_ARCS * max_indices_per_arc;
-
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; total_verts]);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[1.0f32; 4]; total_verts]);
-    mesh.insert_indices(Indices::U32(vec![0u32; total_indices]));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; 0]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.0f32; 4]; 0]);
+    mesh.insert_indices(Indices::U32(Vec::new()));
     let mesh_handle = meshes.add(mesh);
 
     let material = materials.add(ColorMaterial {
@@ -320,6 +393,7 @@ fn build_mesh(
     query: Query<&Mesh2d, With<ArcMesh>>,
     mut meshes: ResMut<Assets<Mesh>>,
     windows: Query<&Window>,
+    mut scratch: Local<Vec<Vec2>>,
 ) {
     let Ok(mesh_handle) = query.single() else {
         return;
@@ -328,60 +402,61 @@ fn build_mesh(
         return;
     };
 
-    let max_segments_per_arc = MAX_POINTS - 1;
-    let max_verts_per_arc = max_segments_per_arc * 4;
-    let max_indices_per_arc = max_segments_per_arc * 6;
-    let total_verts = MAX_ARCS * max_verts_per_arc;
-    let total_indices = MAX_ARCS * max_indices_per_arc;
-
-    let mut positions = vec![[0.0f32; 3]; total_verts];
-    let mut colors = vec![[0.0f32; 4]; total_verts];
-    let mut indices = vec![0u32; total_indices];
-
     let ribbon_width = config.ribbon_width;
     let Ok(window) = windows.single() else { return };
     let cr = circle_radius(&config, window);
+    let subdivisions = config.subdivisions.min(MAX_SUBDIVISIONS);
+    let jitter = config.jitter / 10.0;
 
-    for (ai, arc) in pool.arcs.iter().enumerate() {
-        let v_base = ai * max_verts_per_arc;
-        let i_base = ai * max_indices_per_arc;
-        let point_count = arc.points.len().min(MAX_POINTS);
+    let mut rng = rand::rng();
 
-        let avg_dist = arc.points.iter().map(|p| p.position.length()).sum::<f32>() / point_count as f32;
-        // Stay bright until close to the edge, then drop sharply
+    // Build only what's needed — push instead of pre-allocating worst case
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut colors: Vec<[f32; 4]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    for arc in pool.arcs.iter() {
+        // Subdivide into reusable scratch buffer
+        scratch.clear();
+        let base_pts: Vec<Vec2> = arc.points.iter().map(|p| p.position).collect();
+        subdivide_polyline_into(&base_pts, subdivisions, jitter, &mut rng, &mut scratch);
+        let point_count = scratch.len();
+        if point_count < 2 {
+            continue;
+        }
+
+        let avg_dist = scratch.iter().map(|p| p.length()).sum::<f32>() / point_count as f32;
         let t = (avg_dist / cr).clamp(0.0, 1.0);
         let brightness = (1.0 - t.powi(4)).clamp(0.0, 1.0);
+        let color = [brightness, brightness, brightness, 1.0];
 
-        let seg_count = if point_count > 1 { point_count - 1 } else { 0 };
+        let seg_count = point_count - 1;
+        let vert_base = positions.len() as u32;
 
         for s in 0..seg_count {
-            let a = arc.points[s].position;
-            let b = arc.points[s + 1].position;
+            let a = scratch[s];
+            let b = scratch[s + 1];
 
-            // Tangent along segment, perpendicular is 90° rotation in 2D
             let tangent = (b - a).normalize_or(Vec2::X);
-            let perp = Vec2::new(-tangent.y, tangent.x);
+            let perp = Vec2::new(-tangent.y, tangent.x) * ribbon_width;
 
-            let vi = v_base + s * 4;
-            // z=0 for all 2D verts
-            positions[vi]     = [(a + perp * ribbon_width).x, (a + perp * ribbon_width).y, 0.0];
-            positions[vi + 1] = [(a - perp * ribbon_width).x, (a - perp * ribbon_width).y, 0.0];
-            positions[vi + 2] = [(b + perp * ribbon_width).x, (b + perp * ribbon_width).y, 0.0];
-            positions[vi + 3] = [(b - perp * ribbon_width).x, (b - perp * ribbon_width).y, 0.0];
+            positions.push([(a.x + perp.x), (a.y + perp.y), 0.0]);
+            positions.push([(a.x - perp.x), (a.y - perp.y), 0.0]);
+            positions.push([(b.x + perp.x), (b.y + perp.y), 0.0]);
+            positions.push([(b.x - perp.x), (b.y - perp.y), 0.0]);
 
-            colors[vi]     = [brightness, brightness, brightness, 1.0];
-            colors[vi + 1] = [brightness, brightness, brightness, 1.0];
-            colors[vi + 2] = [brightness, brightness, brightness, 1.0];
-            colors[vi + 3] = [brightness, brightness, brightness, 1.0];
+            colors.push(color);
+            colors.push(color);
+            colors.push(color);
+            colors.push(color);
 
-            let ii = i_base + s * 6;
-            let base = vi as u32;
-            indices[ii]     = base;
-            indices[ii + 1] = base + 1;
-            indices[ii + 2] = base + 2;
-            indices[ii + 3] = base + 1;
-            indices[ii + 4] = base + 3;
-            indices[ii + 5] = base + 2;
+            let vi = vert_base + (s as u32) * 4;
+            indices.push(vi);
+            indices.push(vi + 1);
+            indices.push(vi + 2);
+            indices.push(vi + 1);
+            indices.push(vi + 3);
+            indices.push(vi + 2);
         }
     }
 
