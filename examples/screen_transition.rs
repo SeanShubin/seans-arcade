@@ -48,6 +48,8 @@ const XINPUT_GAMEPAD_DPAD_UP: u16 = 0x0001;
 const XINPUT_GAMEPAD_DPAD_DOWN: u16 = 0x0002;
 const XINPUT_GAMEPAD_DPAD_LEFT: u16 = 0x0004;
 const XINPUT_GAMEPAD_DPAD_RIGHT: u16 = 0x0008;
+const XINPUT_GAMEPAD_LEFT_SHOULDER: u16 = 0x0100;
+const XINPUT_GAMEPAD_RIGHT_SHOULDER: u16 = 0x0200;
 
 const ERROR_SUCCESS: u32 = 0;
 
@@ -94,6 +96,10 @@ struct GamepadState {
     dpad_down: bool,
     dpad_left: bool,
     dpad_right: bool,
+    left_bumper_just_pressed: bool,
+    right_bumper_just_pressed: bool,
+    prev_left_bumper: bool,
+    prev_right_bumper: bool,
 }
 
 fn read_gamepad_input(
@@ -120,7 +126,11 @@ fn read_gamepad_input(
     let result = unsafe { get_state(0, xinput_state.as_mut_ptr()) };
 
     if result != ERROR_SUCCESS {
+        let prev_lb = state.prev_left_bumper;
+        let prev_rb = state.prev_right_bumper;
         *state = GamepadState::default();
+        state.prev_left_bumper = prev_lb;
+        state.prev_right_bumper = prev_rb;
         return;
     }
 
@@ -128,11 +138,18 @@ fn read_gamepad_input(
     let gp = &xs.gamepad;
     let btn = |mask: u16| gp.buttons & mask != 0;
 
+    let left_bumper = btn(XINPUT_GAMEPAD_LEFT_SHOULDER);
+    let right_bumper = btn(XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
     state.left_stick = Vec2::new(normalize_thumb(gp.thumb_lx), normalize_thumb(gp.thumb_ly));
     state.dpad_up = btn(XINPUT_GAMEPAD_DPAD_UP);
     state.dpad_down = btn(XINPUT_GAMEPAD_DPAD_DOWN);
     state.dpad_left = btn(XINPUT_GAMEPAD_DPAD_LEFT);
     state.dpad_right = btn(XINPUT_GAMEPAD_DPAD_RIGHT);
+    state.left_bumper_just_pressed = left_bumper && !state.prev_left_bumper;
+    state.right_bumper_just_pressed = right_bumper && !state.prev_right_bumper;
+    state.prev_left_bumper = left_bumper;
+    state.prev_right_bumper = right_bumper;
 }
 
 fn main() {
@@ -141,7 +158,7 @@ fn main() {
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: "Screen Transition Prototype".into(),
-                    resolution: bevy::window::WindowResolution::new(1280, 720),
+                    resolution: bevy::window::WindowResolution::new(1800, 1100),
                     ..default()
                 }),
                 ..default()
@@ -153,13 +170,13 @@ fn main() {
         .init_resource::<ScrollConfig>()
         .init_resource::<GamepadState>()
         .init_resource::<MovementInput>()
-        .insert_resource(CameraHome(Vec2::new(
-            ARENA_PX / 2.0 + TILE_PX / 2.0,
-            ARENA_PX / 2.0 + TILE_PX / 2.0,
-        )))
+        .insert_resource(CameraHome {
+            pos: Vec2::new(ARENA_PX / 2.0 + TILE_PX / 2.0, ARENA_PX / 2.0 + TILE_PX / 2.0),
+            prev_scale: 1,
+        })
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, hud_system)
-        .add_systems(Update, (read_gamepad_input, gather_input, animate_orb, move_avatar, update_camera, wrap_tiles, wrap_avatar, sync_borders).chain())
+        .add_systems(Update, (read_gamepad_input, gather_input, apply_bumper_scale, animate_orb, move_avatar, update_camera, wrap_tiles, wrap_avatar, sync_borders, update_window_title).chain())
         .run();
 }
 
@@ -176,6 +193,12 @@ struct Border;
 struct Tile {
     grid_x: usize,
     grid_y: usize,
+}
+
+/// Maps (col, row) grid coordinates to the asset path loaded for that tile.
+#[derive(Resource)]
+struct TileMap {
+    paths: Vec<Vec<String>>, // paths[row][col]
 }
 
 /// Abstract movement direction (unit vector or zero). Written by `gather_input`,
@@ -196,14 +219,17 @@ struct ScrollConfig {
 
 impl Default for ScrollConfig {
     fn default() -> Self {
-        Self { buffer_frac: 0.25, scale: 1, speed_mult: 1.0 }
+        Self { buffer_frac: 0.25, scale: 1, speed_mult: 2.0 }
     }
 }
 
 /// The camera's snap position — always at a tile centre.  Shifts by one tile
 /// when the avatar pushes through the buffer at the edge of the visible area.
 #[derive(Resource)]
-struct CameraHome(Vec2);
+struct CameraHome {
+    pos: Vec2,
+    prev_scale: u32,
+}
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: ResMut<Assets<Image>>) {
     // Collect all .bmp files under assets/external/texture/
@@ -256,10 +282,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
     }
 
     // Tiles
+    let mut tile_paths = vec![vec![String::new(); ARENA_CELLS]; ARENA_CELLS];
     for row in 0..ARENA_CELLS {
         for col in 0..ARENA_CELLS {
             let idx = row * ARENA_CELLS + col;
             let handle: Handle<Image> = asset_server.load(&texture_paths[idx]);
+            tile_paths[row][col] = texture_paths[idx].clone();
 
             commands.spawn((
                 Tile { grid_x: col, grid_y: row },
@@ -275,6 +303,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
             ));
         }
     }
+    commands.insert_resource(TileMap { paths: tile_paths });
 
     // --- Chromatic orb avatar ---
     let orb_tex = make_circle_texture(&mut images, (ORB_RADIUS * 2.0) as u32, false);
@@ -346,6 +375,26 @@ fn sync_borders(
         tf.translation.z = 10.0;
         sprite.custom_size = Some(Vec2::new(w, h));
     }
+}
+
+fn update_window_title(
+    mut windows: Query<&mut Window>,
+    avatar_q: Query<&Transform, With<Avatar>>,
+    tile_map: Res<TileMap>,
+) {
+    let Ok(mut window) = windows.single_mut() else { return };
+    let Ok(avatar_tf) = avatar_q.single() else { return };
+
+    let ax = avatar_tf.translation.x.rem_euclid(ARENA_PX);
+    let ay = avatar_tf.translation.y.rem_euclid(ARENA_PX);
+    let col = ((ax / TILE_PX).floor() as usize).min(ARENA_CELLS - 1);
+    let row = ((ay / TILE_PX).floor() as usize).min(ARENA_CELLS - 1);
+    let path = &tile_map.paths[row][col];
+
+    let w = window.width() as u32;
+    let h = window.height() as u32;
+
+    window.title = format!("{w}x{h} | {path}");
 }
 
 /// Generate a white circle texture. If `soft_edge` is true the alpha fades
@@ -446,6 +495,19 @@ fn gather_input(
     movement.0 = if dir == Vec2::ZERO { Vec2::ZERO } else { dir.normalize() };
 }
 
+/// Bumpers adjust scale: LB decreases, RB increases.
+fn apply_bumper_scale(
+    gamepad: Res<GamepadState>,
+    mut config: ResMut<ScrollConfig>,
+) {
+    if gamepad.left_bumper_just_pressed && config.scale > 1 {
+        config.scale -= 1;
+    }
+    if gamepad.right_bumper_just_pressed && config.scale < 7 {
+        config.scale += 1;
+    }
+}
+
 fn move_avatar(
     time: Res<Time>,
     config: Res<ScrollConfig>,
@@ -496,35 +558,35 @@ fn update_camera(
     let ax = avatar_tf.translation.x;
     let ay = avatar_tf.translation.y;
 
-    // When scale changes, re-snap home to the correct grid.
-    // Odd scales snap to tile centres; even scales snap to tile boundaries.
-    if config.is_changed() {
-        home.0.x = snap_home(home.0.x, config.scale);
-        home.0.y = snap_home(home.0.y, config.scale);
+    // When scale actually changes, pick the grid-aligned home that centres the avatar best.
+    if config.scale != home.prev_scale {
+        home.pos.x = snap_home(ax, config.scale);
+        home.pos.y = snap_home(ay, config.scale);
+        home.prev_scale = config.scale;
     }
 
     if config.scale <= 1 {
         // Scale 1: stateless per-tile camera (both buffers active per tile).
         cam_pos.0.x = tile_camera(ax, config.buffer_frac).rem_euclid(ARENA_PX);
         cam_pos.0.y = tile_camera(ay, config.buffer_frac).rem_euclid(ARENA_PX);
-        home.0 = cam_pos.0;
+        home.pos = cam_pos.0;
     } else {
         // Scale > 1: stateful home-based camera.  Buffer only on edge tiles.
         let buffer = TILE_PX * config.buffer_frac;
         let view_half = scale * TILE_PX / 2.0;
         let dead_half = view_half - buffer;
 
-        home.0.x = axis_home(home.0.x, ax, view_half);
-        home.0.y = axis_home(home.0.y, ay, view_half);
+        home.pos.x = axis_home(home.pos.x, ax, view_half);
+        home.pos.y = axis_home(home.pos.y, ay, view_half);
 
-        let offset_x = wrap_offset(ax - home.0.x, ARENA_PX);
-        let offset_y = wrap_offset(ay - home.0.y, ARENA_PX);
+        let offset_x = wrap_offset(ax - home.pos.x, ARENA_PX);
+        let offset_y = wrap_offset(ay - home.pos.y, ARENA_PX);
 
         let scroll_x = axis_scroll(offset_x, dead_half, buffer);
         let scroll_y = axis_scroll(offset_y, dead_half, buffer);
 
-        cam_pos.0.x = (home.0.x + scroll_x).rem_euclid(ARENA_PX);
-        cam_pos.0.y = (home.0.y + scroll_y).rem_euclid(ARENA_PX);
+        cam_pos.0.x = (home.pos.x + scroll_x).rem_euclid(ARENA_PX);
+        cam_pos.0.y = (home.pos.y + scroll_y).rem_euclid(ARENA_PX);
     }
 
     cam_tf.translation.x = cam_pos.0.x;
@@ -635,17 +697,32 @@ fn wrap_offset(delta: f32, period: f32) -> f32 {
     (delta + period / 2.0).rem_euclid(period) - period / 2.0
 }
 
-/// Snap camera home to the correct grid for the current scale.
-/// Odd scales align to tile centres; even scales align to tile boundaries.
-fn snap_home(pos: f32, scale: u32) -> f32 {
-    if scale % 2 == 1 {
-        // Odd: nearest tile centre  (TILE_PX/2, 3·TILE_PX/2, …)
-        let n = ((pos / TILE_PX) - 0.5).round();
-        ((n + 0.5) * TILE_PX).rem_euclid(ARENA_PX)
+/// Pick the grid-aligned home position that places `avatar_pos` closest to
+/// the centre of the view.  Odd scales use tile-centre grids; even scales
+/// use tile-boundary grids.
+fn snap_home(avatar_pos: f32, scale: u32) -> f32 {
+    // The two nearest grid points that straddle the avatar.
+    let (a, b) = if scale % 2 == 1 {
+        // Odd grid: TILE_PX/2, 3·TILE_PX/2, …
+        let n = ((avatar_pos / TILE_PX) - 0.5).floor();
+        (
+            ((n + 0.5) * TILE_PX).rem_euclid(ARENA_PX),
+            ((n + 1.5) * TILE_PX).rem_euclid(ARENA_PX),
+        )
     } else {
-        // Even: nearest tile boundary (0, TILE_PX, 2·TILE_PX, …)
-        ((pos / TILE_PX).round() * TILE_PX).rem_euclid(ARENA_PX)
-    }
+        // Even grid: 0, TILE_PX, 2·TILE_PX, …
+        let n = (avatar_pos / TILE_PX).floor();
+        (
+            (n * TILE_PX).rem_euclid(ARENA_PX),
+            ((n + 1.0) * TILE_PX).rem_euclid(ARENA_PX),
+        )
+    };
+
+    // Pick whichever puts the avatar closer to the view centre (i.e. closer
+    // to home), using wrapped distance.
+    let dist_a = wrap_offset(avatar_pos - a, ARENA_PX).abs();
+    let dist_b = wrap_offset(avatar_pos - b, ARENA_PX).abs();
+    if dist_a <= dist_b { a } else { b }
 }
 
 /// Reposition tiles so they wrap seamlessly around the camera.
