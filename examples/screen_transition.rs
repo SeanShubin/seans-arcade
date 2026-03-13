@@ -353,6 +353,13 @@ fn update_camera(
     let ax = avatar_tf.translation.x;
     let ay = avatar_tf.translation.y;
 
+    // When scale changes, re-snap home to the correct grid.
+    // Odd scales snap to tile centres; even scales snap to tile boundaries.
+    if config.is_changed() {
+        home.0.x = snap_home(home.0.x, config.scale);
+        home.0.y = snap_home(home.0.y, config.scale);
+    }
+
     if config.scale <= 1 {
         // Scale 1: stateless per-tile camera (both buffers active per tile).
         cam_pos.0.x = tile_camera(ax, config.buffer_frac).rem_euclid(ARENA_PX);
@@ -483,6 +490,19 @@ fn hud_system(
 /// Wrap `delta` into [-period/2, period/2).
 fn wrap_offset(delta: f32, period: f32) -> f32 {
     (delta + period / 2.0).rem_euclid(period) - period / 2.0
+}
+
+/// Snap camera home to the correct grid for the current scale.
+/// Odd scales align to tile centres; even scales align to tile boundaries.
+fn snap_home(pos: f32, scale: u32) -> f32 {
+    if scale % 2 == 1 {
+        // Odd: nearest tile centre  (TILE_PX/2, 3·TILE_PX/2, …)
+        let n = ((pos / TILE_PX) - 0.5).round();
+        ((n + 0.5) * TILE_PX).rem_euclid(ARENA_PX)
+    } else {
+        // Even: nearest tile boundary (0, TILE_PX, 2·TILE_PX, …)
+        ((pos / TILE_PX).round() * TILE_PX).rem_euclid(ARENA_PX)
+    }
 }
 
 /// Reposition tiles so they wrap seamlessly around the camera.
