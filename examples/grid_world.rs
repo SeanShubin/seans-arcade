@@ -338,6 +338,31 @@ fn axis_scroll(offset: f32) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
+// Collision
+// ---------------------------------------------------------------------------
+
+/// Returns true if the point (x, y) is inside a wall cell.
+/// Uses a small inset so the player can walk flush against walls.
+const COLLISION_INSET: f32 = 4.0;
+
+fn is_wall_at(x: f32, y: f32, map: &MapConfig) -> bool {
+    // Check all four corners of the player's collision box
+    let half = CELL_SIZE / 2.0 - COLLISION_INSET;
+    for &(dx, dy) in &[(-half, -half), (-half, half), (half, -half), (half, half)] {
+        let cx = (x + dx).rem_euclid(map.map_w);
+        let cy = (y + dy).rem_euclid(map.map_h);
+        let col = (cx / CELL_SIZE) as usize;
+        let row = (cy / CELL_SIZE) as usize;
+        let col = col.min(map.cols - 1);
+        let row = row.min(map.rows - 1);
+        if map.cells[row * map.cols + col].kind == CellKind::Wall {
+            return true;
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -495,10 +520,18 @@ fn player_movement(
         anim.moving = dir != Vec2::ZERO;
         if anim.moving {
             let delta = dir.normalize() * MOVE_SPEED * time.delta_secs();
-            tf.translation.x += delta.x;
-            tf.translation.y += delta.y;
-            tf.translation.x = tf.translation.x.rem_euclid(map.map_w);
-            tf.translation.y = tf.translation.y.rem_euclid(map.map_h);
+
+            // Try X movement
+            let new_x = (tf.translation.x + delta.x).rem_euclid(map.map_w);
+            if !is_wall_at(new_x, tf.translation.y, &map) {
+                tf.translation.x = new_x;
+            }
+
+            // Try Y movement
+            let new_y = (tf.translation.y + delta.y).rem_euclid(map.map_h);
+            if !is_wall_at(tf.translation.x, new_y, &map) {
+                tf.translation.y = new_y;
+            }
         }
         if let Some(d) = new_facing { facing.0 = d; }
     }
