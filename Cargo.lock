@@ -1011,7 +1011,9 @@ dependencies = [
  "image",
  "noise",
  "rand 0.10.0",
+ "ron",
  "serde",
+ "serde_json",
  "toml",
  "zip",
 ]

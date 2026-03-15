@@ -1,0 +1,1133 @@
+(
+    cols: 15,
+    rows: 15,
+    start_col: 7,
+    start_row: 8,
+    cells: [
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 256,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 64,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 448,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 256,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 448,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 256,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 64,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 192,
+            src_y: 320,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 192,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 256,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 320,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 256,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 64,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 256,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 192,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 256,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 256,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 320,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 64,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 0,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Floor,
+            src_x: 192,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 64,
+        ),
+        (
+            kind: Wall,
+            src_x: 448,
+            src_y: 256,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 128,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 384,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
+        ),
+        (
+            kind: Wall,
+            src_x: 256,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 0,
+            src_y: 128,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+        (
+            kind: Wall,
+            src_x: 320,
+            src_y: 192,
+        ),
+    ],
+)
