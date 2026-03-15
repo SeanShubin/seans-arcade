@@ -23,7 +23,7 @@ const VIEW_CELLS: f32 = 5.0;
 const VIEW_PX: f32 = VIEW_CELLS * CELL_SIZE; // 320
 const VIEW_HALF: f32 = VIEW_PX / 2.0;        // 160
 const BUFFER: f32 = CELL_SIZE;               // 64 — one edge cell
-const MOVE_SPEED: f32 = 125.0;
+const MOVE_SPEED: f32 = 250.0;
 const FRAME_DURATION: f32 = 0.1;
 const STICK_DEADZONE: f32 = 0.2;
 
@@ -558,8 +558,9 @@ fn update_camera(
     let Ok(ptf) = player_q.single() else { return };
     let Ok(mut cam_tf) = cam_q.single_mut() else { return };
 
-    cam_tf.translation.x = screen_camera(ptf.translation.x);
-    cam_tf.translation.y = screen_camera(ptf.translation.y);
+    // Round to whole pixels to prevent sub-pixel cracks between tiles
+    cam_tf.translation.x = screen_camera(ptf.translation.x).round();
+    cam_tf.translation.y = screen_camera(ptf.translation.y).round();
 }
 
 fn wrap_tiles(
