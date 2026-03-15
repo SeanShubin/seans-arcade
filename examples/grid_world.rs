@@ -23,7 +23,6 @@ const VIEW_CELLS: f32 = 5.0;
 const VIEW_PX: f32 = VIEW_CELLS * CELL_SIZE; // 320
 const VIEW_HALF: f32 = VIEW_PX / 2.0;        // 160
 const BUFFER: f32 = CELL_SIZE;               // 64 — one edge cell
-const DEAD_HALF: f32 = VIEW_HALF - BUFFER;   // 96 — inner 3×3
 const MOVE_SPEED: f32 = 125.0;
 const FRAME_DURATION: f32 = 0.1;
 const STICK_DEADZONE: f32 = 0.2;
@@ -248,8 +247,6 @@ struct MapConfig {
     cells: Vec<CellEntry>,
 }
 
-#[derive(Resource)]
-struct CameraHome(Vec2);
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -318,22 +315,24 @@ fn wrap_offset(delta: f32, period: f32) -> f32 {
     (delta + period / 2.0).rem_euclid(period) - period / 2.0
 }
 
-fn axis_home(mut home: f32, avatar: f32, map_size: f32) -> f32 {
-    loop {
-        let offset = wrap_offset(avatar - home, map_size);
-        if offset > VIEW_HALF { home += CELL_SIZE; }
-        else if offset < -VIEW_HALF { home -= CELL_SIZE; }
-        else { return home; }
-    }
-}
+/// Per-screen camera: snaps to screen center, slides through buffer at edges.
+/// Each buffer provides half the transition; the neighboring screen's buffer
+/// provides the other half, giving a smooth full-screen slide.
+fn screen_camera(pos: f32) -> f32 {
+    let screen = (pos / VIEW_PX).floor();
+    let center = screen * VIEW_PX + VIEW_HALF;
+    let local = pos - screen * VIEW_PX;
 
-fn axis_scroll(offset: f32) -> f32 {
-    if offset > DEAD_HALF {
-        ((offset - DEAD_HALF) / BUFFER).clamp(0.0, 1.0) * CELL_SIZE
-    } else if offset < -DEAD_HALF {
-        -((-offset - DEAD_HALF) / BUFFER).clamp(0.0, 1.0) * CELL_SIZE
+    let inner_hi = VIEW_PX - BUFFER;
+
+    if local > inner_hi {
+        let depth = (local - inner_hi) / BUFFER;
+        center + depth * VIEW_HALF
+    } else if local < BUFFER {
+        let depth = (BUFFER - local) / BUFFER;
+        center - depth * VIEW_HALF
     } else {
-        0.0
+        center
     }
 }
 
@@ -480,7 +479,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ));
     }
 
-    commands.insert_resource(CameraHome(Vec2::new(start_x, start_y)));
 }
 
 // ---------------------------------------------------------------------------
@@ -554,25 +552,14 @@ fn update_camera_scale(
 }
 
 fn update_camera(
-    mut home: ResMut<CameraHome>,
-    map: Res<MapConfig>,
     player_q: Query<&Transform, With<Player>>,
     mut cam_q: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
 ) {
     let Ok(ptf) = player_q.single() else { return };
     let Ok(mut cam_tf) = cam_q.single_mut() else { return };
 
-    let ax = ptf.translation.x;
-    let ay = ptf.translation.y;
-
-    home.0.x = axis_home(home.0.x, ax, map.map_w);
-    home.0.y = axis_home(home.0.y, ay, map.map_h);
-
-    let ox = wrap_offset(ax - home.0.x, map.map_w);
-    let oy = wrap_offset(ay - home.0.y, map.map_h);
-
-    cam_tf.translation.x = home.0.x + axis_scroll(ox);
-    cam_tf.translation.y = home.0.y + axis_scroll(oy);
+    cam_tf.translation.x = screen_camera(ptf.translation.x);
+    cam_tf.translation.y = screen_camera(ptf.translation.y);
 }
 
 fn wrap_tiles(

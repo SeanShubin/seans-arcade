@@ -17,17 +17,17 @@
         (
             kind: Wall,
             src_x: 128,
-            src_y: 256,
+            src_y: 0,
+        ),
+        (
+            kind: Floor,
+            src_x: 128,
+            src_y: 0,
         ),
         (
             kind: Wall,
-            src_x: 256,
-            src_y: 192,
-        ),
-        (
-            kind: Wall,
-            src_x: 256,
-            src_y: 192,
+            src_x: 448,
+            src_y: 64,
         ),
         (
             kind: Wall,
@@ -96,7 +96,7 @@
         ),
         (
             kind: Floor,
-            src_x: 0,
+            src_x: 192,
             src_y: 64,
         ),
         (
