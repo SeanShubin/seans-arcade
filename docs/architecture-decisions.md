@@ -12,16 +12,16 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Decision:** The project is a monorepo with the following crate layers:
 
-| Crate | Kind | Depends on | Purpose |
-| --- | --- | --- | --- |
-| **`game-interface`** | lib | nothing | The trait that every game implements. Defines the contract: state type, input type, transition function. No Bevy dependency, no networking, no hosting knowledge. |
-| **`pong`** (one per game) | lib | `game-interface` | Implements the trait. Pure transition function. Cannot tell whether it is running standalone or inside the arcade. |
-| **`standalone`** | lib | `game-interface` | Generic host harness for running any game outside the arcade. Provides window setup, local input capture, simulation loop, rendering, replay recording/playback — all generic over the `game-interface` trait. |
-| **`pong-standalone`** (one per game) | bin | `standalone`, `pong` | Entry point that wires a game to the standalone harness. Minimal code — typically one line: `standalone::run::<PongGame>()`. |
-| **`protocol`** | lib | nothing | Wire format between client and relay. Serialization, admin types, S3 persistence types. |
-| **`arcade`** | bin | `game-interface`, `protocol`, all game crates | The Bevy game client. Hosts all games, provides the navigable Arcade space, chat, networking. Acts as the production container for game plugins. |
-| **`relay`** | bin | `protocol` | The lightweight input coordinator on AWS. Routes inputs by simulation context ID. No game state, no game logic. |
-| **`arcade-ops`** | bin | `protocol` | Operator CLI for monitoring, management, analytics, and infrastructure control. |
+| Crate                                | Kind | Depends on                                    | Purpose                                                                                                                                                                                                        |
+| ------------------------------------ | ---- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`game-interface`**                 | lib  | nothing                                       | The trait that every game implements. Defines the contract: state type, input type, transition function. No Bevy dependency, no networking, no hosting knowledge.                                              |
+| **`pong`** (one per game)            | lib  | `game-interface`                              | Implements the trait. Pure transition function. Cannot tell whether it is running standalone or inside the arcade.                                                                                             |
+| **`standalone`**                     | lib  | `game-interface`                              | Generic host harness for running any game outside the arcade. Provides window setup, local input capture, simulation loop, rendering, replay recording/playback — all generic over the `game-interface` trait. |
+| **`pong-standalone`** (one per game) | bin  | `standalone`, `pong`                          | Entry point that wires a game to the standalone harness. Minimal code — typically one line: `standalone::run::<PongGame>()`.                                                                                   |
+| **`protocol`**                       | lib  | nothing                                       | Wire format between client and relay. Serialization, admin types, S3 persistence types.                                                                                                                        |
+| **`arcade`**                         | bin  | `game-interface`, `protocol`, all game crates | The Bevy game client. Hosts all games, provides the navigable Arcade space, chat, networking. Acts as the production container for game plugins.                                                               |
+| **`relay`**                          | bin  | `protocol`                                    | The lightweight input coordinator on AWS. Routes inputs by simulation context ID. No game state, no game logic.                                                                                                |
+| **`arcade-ops`**                     | bin  | `protocol`                                    | Operator CLI for monitoring, management, analytics, and infrastructure control.                                                                                                                                |
 
 **Key properties:**
 - Game crates depend only on `game-interface` — never on `arcade`, `standalone`, `protocol`, or each other.
@@ -130,11 +130,11 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Locations:**
 
-| Platform | Install location | Data directory |
-|----------|-----------------|----------------|
-| Windows | `%LOCALAPPDATA%\seans-arcade\arcade.exe` | `%APPDATA%\seans-arcade\` |
-| macOS | `~/Applications/seans-arcade/arcade` | `~/Library/Application Support/seans-arcade/` |
-| Linux | `~/.local/bin/seans-arcade/arcade` | `~/.config/seans-arcade/` |
+| Platform | Install location                         | Data directory                                |
+| -------- | ---------------------------------------- | --------------------------------------------- |
+| Windows  | `%LOCALAPPDATA%\seans-arcade\arcade.exe` | `%APPDATA%\seans-arcade\`                     |
+| macOS    | `~/Applications/seans-arcade/arcade`     | `~/Library/Application Support/seans-arcade/` |
+| Linux    | `~/.local/bin/seans-arcade/arcade`       | `~/.config/seans-arcade/`                     |
 
 **Alternatives rejected:** Suggested location (user docs say "put it here" — no enforcement, users ignore it), platform-specific installer (MSI, .app bundle, .deb — heavy tooling for minimal benefit at this scale).
 
@@ -158,12 +158,12 @@ This document records decisions that have been made. It is not a wishlist or a p
 
 **Options considered:**
 
-| Strategy | Binary size | Distribution | Build iteration | Modding | When to use |
-|----------|------------|-------------|-----------------|---------|-------------|
-| **Embedded in binary** | Grows with every asset | Single file, nothing to copy | Recompile for any asset change | Impossible | Few small assets |
-| **Assets on disk** | Binary stays small | Need installer, zip, or copy step | Fast — just replace the file | Users can swap files | Many large assets, rapid art iteration |
-| **Asset download on first launch** (current) | Binary stays small | Single file + first-run download | Fast — update server assets | Possible via override directory | Moderate asset volume, clean distribution |
-| **Installer/zip bundle** | N/A (packaged together) | Platform-specific packaging | Fast — just replace the file | Users can swap files | Commercial distribution, platform stores |
+| Strategy                                     | Binary size             | Distribution                      | Build iteration                | Modding                         | When to use                               |
+| -------------------------------------------- | ----------------------- | --------------------------------- | ------------------------------ | ------------------------------- | ----------------------------------------- |
+| **Embedded in binary**                       | Grows with every asset  | Single file, nothing to copy      | Recompile for any asset change | Impossible                      | Few small assets                          |
+| **Assets on disk**                           | Binary stays small      | Need installer, zip, or copy step | Fast — just replace the file   | Users can swap files            | Many large assets, rapid art iteration    |
+| **Asset download on first launch** (current) | Binary stays small      | Single file + first-run download  | Fast — update server assets    | Possible via override directory | Moderate asset volume, clean distribution |
+| **Installer/zip bundle**                     | N/A (packaged together) | Platform-specific packaging       | Fast — just replace the file   | Users can swap files            | Commercial distribution, platform stores  |
 
 **Rationale:** The manifest approach keeps the binary small, eliminates the "where are my assets?" problem by storing them in the platform data directory, and only downloads what changed. Asset updates don't require a binary update — just change the asset on S3 and the manifest hash triggers a re-download on next launch.
 
@@ -308,15 +308,15 @@ Games do not know their own AST hash. The hash is metadata *about* the game, not
 
 **Alternatives rejected:**
 
-| Approach | What gets hashed | Why rejected |
-| --- | --- | --- |
-| **Commit hash** | Entire repository | Too coarse — unrelated changes invalidate replays. Already used for overall build identity, but not suitable for per-game transition function identity. |
-| **Manual version bump** | Developer's memory | Error-prone — forgetting to bump silently allows incompatible clients. |
-| **Source hash** | Source files | False positives from comment and formatting changes that don't affect behavior. |
-| **MIR hash** | Mid-level Intermediate Representation | Fewer false positives than AST (ignores refactors that don't change behavior), but MIR extraction (`-Z unpretty=mir`) requires nightly Rust. Depending on an unstable toolchain introduces unpredictable breakage — each nightly snapshot has no stability guarantees, no changelog, and no way to assess what problems a particular build may have before committing to it. |
-| **LLVM IR hash** | LLVM intermediate representation | More sensitive to compiler internals than AST without being more useful. Same nightly-dependency problem as MIR. |
-| **Object code hash** | Compiled `.o` files | Too many false positives — optimization level, debug flags, and link order change output without changing behavior. |
-| **Separate repositories per game** | Per-repo commit hash | Solves the granularity problem but unnecessary once AST hashing provides per-game identity within a monorepo. Adds operational overhead of multi-repo management. |
+| Approach                           | What gets hashed                      | Why rejected                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Commit hash**                    | Entire repository                     | Too coarse — unrelated changes invalidate replays. Already used for overall build identity, but not suitable for per-game transition function identity.                                                                                                                                                                                                                      |
+| **Manual version bump**            | Developer's memory                    | Error-prone — forgetting to bump silently allows incompatible clients.                                                                                                                                                                                                                                                                                                       |
+| **Source hash**                    | Source files                          | False positives from comment and formatting changes that don't affect behavior.                                                                                                                                                                                                                                                                                              |
+| **MIR hash**                       | Mid-level Intermediate Representation | Fewer false positives than AST (ignores refactors that don't change behavior), but MIR extraction (`-Z unpretty=mir`) requires nightly Rust. Depending on an unstable toolchain introduces unpredictable breakage — each nightly snapshot has no stability guarantees, no changelog, and no way to assess what problems a particular build may have before committing to it. |
+| **LLVM IR hash**                   | LLVM intermediate representation      | More sensitive to compiler internals than AST without being more useful. Same nightly-dependency problem as MIR.                                                                                                                                                                                                                                                             |
+| **Object code hash**               | Compiled `.o` files                   | Too many false positives — optimization level, debug flags, and link order change output without changing behavior.                                                                                                                                                                                                                                                          |
+| **Separate repositories per game** | Per-repo commit hash                  | Solves the granularity problem but unnecessary once AST hashing provides per-game identity within a monorepo. Adds operational overhead of multi-repo management.                                                                                                                                                                                                            |
 
 **Key tradeoff — AST vs MIR:** AST has more false positives than MIR — it changes on refactors (variable rename, function extraction, parameter reorder) that don't change behavior. MIR ignores these because it represents post-desugaring computation. However, MIR extraction requires nightly Rust. The false positives from AST are harmless (a replay hash invalidation just means re-recording), while the instability of nightly Rust is an open-ended risk with unpredictable consequences. A refactor that triggers a false positive is something the developer did and understands; a nightly build that breaks in a new way is not.
 

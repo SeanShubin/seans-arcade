@@ -1,6 +1,6 @@
 //! Screen-transition prototype with hybrid scrolling.
 //!
-//! 14x14 wrapping arena of random background textures.
+//! 20x10 wrapping arena of background textures.
 //! - Inner area (90% of screen): avatar moves freely, camera stays still
 //! - Buffer area (5% each side): camera tracks proportionally to buffer depth
 //!
@@ -12,11 +12,12 @@ use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use rand::seq::SliceRandom;
 
-const ARENA_CELLS: usize = 14;
+const ARENA_COLS: usize = 20;
+const ARENA_ROWS: usize = 10;
 const TILE_PX: f32 = 1024.0;
-const ARENA_PX: f32 = ARENA_CELLS as f32 * TILE_PX;
+const ARENA_PX_W: f32 = ARENA_COLS as f32 * TILE_PX;
+const ARENA_PX_H: f32 = ARENA_ROWS as f32 * TILE_PX;
 const VIEWPORT_PX: f32 = 1024.0;
 const ORB_RADIUS: f32 = 14.0;
 const GLOW_RADIUS: f32 = 22.0;
@@ -170,13 +171,14 @@ fn main() {
         .init_resource::<ScrollConfig>()
         .init_resource::<GamepadState>()
         .init_resource::<MovementInput>()
+        .init_resource::<GhostConfig>()
         .insert_resource(CameraHome {
-            pos: Vec2::new(ARENA_PX / 2.0 + TILE_PX / 2.0, ARENA_PX / 2.0 + TILE_PX / 2.0),
+            pos: Vec2::new(ARENA_PX_W / 2.0 + TILE_PX / 2.0, ARENA_PX_H / 2.0 + TILE_PX / 2.0),
             prev_scale: 1,
         })
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, hud_system)
-        .add_systems(Update, (read_gamepad_input, gather_input, apply_bumper_scale, animate_orb, move_avatar, update_camera, wrap_tiles, wrap_avatar, sync_borders, update_window_title).chain())
+        .add_systems(Update, (read_gamepad_input, gather_input, apply_bumper_scale, manage_ghosts, animate_orb, move_avatar, update_camera, wrap_tiles, sync_borders, update_window_title).chain())
         .run();
 }
 
@@ -193,12 +195,22 @@ struct Border;
 struct Tile {
     grid_x: usize,
     grid_y: usize,
+    copy_x: i32,
+    copy_y: i32,
 }
 
-/// Maps (col, row) grid coordinates to the asset path loaded for that tile.
+/// Maps (col, row) grid coordinates to the asset path and image handle.
 #[derive(Resource)]
 struct TileMap {
-    paths: Vec<Vec<String>>, // paths[row][col]
+    paths: Vec<Vec<String>>,          // paths[row][col]
+    handles: Vec<Vec<Handle<Image>>>, // handles[row][col]
+}
+
+/// Tracks how many extra torus copies are currently spawned per axis direction.
+#[derive(Resource, Default)]
+struct GhostConfig {
+    copies_x: i32,
+    copies_y: i32,
 }
 
 /// Abstract movement direction (unit vector or zero). Written by `gather_input`,
@@ -254,10 +266,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
         }
     }
 
-    let mut rng = rand::rng();
-    texture_paths.shuffle(&mut rng);
+    texture_paths.sort();
 
-    let needed = ARENA_CELLS * ARENA_CELLS;
+    let needed = ARENA_COLS * ARENA_ROWS;
     assert!(
         texture_paths.len() >= needed,
         "Need {needed} textures but only found {}",
@@ -281,16 +292,20 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
         ));
     }
 
-    // Tiles
-    let mut tile_paths = vec![vec![String::new(); ARENA_CELLS]; ARENA_CELLS];
-    for row in 0..ARENA_CELLS {
-        for col in 0..ARENA_CELLS {
-            let idx = row * ARENA_CELLS + col;
+    // Tiles — laid out left to right, top to bottom (top row = highest Y)
+    let mut tile_paths = vec![vec![String::new(); ARENA_COLS]; ARENA_ROWS];
+    let mut tile_handles: Vec<Vec<Handle<Image>>> = vec![vec![]; ARENA_ROWS];
+    for row in 0..ARENA_ROWS {
+        for col in 0..ARENA_COLS {
+            // Top-to-bottom order: first texture goes to the top row (highest row index)
+            let visual_row = ARENA_ROWS - 1 - row;
+            let idx = visual_row * ARENA_COLS + col;
             let handle: Handle<Image> = asset_server.load(&texture_paths[idx]);
             tile_paths[row][col] = texture_paths[idx].clone();
+            tile_handles[row].push(handle.clone());
 
             commands.spawn((
-                Tile { grid_x: col, grid_y: row },
+                Tile { grid_x: col, grid_y: row, copy_x: 0, copy_y: 0 },
                 Sprite {
                     image: handle,
                     ..default()
@@ -303,13 +318,13 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
             ));
         }
     }
-    commands.insert_resource(TileMap { paths: tile_paths });
+    commands.insert_resource(TileMap { paths: tile_paths, handles: tile_handles });
 
     // --- Chromatic orb avatar ---
     let orb_tex = make_circle_texture(&mut images, (ORB_RADIUS * 2.0) as u32, false);
     let glow_tex = make_circle_texture(&mut images, (GLOW_RADIUS * 2.0) as u32, true);
 
-    let start = Vec2::new(ARENA_PX / 2.0 + TILE_PX / 2.0, ARENA_PX / 2.0 + TILE_PX / 2.0);
+    let start = Vec2::new(ARENA_PX_W / 2.0 + TILE_PX / 2.0, ARENA_PX_H / 2.0 + TILE_PX / 2.0);
 
     // Outer glow ring (pulsing, slightly larger)
     commands.spawn((
@@ -336,7 +351,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut images: Res
     ));
 
     // Camera starts centred on avatar
-    commands.insert_resource(CameraPos(Vec2::new(ARENA_PX / 2.0 + TILE_PX / 2.0, ARENA_PX / 2.0 + TILE_PX / 2.0)));
+    commands.insert_resource(CameraPos(Vec2::new(ARENA_PX_W / 2.0 + TILE_PX / 2.0, ARENA_PX_H / 2.0 + TILE_PX / 2.0)));
 }
 
 /// Position four black panels around the 1024×1024 play area to mask overflow.
@@ -385,10 +400,10 @@ fn update_window_title(
     let Ok(mut window) = windows.single_mut() else { return };
     let Ok(avatar_tf) = avatar_q.single() else { return };
 
-    let ax = avatar_tf.translation.x.rem_euclid(ARENA_PX);
-    let ay = avatar_tf.translation.y.rem_euclid(ARENA_PX);
-    let col = ((ax / TILE_PX).floor() as usize).min(ARENA_CELLS - 1);
-    let row = ((ay / TILE_PX).floor() as usize).min(ARENA_CELLS - 1);
+    let ax = avatar_tf.translation.x.rem_euclid(ARENA_PX_W);
+    let ay = avatar_tf.translation.y.rem_euclid(ARENA_PX_H);
+    let col = ((ax / TILE_PX).floor() as usize).min(ARENA_COLS - 1);
+    let row = ((ay / TILE_PX).floor() as usize).min(ARENA_ROWS - 1);
     let path = &tile_map.paths[row][col];
 
     let w = window.width() as u32;
@@ -503,7 +518,7 @@ fn apply_bumper_scale(
     if gamepad.left_bumper_just_pressed && config.scale > 1 {
         config.scale -= 1;
     }
-    if gamepad.right_bumper_just_pressed && config.scale < 7 {
+    if gamepad.right_bumper_just_pressed && config.scale < 20 {
         config.scale += 1;
     }
 }
@@ -522,8 +537,8 @@ fn move_avatar(
 
     let Ok(mut tf) = avatar_q.single_mut() else { return };
     let delta = dir * AVATAR_SPEED * config.speed_mult * time.delta_secs();
-    tf.translation.x = (tf.translation.x + delta.x).rem_euclid(ARENA_PX);
-    tf.translation.y = (tf.translation.y + delta.y).rem_euclid(ARENA_PX);
+    tf.translation.x += delta.x;
+    tf.translation.y += delta.y;
 
     // Keep glow centered on avatar
     if let Ok(mut glow_tf) = glow_q.single_mut() {
@@ -558,7 +573,9 @@ fn update_camera(
     let ax = avatar_tf.translation.x;
     let ay = avatar_tf.translation.y;
 
-    // When scale actually changes, pick the grid-aligned home that centres the avatar best.
+    let view_half = scale * TILE_PX / 2.0;
+
+    // When scale actually changes, re-snap home.
     if config.scale != home.prev_scale {
         home.pos.x = snap_home(ax, config.scale);
         home.pos.y = snap_home(ay, config.scale);
@@ -567,26 +584,24 @@ fn update_camera(
 
     if config.scale <= 1 {
         // Scale 1: stateless per-tile camera (both buffers active per tile).
-        cam_pos.0.x = tile_camera(ax, config.buffer_frac).rem_euclid(ARENA_PX);
-        cam_pos.0.y = tile_camera(ay, config.buffer_frac).rem_euclid(ARENA_PX);
+        cam_pos.0.x = tile_camera(ax, config.buffer_frac);
+        cam_pos.0.y = tile_camera(ay, config.buffer_frac);
         home.pos = cam_pos.0;
     } else {
-        // Scale > 1: stateful home-based camera.  Buffer only on edge tiles.
         let buffer = TILE_PX * config.buffer_frac;
-        let view_half = scale * TILE_PX / 2.0;
         let dead_half = view_half - buffer;
 
+        // Both axes use the same logic — ghost tiles handle visual tiling,
+        // so no special case when the view exceeds the arena dimension.
         home.pos.x = axis_home(home.pos.x, ax, view_half);
-        home.pos.y = axis_home(home.pos.y, ay, view_half);
-
-        let offset_x = wrap_offset(ax - home.pos.x, ARENA_PX);
-        let offset_y = wrap_offset(ay - home.pos.y, ARENA_PX);
-
+        let offset_x = ax - home.pos.x;
         let scroll_x = axis_scroll(offset_x, dead_half, buffer);
-        let scroll_y = axis_scroll(offset_y, dead_half, buffer);
+        cam_pos.0.x = home.pos.x + scroll_x;
 
-        cam_pos.0.x = (home.pos.x + scroll_x).rem_euclid(ARENA_PX);
-        cam_pos.0.y = (home.pos.y + scroll_y).rem_euclid(ARENA_PX);
+        home.pos.y = axis_home(home.pos.y, ay, view_half);
+        let offset_y = ay - home.pos.y;
+        let scroll_y = axis_scroll(offset_y, dead_half, buffer);
+        cam_pos.0.y = home.pos.y + scroll_y;
     }
 
     cam_tf.translation.x = cam_pos.0.x;
@@ -619,11 +634,11 @@ fn tile_camera(pos: f32, buffer_frac: f32) -> f32 {
 /// Shift `home` by whole tiles until the avatar is inside the visible area.
 fn axis_home(mut home: f32, avatar: f32, view_half: f32) -> f32 {
     loop {
-        let offset = wrap_offset(avatar - home, ARENA_PX);
+        let offset = avatar - home;
         if offset > view_half {
-            home = (home + TILE_PX).rem_euclid(ARENA_PX);
+            home += TILE_PX;
         } else if offset < -view_half {
-            home = (home - TILE_PX).rem_euclid(ARENA_PX);
+            home -= TILE_PX;
         } else {
             return home;
         }
@@ -647,22 +662,7 @@ fn axis_scroll(offset: f32, dead_half: f32, buffer: f32) -> f32 {
     }
 }
 
-/// Wrap the avatar's rendered position relative to the camera, just like tiles.
-fn wrap_avatar(
-    cam_pos: Res<CameraPos>,
-    mut avatar_q: Query<&mut Transform, (With<Avatar>, Without<Glow>)>,
-    mut glow_q: Query<&mut Transform, (With<Glow>, Without<Avatar>)>,
-) {
-    let Ok(mut tf) = avatar_q.single_mut() else { return };
-    let cam = cam_pos.0;
-    tf.translation.x = cam.x + wrap_offset(tf.translation.x - cam.x, ARENA_PX);
-    tf.translation.y = cam.y + wrap_offset(tf.translation.y - cam.y, ARENA_PX);
 
-    if let Ok(mut glow_tf) = glow_q.single_mut() {
-        glow_tf.translation.x = tf.translation.x;
-        glow_tf.translation.y = tf.translation.y;
-    }
-}
 
 fn hud_system(
     mut contexts: EguiContexts,
@@ -682,7 +682,7 @@ fn hud_system(
 
             let mut scale_i32 = config.scale as i32;
             ui.label(format!("Scale: {}x{}", config.scale, config.scale));
-            ui.add(egui::Slider::new(&mut scale_i32, 1..=7).text("scale"));
+            ui.add(egui::Slider::new(&mut scale_i32, 1..=20).text("scale"));
             config.scale = scale_i32.max(1) as u32;
 
             ui.separator();
@@ -701,31 +701,74 @@ fn wrap_offset(delta: f32, period: f32) -> f32 {
 /// the centre of the view.  Odd scales use tile-centre grids; even scales
 /// use tile-boundary grids.
 fn snap_home(avatar_pos: f32, scale: u32) -> f32 {
-    // The two nearest grid points that straddle the avatar.
-    let (a, b) = if scale % 2 == 1 {
+    if scale % 2 == 1 {
         // Odd grid: TILE_PX/2, 3·TILE_PX/2, …
-        let n = ((avatar_pos / TILE_PX) - 0.5).floor();
-        (
-            ((n + 0.5) * TILE_PX).rem_euclid(ARENA_PX),
-            ((n + 1.5) * TILE_PX).rem_euclid(ARENA_PX),
-        )
+        ((avatar_pos / TILE_PX - 0.5).round() + 0.5) * TILE_PX
     } else {
         // Even grid: 0, TILE_PX, 2·TILE_PX, …
-        let n = (avatar_pos / TILE_PX).floor();
-        (
-            (n * TILE_PX).rem_euclid(ARENA_PX),
-            ((n + 1.0) * TILE_PX).rem_euclid(ARENA_PX),
-        )
-    };
+        (avatar_pos / TILE_PX).round() * TILE_PX
+    }
+}
 
-    // Pick whichever puts the avatar closer to the view centre (i.e. closer
-    // to home), using wrapped distance.
-    let dist_a = wrap_offset(avatar_pos - a, ARENA_PX).abs();
-    let dist_b = wrap_offset(avatar_pos - b, ARENA_PX).abs();
-    if dist_a <= dist_b { a } else { b }
+/// Spawn or despawn ghost tile copies when the scale changes so the torus
+/// visually tiles at any zoom level.
+fn manage_ghosts(
+    mut commands: Commands,
+    config: Res<ScrollConfig>,
+    mut ghost_config: ResMut<GhostConfig>,
+    tile_map: Res<TileMap>,
+    tiles: Query<(Entity, &Tile)>,
+) {
+    let scale = config.scale as f32;
+    let view_half = scale * TILE_PX / 2.0;
+
+    // How many extra full-arena copies we need in each direction per axis.
+    let needed_x = ((view_half + ARENA_PX_W / 2.0) / ARENA_PX_W).ceil() as i32 - 1;
+    let needed_y = ((view_half + ARENA_PX_H / 2.0) / ARENA_PX_H).ceil() as i32 - 1;
+
+    if needed_x == ghost_config.copies_x && needed_y == ghost_config.copies_y {
+        return;
+    }
+
+    // Despawn all existing ghosts.
+    for (entity, tile) in &tiles {
+        if tile.copy_x != 0 || tile.copy_y != 0 {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    // Spawn new ghosts for every (nx, ny) pair except (0, 0).
+    for nx in -needed_x..=needed_x {
+        for ny in -needed_y..=needed_y {
+            if nx == 0 && ny == 0 {
+                continue;
+            }
+            for row in 0..ARENA_ROWS {
+                for col in 0..ARENA_COLS {
+                    let handle = tile_map.handles[row][col].clone();
+                    commands.spawn((
+                        Tile { grid_x: col, grid_y: row, copy_x: nx, copy_y: ny },
+                        Sprite {
+                            image: handle,
+                            ..default()
+                        },
+                        Transform::from_xyz(
+                            col as f32 * TILE_PX + TILE_PX / 2.0 + nx as f32 * ARENA_PX_W,
+                            row as f32 * TILE_PX + TILE_PX / 2.0 + ny as f32 * ARENA_PX_H,
+                            0.0,
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+
+    ghost_config.copies_x = needed_x;
+    ghost_config.copies_y = needed_y;
 }
 
 /// Reposition tiles so they wrap seamlessly around the camera.
+/// Ghost copies are offset by their copy_x/copy_y periods.
 fn wrap_tiles(cam_pos: Res<CameraPos>, mut tiles: Query<(&Tile, &mut Transform)>) {
     let cam = cam_pos.0;
 
@@ -733,7 +776,7 @@ fn wrap_tiles(cam_pos: Res<CameraPos>, mut tiles: Query<(&Tile, &mut Transform)>
         let base_x = tile.grid_x as f32 * TILE_PX + TILE_PX / 2.0;
         let base_y = tile.grid_y as f32 * TILE_PX + TILE_PX / 2.0;
 
-        tf.translation.x = cam.x + wrap_offset(base_x - cam.x, ARENA_PX);
-        tf.translation.y = cam.y + wrap_offset(base_y - cam.y, ARENA_PX);
+        tf.translation.x = cam.x + wrap_offset(base_x - cam.x, ARENA_PX_W) + tile.copy_x as f32 * ARENA_PX_W;
+        tf.translation.y = cam.y + wrap_offset(base_y - cam.y, ARENA_PX_H) + tile.copy_y as f32 * ARENA_PX_H;
     }
 }

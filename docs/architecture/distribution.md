@@ -60,11 +60,11 @@ When a newer version is detected:
 
 The binary knows its own platform at compile time and fetches the correct artifact:
 
-| Platform | Download URL                                      | Binary name  |
-| -------- | ------------------------------------------------- | ------------ |
-| Windows  | `https://arcade.seanshubin.com/windows/arcade.exe`| `arcade.exe` |
-| macOS    | `https://arcade.seanshubin.com/macos/arcade`      | `arcade`     |
-| Linux    | `https://arcade.seanshubin.com/linux/arcade`      | `arcade`     |
+| Platform | Download URL                                       | Binary name  |
+| -------- | -------------------------------------------------- | ------------ |
+| Windows  | `https://arcade.seanshubin.com/windows/arcade.exe` | `arcade.exe` |
+| macOS    | `https://arcade.seanshubin.com/macos/arcade`       | `arcade`     |
+| Linux    | `https://arcade.seanshubin.com/linux/arcade`       | `arcade`     |
 
 ### Platform-Specific Replacement
 
@@ -129,7 +129,7 @@ The relay understands the **protocol envelope** — message type, tick number, p
 
 | Scenario                                          | What happens                                                                                                                                                          |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash. Chat continues to work across versions. Simulation contexts are version-isolated. No relay downtime.             |
+| **Client code changed, relay protocol unchanged** | Relay stays running. New clients arrive with a new commit hash. Chat continues to work across versions. Simulation contexts are version-isolated. No relay downtime.  |
 | **Relay protocol changed**                        | CI deploys new relay binary. Relay restart disconnects all clients. Clients auto-update on next launch via the startup flow, then reconnect with the correct version. |
 
 ## Cross-Platform Considerations (Bevy)

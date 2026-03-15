@@ -26,24 +26,24 @@ A regular window sized exactly to the monitor with no title bar or borders. Look
 
 ## Comparison
 
-| Feature               | Windowed           | Borderless         | Exclusive Fullscreen |
-|-----------------------|--------------------|--------------------| ---------------------|
-| Alt-tab speed         | Instant            | Instant            | Slow                 |
-| Custom resolution     | No (uses desktop)  | No (uses desktop)  | Yes                  |
-| Performance           | Good               | Good               | Best (marginal)      |
-| Overlays/popups       | Work normally      | Work normally      | Often blocked        |
-| Screen tearing control| Compositor handles | Compositor handles | App/driver handles   |
+| Feature                | Windowed           | Borderless         | Exclusive Fullscreen |
+| ---------------------- | ------------------ | ------------------ | -------------------- |
+| Alt-tab speed          | Instant            | Instant            | Slow                 |
+| Custom resolution      | No (uses desktop)  | No (uses desktop)  | Yes                  |
+| Performance            | Good               | Good               | Best (marginal)      |
+| Overlays/popups        | Work normally      | Work normally      | Often blocked        |
+| Screen tearing control | Compositor handles | Compositor handles | App/driver handles   |
 
 ## Bevy API
 
 Bevy exposes these via `WindowMode`:
 
-| Bevy variant                          | Mode                                               |
-|---------------------------------------|----------------------------------------------------|
-| `WindowMode::Windowed`                | Standard windowed                                  |
-| `WindowMode::BorderlessFullscreen(m)` | Borderless window sized to monitor                 |
-| `WindowMode::Fullscreen(m)`           | Exclusive fullscreen (can change resolution)       |
-| `WindowMode::SizedFullscreen(m)`      | Exclusive fullscreen at desktop resolution          |
+| Bevy variant                          | Mode                                         |
+| ------------------------------------- | -------------------------------------------- |
+| `WindowMode::Windowed`                | Standard windowed                            |
+| `WindowMode::BorderlessFullscreen(m)` | Borderless window sized to monitor           |
+| `WindowMode::Fullscreen(m)`           | Exclusive fullscreen (can change resolution) |
+| `WindowMode::SizedFullscreen(m)`      | Exclusive fullscreen at desktop resolution   |
 
 The `m` parameter selects which monitor to use.
 

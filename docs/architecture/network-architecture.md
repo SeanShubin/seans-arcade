@@ -66,11 +66,11 @@ Everything outside simulation contexts — chat, lobbies, matchmaking, presence 
 
 The application is organized into named spaces, each with different networking characteristics:
 
-| Space        | Description                                                                                             | Simulation context? |
-| ------------ | ------------------------------------------------------------------------------------------------------- | ------------------- |
+| Space        | Description                                                                                                                                                                                      | Simulation context? |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
 | **Arcade**   | The shared navigable space where players exist as avatars. Uses diegetic UI — players walk up to game cabinets to join games rather than clicking menus. All connected players share this space. | Yes                 |
 | **Chat**     | Text communication available everywhere. Messages are independent events — one message does not affect another, so there is no state to drift even if delivery is out of order.                  | No                  |
-| **\<Game\>** | Individual game sessions (e.g., Pong). Each session is its own simulation context with its own state, transition function, and input stream. Players enter from the Arcade.                     | Yes (per session)   |
+| **\<Game\>** | Individual game sessions (e.g., Pong). Each session is its own simulation context with its own state, transition function, and input stream. Players enter from the Arcade.                      | Yes (per session)   |
 
 Chat is conventional client-server messaging. The Arcade and each game session are separate simulation contexts — isolated state, deterministic transition functions, identified input streams. A player in the Arcade who walks up to a Pong cabinet and joins transitions from the Arcade simulation context into a Pong simulation context.
 

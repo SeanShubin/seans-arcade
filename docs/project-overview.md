@@ -25,10 +25,10 @@ Think of a physical arcade — everyone can hear each other, and players wander 
 
 ## Project Binaries
 
-| Binary           | Purpose                                                         | Where it runs     |
-| ---------------- | --------------------------------------------------------------- | ----------------- |
-| **`arcade`**     | Game client — the Bevy application players download and run     | Player machines   |
-| **`relay`**      | Input coordinator — orders and broadcasts inputs, no game logic | AWS VM            |
+| Binary           | Purpose                                                             | Where it runs     |
+| ---------------- | ------------------------------------------------------------------- | ----------------- |
+| **`arcade`**     | Game client — the Bevy application players download and run         | Player machines   |
+| **`relay`**      | Input coordinator — orders and broadcasts inputs, no game logic     | AWS VM            |
 | **`arcade-ops`** | Operator tooling — monitor, manage, debug, analytics, infra control | Developer machine |
 
 The game client and relay are the runtime system. The CLI is the operator's single interface to everything else: checking relay health (`status`), viewing connected users (`users`), browsing chat history (`history`), managing identities (`kick`, `reset-identity`), running analytics (`stats`, `health`), and controlling infrastructure (`relay restart`, `infra apply`). See [architecture-decisions.md](architecture-decisions.md) for why three binaries, not more or fewer, and [admin-cli.md](architecture/admin-cli.md) for the full command reference.
@@ -162,9 +162,11 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [window-modes.md](research/window-modes.md) — Window modes: windowed, borderless, fullscreen, and how they differ
 - [bevy-wasm-build.md](research/bevy-wasm-build.md) — Building Bevy examples for WebAssembly: setup, config, dev runner, production builds
 - [bevy-scrollable-ui.md](research/bevy-scrollable-ui.md) — Bevy 0.18 scrollable UI: flexbox gotchas, scroll containers, scrollbar implementation
+- [autotile-blob-patterns.md](research/autotile-blob-patterns.md) — 47-tile blob tileset theory: why 47 patterns, how auto-tiling works in LDtk
 
 ### Postmortems
 
 - [bevy-command-timing.md](postmortems/bevy-command-timing.md) — Resource not available same frame as commands.insert_resource()
 - [hostname-not-resolved.md](postmortems/hostname-not-resolved.md) — SocketAddr::parse() silently fails on hostnames, client connects to localhost
 - [glibc-version-mismatch.md](postmortems/glibc-version-mismatch.md) — Relay crash-loops: CI builds against newer glibc than Docker base image provides
+- [torus-position-wrapping.md](postmortems/torus-position-wrapping.md) — Premature representation collapse: wrapping torus positions in the data model instead of at the rendering boundary

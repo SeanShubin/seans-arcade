@@ -24,18 +24,18 @@ git push master
 
 Managed by Terraform in `infra/`. All resources are in `us-east-1`.
 
-| Resource | Purpose |
-|----------|---------|
-| S3 bucket (`arcade.seanshubin.com`) | Stores downloadable client binaries and index.html |
-| CloudFront distribution | CDN, HTTPS termination, edge caching |
-| ACM certificate | SSL/TLS for `arcade.seanshubin.com` |
-| Route53 A record (`arcade.seanshubin.com`) | Points to CloudFront |
-| Route53 A record (`relay.seanshubin.com`) | Points to Lightsail static IP |
-| ECR repository (`arcade-relay`) | Stores relay Docker images (last 3 kept) |
-| Lightsail instance (`arcade-relay`) | Runs the relay Docker container |
-| Lightsail static IP | Stable IP for the relay VM |
-| IAM OIDC provider | Trusts GitHub Actions tokens |
-| IAM role (`arcade-github-deploy`) | Assumed by CI; scoped permissions |
+| Resource                                   | Purpose                                            |
+| ------------------------------------------ | -------------------------------------------------- |
+| S3 bucket (`arcade.seanshubin.com`)        | Stores downloadable client binaries and index.html |
+| CloudFront distribution                    | CDN, HTTPS termination, edge caching               |
+| ACM certificate                            | SSL/TLS for `arcade.seanshubin.com`                |
+| Route53 A record (`arcade.seanshubin.com`) | Points to CloudFront                               |
+| Route53 A record (`relay.seanshubin.com`)  | Points to Lightsail static IP                      |
+| ECR repository (`arcade-relay`)            | Stores relay Docker images (last 3 kept)           |
+| Lightsail instance (`arcade-relay`)        | Runs the relay Docker container                    |
+| Lightsail static IP                        | Stable IP for the relay VM                         |
+| IAM OIDC provider                          | Trusts GitHub Actions tokens                       |
+| IAM role (`arcade-github-deploy`)          | Assumed by CI; scoped permissions                  |
 
 ## Authentication
 
@@ -54,15 +54,15 @@ No long-lived AWS credentials are stored anywhere.
 
 All secrets are stored as GitHub Actions repository secrets. No secrets are stored as files on the VM — the VM is fully disposable. See [architecture-decisions.md](../architecture-decisions.md#all-runtime-secrets-stored-in-github-actions-secrets) for rationale.
 
-| Secret | Value | Source |
-|--------|-------|--------|
-| `AWS_DEPLOY_ROLE_ARN` | IAM role ARN for OIDC | `terraform output deploy_role_arn` |
-| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution ID | `terraform output cloudfront_distribution_id` |
-| `RELAY_SSH_KEY` | Lightsail SSH private key | `~/.ssh/lightsail-key.pem` |
-| `RELAY_SECRET` | Shared secret for relay handshake | Operator-chosen passphrase |
-| `S3_BUCKET` | S3 bucket for chat persistence and admin | `arcade.seanshubin.com` |
-| `AWS_ACCESS_KEY_ID` | IAM user access key for relay S3 access | IAM Console → Create access key |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret key for relay S3 access | IAM Console → Create access key |
+| Secret                       | Value                                    | Source                                        |
+| ---------------------------- | ---------------------------------------- | --------------------------------------------- |
+| `AWS_DEPLOY_ROLE_ARN`        | IAM role ARN for OIDC                    | `terraform output deploy_role_arn`            |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution ID               | `terraform output cloudfront_distribution_id` |
+| `RELAY_SSH_KEY`              | Lightsail SSH private key                | `~/.ssh/lightsail-key.pem`                    |
+| `RELAY_SECRET`               | Shared secret for relay handshake        | Operator-chosen passphrase                    |
+| `S3_BUCKET`                  | S3 bucket for chat persistence and admin | `arcade.seanshubin.com`                       |
+| `AWS_ACCESS_KEY_ID`          | IAM user access key for relay S3 access  | IAM Console → Create access key               |
+| `AWS_SECRET_ACCESS_KEY`      | IAM user secret key for relay S3 access  | IAM Console → Create access key               |
 
 ## Relay Deployment
 

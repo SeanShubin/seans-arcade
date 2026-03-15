@@ -140,8 +140,8 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 | [deployment-pipeline.md](architecture/deployment-pipeline.md)       | CI/CD pipeline: build, deploy to S3, CloudFront invalidation                     |
 | [deployment-setup.md](architecture/deployment-setup.md)             | One-time setup: AWS credentials, Terraform, GitHub secrets                       |
 | [operations-reference.md](architecture/operations-reference.md)     | Where everything lives, VM commands, debugging checklist                         |
-| [admin-cli.md](architecture/admin-cli.md)                           | Admin CLI design: monitoring, management, analytics, infrastructure control     |
-| [admin-dashboard.md](architecture/admin-dashboard.md)               | *(Superseded)* — replaced by admin CLI                                          |
+| [admin-cli.md](architecture/admin-cli.md)                           | Admin CLI design: monitoring, management, analytics, infrastructure control      |
+| [admin-dashboard.md](architecture/admin-dashboard.md)               | *(Superseded)* — replaced by admin CLI                                           |
 | [architecture-decisions.md](architecture-decisions.md)              | Formalized technical decisions with rationale                                    |
 | [design-philosophy.md](research/design-philosophy.md)               | Game design principles that motivate technical decisions                         |
 | [game-engine-anatomy.md](architecture/game-engine-anatomy.md)       | High-level engine pipeline overview                                              |

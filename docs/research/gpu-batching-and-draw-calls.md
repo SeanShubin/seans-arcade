@@ -66,30 +66,30 @@ The color variation lives entirely inside a shared texture, not in per-entity un
 
 The technique works best when many entities choose from a **bounded set of palettes**:
 
-| Scenario | Palette rows | Fits easily? |
-|----------|-------------|-------------|
-| 32K sprites, 8 team colors | 8 | Trivial |
-| 32K sprites, 50 character variants | 50 | Easy |
-| 32K sprites, each completely unique | 32K | Pushing texture size limits |
+| Scenario                            | Palette rows | Fits easily?                |
+| ----------------------------------- | ------------ | --------------------------- |
+| 32K sprites, 8 team colors          | 8            | Trivial                     |
+| 32K sprites, 50 character variants  | 50           | Easy                        |
+| 32K sprites, each completely unique | 32K          | Pushing texture size limits |
 
 If every entity has a truly unique color mapping, you're storing one palette row per entity. A 16x16 sprite (256 index colors) with 32K entities means a palette texture of 256x32K pixels. This still batches into one draw call (better than 32K draw calls with ColorMaterial), but you're now bounded by maximum texture dimensions and VRAM instead of draw call overhead.
 
 ### Comparison with Other Approaches
 
-| Approach | Color control | Batching | Complexity |
-|----------|--------------|----------|------------|
-| Sprite tint | 1 multiply color | Batches | Built-in |
-| Per-entity ColorMaterial | Full per-entity | No batching | Simple but slow |
-| Indexed color + palette texture | Full per-palette | Batches | Custom shader required |
+| Approach                        | Color control    | Batching    | Complexity             |
+| ------------------------------- | ---------------- | ----------- | ---------------------- |
+| Sprite tint                     | 1 multiply color | Batches     | Built-in               |
+| Per-entity ColorMaterial        | Full per-entity  | No batching | Simple but slow        |
+| Indexed color + palette texture | Full per-palette | Batches     | Custom shader required |
 
 Indexed color is the standard solution when you need more color variation than tinting provides but can't afford per-entity draw calls.
 
 ## Practical Impact: stress_balls vs bouncy_balls
 
-| Example | Rendering approach | Draw calls | Performance |
-|---------|--------------------|------------|-------------|
-| `stress_balls` | 1 shared white-pixel texture, tinted per-instance | 1 draw call for all sprites | 32K+ entities at 240 FPS |
-| `bouncy_balls` | Per-entity `ColorMaterial` + trails | ~5x entities, each its own draw call | Hits limits much sooner |
+| Example        | Rendering approach                                | Draw calls                           | Performance              |
+| -------------- | ------------------------------------------------- | ------------------------------------ | ------------------------ |
+| `stress_balls` | 1 shared white-pixel texture, tinted per-instance | 1 draw call for all sprites          | 32K+ entities at 240 FPS |
+| `bouncy_balls` | Per-entity `ColorMaterial` + trails               | ~5x entities, each its own draw call | Hits limits much sooner  |
 
 The sprite approach keeps the GPU pipeline bound once and streams instance data. The material approach rebinds state for every entity.
 

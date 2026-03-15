@@ -16,12 +16,12 @@ Test machine: Windows 11, 240 Hz display with vsync.
 
 ### 1. Vsync stair-stepping
 
-| Balls | FPS (Update) |
-|-------|-------------|
-| 2^15 (32K) | 240 |
-| 2^16 (64K) | ~120 |
-| 2^17 (128K) | ~60 |
-| 2^18 (256K) | ~30 |
+| Balls       | FPS (Update) |
+| ----------- | ------------ |
+| 2^15 (32K)  | 240          |
+| 2^16 (64K)  | ~120         |
+| 2^17 (128K) | ~60          |
+| 2^18 (256K) | ~30          |
 
 Up to 32K balls, per-frame work fits within the 4.17 ms frame budget (1/240 s). After that, each doubling of balls doubles the work, pushing past the next vsync deadline. The compositor snaps to the next interval — 120, 60, 30 — producing a clean halving pattern rather than a gradual decline.
 
@@ -49,20 +49,20 @@ This explains why 2^16 and 2^17 show no degradation under FixedUpdate — the pe
 
 **But the failure mode is different.** With Update, exceeding the frame budget simply drops to the next vsync step. The result is smooth but slower. With FixedUpdate, when a single tick exceeds 1/64 s (15.6 ms), Bevy accumulates time debt. On the next frame it tries to run multiple catch-up ticks, each of which also exceeds the budget. This creates a death spiral: more catch-up ticks → longer frames → more debt. The visible result is choppiness and stuttering rather than a clean FPS reduction.
 
-| Balls | Update behavior | FixedUpdate behavior |
-|-------|----------------|---------------------|
-| 2^15 | 240 FPS, smooth | 240 FPS, smooth |
-| 2^16 | ~120 FPS, smooth | 240 FPS, smooth |
-| 2^17 | ~60 FPS, smooth | 240 FPS, smooth |
-| 2^18 | ~30 FPS, smooth | choppy / stuttering |
+| Balls | Update behavior  | FixedUpdate behavior |
+| ----- | ---------------- | -------------------- |
+| 2^15  | 240 FPS, smooth  | 240 FPS, smooth      |
+| 2^16  | ~120 FPS, smooth | 240 FPS, smooth      |
+| 2^17  | ~60 FPS, smooth  | 240 FPS, smooth      |
+| 2^18  | ~30 FPS, smooth  | choppy / stuttering  |
 
 **Takeaway**: FixedUpdate lets you handle more entities before trouble starts, but when it does fail, it fails badly. Update degrades gracefully (vsync stair-steps); FixedUpdate hits a wall (tick death spiral). For a real game, FixedUpdate is still the right choice for physics — but you need to budget your fixed-tick work carefully and consider Bevy's max-ticks-per-frame cap to prevent the spiral.
 
 ## Summary
 
-| Concept | What the stress test demonstrates |
-|---------|----------------------------------|
-| Vsync stair-stepping | FPS halves in discrete steps, not gradually |
-| Per-tick vs per-second | No delta-time → visible 4x ratio between 240 Hz and 64 Hz |
-| FixedUpdate tradeoff | ~4x entity headroom, but catastrophic failure instead of graceful degradation |
-| GPU batching | Not the bottleneck here — shared texture means CPU-side systems are the limit |
+| Concept                | What the stress test demonstrates                                             |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| Vsync stair-stepping   | FPS halves in discrete steps, not gradually                                   |
+| Per-tick vs per-second | No delta-time → visible 4x ratio between 240 Hz and 64 Hz                     |
+| FixedUpdate tradeoff   | ~4x entity headroom, but catastrophic failure instead of graceful degradation |
+| GPU batching           | Not the bottleneck here — shared texture means CPU-side systems are the limit |

@@ -4,11 +4,11 @@ How to compile Bevy examples (e.g., `bouncing_balls`) to WASM and run them in th
 
 ## Tool Options
 
-| Tool | Use case | Maturity |
-|------|----------|----------|
-| **`wasm-server-runner`** | Local dev — `cargo run` opens a browser tab automatically | Stable, widely used |
-| **`bevy_cli`** | Bevy-specific build/serve tool | Alpha, not recommended yet |
-| **`wasm-bindgen-cli`** | Production builds — generates JS glue + optimized `.wasm` | Stable, manual setup |
+| Tool                     | Use case                                                  | Maturity                   |
+| ------------------------ | --------------------------------------------------------- | -------------------------- |
+| **`wasm-server-runner`** | Local dev — `cargo run` opens a browser tab automatically | Stable, widely used        |
+| **`bevy_cli`**           | Bevy-specific build/serve tool                            | Alpha, not recommended yet |
+| **`wasm-bindgen-cli`**   | Production builds — generates JS glue + optimized `.wasm` | Stable, manual setup       |
 
 For day-to-day iteration, `wasm-server-runner` is the simplest path. Use `wasm-bindgen-cli` when you need a deployable artifact.
 

@@ -75,56 +75,56 @@ The schema is generated from the protocol crate's type definitions (the source o
 
 ### Observe (read from S3)
 
-| Command | Description | S3 Source |
-|---------|-------------|-----------|
-| `status` | Relay health: uptime, client count, commit hash, last sync age. `--watch` for auto-refresh. | `admin/heartbeat.json` |
-| `users` | Connected users with idle times, client versions. | `admin/connected.json` |
-| `identities` | All registered identity names. No secrets shown. | `admin/identities.json` |
-| `history` | Chat history. | `admin/chat-history.json` |
-| `logs` | Chat logs. Currently local-only; remote via S3 once relay uploads logs. | Local filesystem or S3 (future) |
+| Command      | Description                                                                                 | S3 Source                       |
+| ------------ | ------------------------------------------------------------------------------------------- | ------------------------------- |
+| `status`     | Relay health: uptime, client count, commit hash, last sync age. `--watch` for auto-refresh. | `admin/heartbeat.json`          |
+| `users`      | Connected users with idle times, client versions.                                           | `admin/connected.json`          |
+| `identities` | All registered identity names. No secrets shown.                                            | `admin/identities.json`         |
+| `history`    | Chat history.                                                                               | `admin/chat-history.json`       |
+| `logs`       | Chat logs. Currently local-only; remote via S3 once relay uploads logs.                     | Local filesystem or S3 (future) |
 
 ### Control (write commands to S3)
 
-| Command | Description | Effect |
-|---------|-------------|--------|
-| `kick <user>` | Disconnect a user and remove their identity registration. | Extends existing `delete-user` command. |
-| `reset-identity <user>` | Wipe a user's stored secret so they re-register on next connect. | New relay command type. |
-| `broadcast <message>` | Send a system message to all connected clients. | New relay command type. |
-| `drain` | Gracefully disconnect all clients (pre-maintenance). | New relay command type. |
+| Command                 | Description                                                      | Effect                                  |
+| ----------------------- | ---------------------------------------------------------------- | --------------------------------------- |
+| `kick <user>`           | Disconnect a user and remove their identity registration.        | Extends existing `delete-user` command. |
+| `reset-identity <user>` | Wipe a user's stored secret so they re-register on next connect. | New relay command type.                 |
+| `broadcast <message>`   | Send a system message to all connected clients.                  | New relay command type.                 |
+| `drain`                 | Gracefully disconnect all clients (pre-maintenance).             | New relay command type.                 |
 
 Commands are written as JSON files to `admin/commands/`. The relay polls, executes, and deletes them. The relay remains the single owner of mutable state.
 
 ### Infrastructure (AWS/SSH/Terraform)
 
-| Command | Description | Mechanism |
-|---------|-------------|-----------|
-| `relay restart` | Restart the relay Docker container. | SSH to Lightsail. |
-| `relay redeploy` | Pull latest image and restart. | SSH to Lightsail. |
-| `relay destroy` | Tear down relay infrastructure (with confirmation). | `terraform destroy` (relay resources). |
-| `relay ssh` | Open an interactive SSH session. | SSH to Lightsail. |
-| `infra plan` | Preview infrastructure changes. | `terraform plan`. |
-| `infra apply` | Apply infrastructure changes (with confirmation). | `terraform apply`. |
-| `infra destroy` | Destroy all infrastructure (with confirmation). | `terraform destroy`. |
+| Command          | Description                                         | Mechanism                              |
+| ---------------- | --------------------------------------------------- | -------------------------------------- |
+| `relay restart`  | Restart the relay Docker container.                 | SSH to Lightsail.                      |
+| `relay redeploy` | Pull latest image and restart.                      | SSH to Lightsail.                      |
+| `relay destroy`  | Tear down relay infrastructure (with confirmation). | `terraform destroy` (relay resources). |
+| `relay ssh`      | Open an interactive SSH session.                    | SSH to Lightsail.                      |
+| `infra plan`     | Preview infrastructure changes.                     | `terraform plan`.                      |
+| `infra apply`    | Apply infrastructure changes (with confirmation).   | `terraform apply`.                     |
+| `infra destroy`  | Destroy all infrastructure (with confirmation).     | `terraform destroy`.                   |
 
 ### Analytics (read + interpret)
 
-| Command | Description | Data Source |
-|---------|-------------|-------------|
-| `stats` | Message volume, active users. | `admin/chat-history.json` |
-| `uptime` | Relay uptime history — when it was up, when it went down, total availability. | `admin/heartbeat.json` (track over time) |
-| `versions` | Which client versions are connected, who's outdated. | `admin/connected.json` |
-| `health` | Composite check: relay responding? S3 syncing? cert valid? DNS resolving? | Multiple sources. |
+| Command    | Description                                                                   | Data Source                              |
+| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------- |
+| `stats`    | Message volume, active users.                                                 | `admin/chat-history.json`                |
+| `uptime`   | Relay uptime history — when it was up, when it went down, total availability. | `admin/heartbeat.json` (track over time) |
+| `versions` | Which client versions are connected, who's outdated.                          | `admin/connected.json`                   |
+| `health`   | Composite check: relay responding? S3 syncing? cert valid? DNS resolving?     | Multiple sources.                        |
 
 Analytics commands interpret raw data rather than just displaying it. `stats` shows trends, not raw numbers. `health` gives a pass/fail verdict with specifics on failures.
 
 ### Data Management (S3 reads + deletes)
 
-| Command | Description | Mechanism |
-|---------|-------------|-----------|
-| `data versions` | List commit hashes with stored data. Shows schema notes and storage size. | `list_keys("admin/versions/")` + read each version's `schema.json`. |
-| `data inspect <hash>` | Show schema info and stored files for a version. | Reads `admin/versions/<hash>/schema.json` and lists files. |
-| `data delete <hash>` | Delete all stored data for a version (with confirmation). | Prefix delete of `admin/versions/<hash>/`. |
-| `data prune` | Delete data for all versions with no connected clients (with confirmation). Combines `data versions` with `users` to find stale versions. | S3 key enumeration + prefix deletion. |
+| Command               | Description                                                                                                                               | Mechanism                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `data versions`       | List commit hashes with stored data. Shows schema notes and storage size.                                                                 | `list_keys("admin/versions/")` + read each version's `schema.json`. |
+| `data inspect <hash>` | Show schema info and stored files for a version.                                                                                          | Reads `admin/versions/<hash>/schema.json` and lists files.          |
+| `data delete <hash>`  | Delete all stored data for a version (with confirmation).                                                                                 | Prefix delete of `admin/versions/<hash>/`.                          |
+| `data prune`          | Delete data for all versions with no connected clients (with confirmation). Combines `data versions` with `users` to find stale versions. | S3 key enumeration + prefix deletion.                               |
 
 #### Cross-version compatibility
 
