@@ -259,6 +259,23 @@ struct MapConfig {
     cells: Vec<CellEntry>,
 }
 
+#[derive(Resource)]
+struct ViewScale {
+    scale: u32,
+    prev_scale: u32,
+    max_scale: u32,
+}
+
+#[derive(Resource, Default)]
+struct CameraHome(Vec2);
+
+/// Marker for ghost tile copies used at higher view scales.
+#[derive(Component)]
+struct Ghost {
+    copy_x: i32,
+    copy_y: i32,
+}
+
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -327,6 +344,43 @@ fn wrap_offset(delta: f32, period: f32) -> f32 {
     (delta + period / 2.0).rem_euclid(period) - period / 2.0
 }
 
+/// Snap to the screen-centre grid nearest the avatar.
+fn snap_home(pos: f32) -> f32 {
+    ((pos / VIEW_PX - 0.5).round() + 0.5) * VIEW_PX
+}
+
+/// Shift `home` by one screen at a time until the avatar is inside the visible area.
+fn axis_home(mut home: f32, avatar: f32, view_half: f32) -> f32 {
+    loop {
+        let offset = avatar - home;
+        if offset > view_half { home += VIEW_PX; }
+        else if offset < -view_half { home -= VIEW_PX; }
+        else { return home; }
+    }
+}
+
+/// Camera scroll offset for one axis at scale > 1.
+/// Inside the dead zone: no scroll. In the buffer strip (1 cell wide) the
+/// camera slides up to one full screen (VIEW_PX) toward the avatar.
+fn axis_scroll(offset: f32, dead_half: f32, buffer: f32) -> f32 {
+    if offset > dead_half {
+        let t = ((offset - dead_half) / buffer).clamp(0.0, 1.0);
+        t * VIEW_PX
+    } else if offset < -dead_half {
+        let t = ((-offset - dead_half) / buffer).clamp(0.0, 1.0);
+        -t * VIEW_PX
+    } else {
+        0.0
+    }
+}
+
+/// Sync prev_scale so the scale-change detection in update_camera fires once.
+fn sync_view_scale(mut view_scale: ResMut<ViewScale>) {
+    if view_scale.scale != view_scale.prev_scale {
+        view_scale.prev_scale = view_scale.scale;
+    }
+}
+
 /// Per-screen camera: snaps to screen center, slides through buffer at edges.
 /// Each buffer provides half the transition; the neighboring screen's buffer
 /// provides the other half, giving a smooth full-screen slide.
@@ -382,12 +436,15 @@ fn main() {
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(EguiPlugin::default())
         .init_resource::<GamepadState>()
+        .init_resource::<CameraHome>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             read_gamepad_input,
             player_movement,
             update_camera_scale,
             update_camera,
+            sync_view_scale,
+            manage_ghosts,
             wrap_tiles,
             switch_character,
             switch_tiles,
@@ -468,11 +525,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         floor_sheets, wall_sheets,
         floor_idx: 0, wall_idx: 0,
     });
+    // Max view scale: map must be at least as wide as the view (odd only)
+    let max_cells = map.cols.min(map.rows) as u32;
+    let max_scale = (max_cells / VIEW_CELLS as u32).max(1);
+    let max_scale = if max_scale % 2 == 0 { max_scale - 1 } else { max_scale };
+
     commands.insert_resource(MapConfig {
         cols: map.cols, rows: map.rows,
         map_w, map_h,
         cells: map.cells,
     });
+    commands.insert_resource(ViewScale { scale: 1, prev_scale: 1, max_scale });
 
     // Player
     let start_x = map.start_col as f32 * CELL_SIZE + CELL_SIZE / 2.0;
@@ -536,11 +599,11 @@ fn player_movement(
             let speed = MOVE_SPEED * time.delta_secs();
             let input = dir.normalize();
 
-            // Probe each axis for wall collisions
-            let probe_x = (tf.translation.x + input.x * speed).rem_euclid(map.map_w);
-            let x_blocked = input.x != 0.0 && is_wall_at(probe_x, tf.translation.y, &map);
-            let probe_y = (tf.translation.y + input.y * speed).rem_euclid(map.map_h);
-            let y_blocked = input.y != 0.0 && is_wall_at(tf.translation.x, probe_y, &map);
+            // Probe each axis for wall collisions (use rem_euclid for lookup only)
+            let probe_x = tf.translation.x + input.x * speed;
+            let x_blocked = input.x != 0.0 && is_wall_at(probe_x.rem_euclid(map.map_w), tf.translation.y.rem_euclid(map.map_h), &map);
+            let probe_y = tf.translation.y + input.y * speed;
+            let y_blocked = input.y != 0.0 && is_wall_at(tf.translation.x.rem_euclid(map.map_w), probe_y.rem_euclid(map.map_h), &map);
 
             // Corner assist: if one axis is blocked and the other has no input,
             // continue moving on the unblocked axis using the remembered direction.
@@ -559,16 +622,16 @@ fn player_movement(
             let mut moved = Vec2::ZERO;
 
             if eff_x != 0.0 {
-                let new_x = (tf.translation.x + eff_x * speed).rem_euclid(map.map_w);
-                if !is_wall_at(new_x, tf.translation.y, &map) {
+                let new_x = tf.translation.x + eff_x * speed;
+                if !is_wall_at(new_x.rem_euclid(map.map_w), tf.translation.y.rem_euclid(map.map_h), &map) {
                     tf.translation.x = new_x;
                     moved.x = eff_x;
                 }
             }
 
             if eff_y != 0.0 {
-                let new_y = (tf.translation.y + eff_y * speed).rem_euclid(map.map_h);
-                if !is_wall_at(tf.translation.x, new_y, &map) {
+                let new_y = tf.translation.y + eff_y * speed;
+                if !is_wall_at(tf.translation.x.rem_euclid(map.map_w), new_y.rem_euclid(map.map_h), &map) {
                     tf.translation.y = new_y;
                     moved.y = eff_y;
                 }
@@ -590,49 +653,131 @@ fn player_movement(
 
 fn update_camera_scale(
     windows: Query<&Window>,
+    view_scale: Res<ViewScale>,
     mut proj_q: Query<&mut Projection, With<Camera2d>>,
 ) {
     let Ok(win) = windows.single() else { return };
     let Ok(mut proj) = proj_q.single_mut() else { return };
     let Projection::Orthographic(ref mut ortho) = *proj else { return };
-    let integer_scale = (win.width() / VIEW_PX).min(win.height() / VIEW_PX).floor().max(1.0);
-    let new_scale = 1.0 / integer_scale;
+    let needed = view_scale.scale as f32 * VIEW_PX;
+    let integer_zoom = (win.width() / needed).min(win.height() / needed).floor().max(1.0);
+    let new_scale = 1.0 / integer_zoom;
     if (ortho.scale - new_scale).abs() > f32::EPSILON { ortho.scale = new_scale; }
 }
 
 fn update_camera(
     player_q: Query<&Transform, With<Player>>,
+    view_scale: Res<ViewScale>,
+    mut home: ResMut<CameraHome>,
     proj_q: Query<&Projection, With<Camera2d>>,
     mut cam_q: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
 ) {
     let Ok(ptf) = player_q.single() else { return };
     let Ok(mut cam_tf) = cam_q.single_mut() else { return };
 
-    // Snap to the zoom's pixel grid to prevent sub-pixel cracks between tiles.
-    // At Nx zoom, one screen pixel = 1/N world units, so round to that grid.
     let zoom = if let Ok(Projection::Orthographic(ortho)) = proj_q.single() {
         (1.0 / ortho.scale).round().max(1.0)
     } else { 1.0 };
     let snap = |v: f32| (v * zoom).round() / zoom;
 
-    cam_tf.translation.x = snap(screen_camera(ptf.translation.x));
-    cam_tf.translation.y = snap(screen_camera(ptf.translation.y));
+    let ax = ptf.translation.x;
+    let ay = ptf.translation.y;
+
+    if view_scale.scale != view_scale.prev_scale {
+        home.0.x = snap_home(ax);
+        home.0.y = snap_home(ay);
+    }
+
+    if view_scale.scale <= 1 {
+        cam_tf.translation.x = snap(screen_camera(ax));
+        cam_tf.translation.y = snap(screen_camera(ay));
+        home.0 = Vec2::new(cam_tf.translation.x, cam_tf.translation.y);
+    } else {
+        let scale = view_scale.scale as f32;
+        let view_half = scale * VIEW_PX / 2.0;
+        let buffer = CELL_SIZE; // 1 cell transition zone on each side
+        let dead_half = view_half - buffer;
+
+        home.0.x = axis_home(home.0.x, ax, view_half);
+        let offset_x = ax - home.0.x;
+        let scroll_x = axis_scroll(offset_x, dead_half, buffer);
+
+        home.0.y = axis_home(home.0.y, ay, view_half);
+        let offset_y = ay - home.0.y;
+        let scroll_y = axis_scroll(offset_y, dead_half, buffer);
+
+        cam_tf.translation.x = snap(home.0.x + scroll_x);
+        cam_tf.translation.y = snap(home.0.y + scroll_y);
+    }
 }
 
 fn wrap_tiles(
     cam_q: Query<&Transform, With<Camera2d>>,
     map: Res<MapConfig>,
-    mut tiles: Query<(&MapTile, &mut Transform), Without<Camera2d>>,
+    mut tiles: Query<(&MapTile, Option<&Ghost>, &mut Transform), Without<Camera2d>>,
 ) {
     let Ok(cam_tf) = cam_q.single() else { return };
     let cx = cam_tf.translation.x;
     let cy = cam_tf.translation.y;
-    for (tile, mut tf) in &mut tiles {
+    for (tile, ghost, mut tf) in &mut tiles {
         let bx = tile.col as f32 * CELL_SIZE + CELL_SIZE / 2.0;
         let by = tile.row as f32 * CELL_SIZE + CELL_SIZE / 2.0;
-        tf.translation.x = cx + wrap_offset(bx - cx, map.map_w);
-        tf.translation.y = cy + wrap_offset(by - cy, map.map_h);
+        let (gx, gy) = ghost.map_or((0, 0), |g| (g.copy_x, g.copy_y));
+        tf.translation.x = cx + wrap_offset(bx - cx, map.map_w) + gx as f32 * map.map_w;
+        tf.translation.y = cy + wrap_offset(by - cy, map.map_h) + gy as f32 * map.map_h;
     }
+}
+
+/// Spawn/despawn ghost copies of map tiles when the view scale changes.
+fn manage_ghosts(
+    mut commands: Commands,
+    view_scale: Res<ViewScale>,
+    map: Res<MapConfig>,
+    tiles: Res<TileAssets>,
+    existing: Query<(Entity, &MapTile, Option<&Ghost>)>,
+    mut prev_copies: Local<(i32, i32)>,
+) {
+    let scale = view_scale.scale as f32;
+    let view_half = scale * VIEW_PX / 2.0;
+    // During scroll transitions the camera can move up to VIEW_PX past home,
+    // so we need ghost copies to cover that extra range.
+    let scroll_margin = VIEW_PX;
+    let needed_x = ((view_half + scroll_margin + map.map_w / 2.0) / map.map_w).ceil() as i32 - 1;
+    let needed_y = ((view_half + scroll_margin + map.map_h / 2.0) / map.map_h).ceil() as i32 - 1;
+
+    if needed_x == prev_copies.0 && needed_y == prev_copies.1 { return; }
+
+    // Despawn old ghosts
+    for (entity, _, ghost) in &existing {
+        if ghost.is_some() { commands.entity(entity).despawn(); }
+    }
+
+    // Spawn new ghosts for every (nx, ny) pair except (0, 0)
+    for nx in -needed_x..=needed_x {
+        for ny in -needed_y..=needed_y {
+            if nx == 0 && ny == 0 { continue; }
+            for (_, tile, ghost) in &existing {
+                if ghost.is_some() { continue; } // only clone originals
+                let image = match tile.kind {
+                    CellKind::Wall => tiles.wall_sheets[tiles.wall_idx].1.clone(),
+                    CellKind::Floor => tiles.floor_sheets[tiles.floor_idx].1.clone(),
+                };
+                commands.spawn((
+                    MapTile { col: tile.col, row: tile.row, kind: tile.kind, src_rect: tile.src_rect },
+                    Ghost { copy_x: nx, copy_y: ny },
+                    Sprite {
+                        image,
+                        rect: Some(tile.src_rect),
+                        custom_size: Some(Vec2::splat(CELL_SIZE)),
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, 0.0, -1.0),
+                ));
+            }
+        }
+    }
+
+    *prev_copies = (needed_x, needed_y);
 }
 
 // ---------------------------------------------------------------------------
@@ -716,6 +861,7 @@ fn animate_sprite(
 fn sync_borders(
     windows: Query<&Window>,
     proj_q: Query<&Projection, With<Camera2d>>,
+    view_scale: Res<ViewScale>,
     cam_q: Query<&Transform, With<Camera2d>>,
     mut borders: Query<(&mut Transform, &mut Sprite), (With<Border>, Without<Camera2d>)>,
 ) {
@@ -727,11 +873,12 @@ fn sync_borders(
     let s = ortho.scale;
     let ww = win.width() * s;
     let wh = win.height() * s;
-    let half = VIEW_PX / 2.0;
+    let vp = view_scale.scale as f32 * VIEW_PX;
+    let half = vp / 2.0;
     let cx = cam_tf.translation.x;
     let cy = cam_tf.translation.y;
-    let bw = (ww - VIEW_PX) / 2.0;
-    let bh = (wh - VIEW_PX) / 2.0;
+    let bw = (ww - vp) / 2.0;
+    let bh = (wh - vp) / 2.0;
 
     let panels = [
         (cx - half - bw / 2.0, cy, bw.max(0.0), wh),
@@ -754,14 +901,29 @@ fn hud_system(
     mut contexts: EguiContexts,
     mut chars: ResMut<CharacterAssets>,
     mut tiles: ResMut<TileAssets>,
+    mut view_scale: ResMut<ViewScale>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    egui::Window::new("Assets")
+    egui::Window::new("Config")
         .anchor(egui::Align2::RIGHT_TOP, [-4.0, 4.0])
         .resizable(false)
         .collapsible(true)
         .show(ctx, |ui| {
+            let scale = view_scale.scale;
+            let max = view_scale.max_scale;
+            ui.horizontal(|ui| {
+                if ui.add_enabled(scale > 1, egui::Button::new("◀")).clicked() {
+                    view_scale.scale = (scale - 2).max(1);
+                }
+                ui.label(format!("Scale: {scale}x{scale}"));
+                if ui.add_enabled(scale < max, egui::Button::new("▶")).clicked() {
+                    view_scale.scale = (scale + 2).min(max);
+                }
+            });
+
+            ui.separator();
+
             let char_count = chars.groups.len();
             let char_name = chars.groups[chars.current].0.clone();
             ui.horizontal(|ui| {
@@ -811,7 +973,7 @@ fn hud_system(
 fn update_window_title(
     mut windows: Query<&mut Window>,
     player_q: Query<&Transform, With<Player>>,
-    proj_q: Query<&Projection, With<Camera2d>>,
+    view_scale: Res<ViewScale>,
     chars: Res<CharacterAssets>,
     tiles: Res<TileAssets>,
     map: Res<MapConfig>,
@@ -819,9 +981,7 @@ fn update_window_title(
     let Ok(mut win) = windows.single_mut() else { return };
     let Ok(ptf) = player_q.single() else { return };
 
-    let zoom = if let Ok(Projection::Orthographic(ortho)) = proj_q.single() {
-        (1.0 / ortho.scale).round() as i32
-    } else { 1 };
+    let vs = view_scale.scale;
 
     let px = ptf.translation.x as i32;
     let py = ptf.translation.y as i32;
@@ -835,6 +995,6 @@ fn update_window_title(
     let wall_name = &tiles.wall_sheets[tiles.wall_idx].0;
 
     win.title = format!(
-        "{zoom}x | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}"
+        "{vs}x{vs} | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}"
     );
 }
