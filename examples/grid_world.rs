@@ -16,6 +16,7 @@
 //! Run with: `cargo run --example grid_world [-- path/to/map.ron]`
 
 use bevy::{camera::ScalingMode, prelude::*};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use serde::Deserialize;
 
 const CELL_SIZE: f32 = 64.0;
@@ -379,6 +380,7 @@ fn is_wall_at(x: f32, y: f32, map: &MapConfig) -> bool {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(EguiPlugin::default())
         .init_resource::<GamepadState>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
@@ -394,6 +396,7 @@ fn main() {
             sync_borders,
             update_window_title,
         ).chain())
+        .add_systems(EguiPrimaryContextPass, hud_system)
         .run();
 }
 
@@ -741,6 +744,64 @@ fn sync_borders(
         tf.translation = Vec3::new(ox, oy, 10.0);
         sprite.custom_size = Some(Vec2::new(w, h));
     }
+}
+
+// ---------------------------------------------------------------------------
+// HUD
+// ---------------------------------------------------------------------------
+
+fn hud_system(
+    mut contexts: EguiContexts,
+    mut chars: ResMut<CharacterAssets>,
+    mut tiles: ResMut<TileAssets>,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    egui::Window::new("Assets")
+        .anchor(egui::Align2::RIGHT_TOP, [-4.0, 4.0])
+        .resizable(false)
+        .collapsible(true)
+        .show(ctx, |ui| {
+            let char_count = chars.groups.len();
+            let char_name = chars.groups[chars.current].0.clone();
+            ui.horizontal(|ui| {
+                if ui.button("◀").clicked() {
+                    chars.current = (chars.current + char_count - 1) % char_count;
+                }
+                ui.label(format!("Character: {char_name}"));
+                if ui.button("▶").clicked() {
+                    chars.current = (chars.current + 1) % char_count;
+                }
+            });
+
+            ui.separator();
+
+            let floor_count = tiles.floor_sheets.len();
+            let floor_name = tiles.floor_sheets[tiles.floor_idx].0.clone();
+            ui.horizontal(|ui| {
+                if ui.button("◀").clicked() {
+                    tiles.floor_idx = (tiles.floor_idx + floor_count - 1) % floor_count;
+                }
+                ui.label(format!("Floor: {floor_name}"));
+                if ui.button("▶").clicked() {
+                    tiles.floor_idx = (tiles.floor_idx + 1) % floor_count;
+                }
+            });
+
+            ui.separator();
+
+            let wall_count = tiles.wall_sheets.len();
+            let wall_name = tiles.wall_sheets[tiles.wall_idx].0.clone();
+            ui.horizontal(|ui| {
+                if ui.button("◀").clicked() {
+                    tiles.wall_idx = (tiles.wall_idx + wall_count - 1) % wall_count;
+                }
+                ui.label(format!("Wall: {wall_name}"));
+                if ui.button("▶").clicked() {
+                    tiles.wall_idx = (tiles.wall_idx + 1) % wall_count;
+                }
+            });
+        });
 }
 
 // ---------------------------------------------------------------------------
