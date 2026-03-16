@@ -525,10 +525,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         floor_sheets, wall_sheets,
         floor_idx: 0, wall_idx: 0,
     });
-    // Max view scale: map must be at least as wide as the view (odd only)
-    let max_cells = map.cols.min(map.rows) as u32;
-    let max_scale = (max_cells / VIEW_CELLS as u32).max(1);
-    let max_scale = if max_scale % 2 == 0 { max_scale - 1 } else { max_scale };
+    let max_scale = 9;
 
     commands.insert_resource(MapConfig {
         cols: map.cols, rows: map.rows,
