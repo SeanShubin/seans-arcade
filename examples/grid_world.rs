@@ -260,17 +260,21 @@ struct MapConfig {
 }
 
 #[derive(Resource)]
-struct ViewScale {
-    scale: u32,
-    prev_scale: u32,
-    max_scale: u32,
+struct ViewConfig {
+    /// Cells visible per axis (odd number: 5, 7, 9, ...).
+    sight: u32,
+    prev_sight: u32,
+    max_sight: u32,
 }
 
-impl ViewScale {
-    /// Number of tiles visible per axis: scale 1 → 1, scale 2 → 3, scale 3 → 5, etc.
-    fn tiles_wide(&self) -> u32 { self.scale * 2 - 1 }
-    /// View size in pixels for one axis.
-    fn view_px(&self) -> f32 { self.tiles_wide() as f32 * VIEW_PX }
+impl ViewConfig {
+    /// Reach: camera frame in tiles per axis (odd number: 1, 3, 5, ...).
+    /// Computed from sight — bumps up each time sight crosses a tile boundary.
+    fn reach(&self) -> u32 { ((self.sight - VIEW_CELLS as u32) / (VIEW_CELLS as u32 * 2)) * 2 + 1 }
+    /// Camera frame size in pixels (controls scroll behavior).
+    fn reach_px(&self) -> f32 { self.reach() as f32 * VIEW_PX }
+    /// Viewport size in pixels (controls what you see).
+    fn sight_px(&self) -> f32 { self.sight as f32 * CELL_SIZE }
 }
 
 #[derive(Resource, Default)]
@@ -381,11 +385,9 @@ fn axis_scroll(offset: f32, dead_half: f32, buffer: f32) -> f32 {
     }
 }
 
-/// Sync prev_scale so the scale-change detection in update_camera fires once.
-fn sync_view_scale(mut view_scale: ResMut<ViewScale>) {
-    if view_scale.scale != view_scale.prev_scale {
-        view_scale.prev_scale = view_scale.scale;
-    }
+/// Sync prev sight so change detection in update_camera fires once.
+fn sync_view_config(mut vc: ResMut<ViewConfig>) {
+    if vc.sight != vc.prev_sight { vc.prev_sight = vc.sight; }
 }
 
 /// Per-screen camera: snaps to screen center, slides through buffer at edges.
@@ -450,7 +452,7 @@ fn main() {
             player_movement,
             update_camera_scale,
             update_camera,
-            sync_view_scale,
+            sync_view_config,
             manage_ghosts,
             wrap_tiles,
             switch_character,
@@ -532,14 +534,17 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         floor_sheets, wall_sheets,
         floor_idx: 0, wall_idx: 0,
     });
-    let max_scale = 5; // reach 5 → 9×9 tiles visible
+    let default_sight = VIEW_CELLS as u32; // 5 → 5×5 cells = 1 tile
+    let max_sight = 51; // odd
 
     commands.insert_resource(MapConfig {
         cols: map.cols, rows: map.rows,
         map_w, map_h,
         cells: map.cells,
     });
-    commands.insert_resource(ViewScale { scale: 1, prev_scale: 1, max_scale });
+    commands.insert_resource(ViewConfig {
+        sight: default_sight, prev_sight: default_sight, max_sight,
+    });
 
     // Player
     let start_x = map.start_col as f32 * CELL_SIZE + CELL_SIZE / 2.0;
@@ -657,13 +662,13 @@ fn player_movement(
 
 fn update_camera_scale(
     windows: Query<&Window>,
-    view_scale: Res<ViewScale>,
+    vc: Res<ViewConfig>,
     mut proj_q: Query<&mut Projection, With<Camera2d>>,
 ) {
     let Ok(win) = windows.single() else { return };
     let Ok(mut proj) = proj_q.single_mut() else { return };
     let Projection::Orthographic(ref mut ortho) = *proj else { return };
-    let needed = view_scale.view_px();
+    let needed = vc.sight_px();
     let integer_zoom = (win.width() / needed).min(win.height() / needed).floor().max(1.0);
     let new_scale = 1.0 / integer_zoom;
     if (ortho.scale - new_scale).abs() > f32::EPSILON { ortho.scale = new_scale; }
@@ -671,7 +676,7 @@ fn update_camera_scale(
 
 fn update_camera(
     player_q: Query<&Transform, With<Player>>,
-    view_scale: Res<ViewScale>,
+    vc: Res<ViewConfig>,
     mut home: ResMut<CameraHome>,
     proj_q: Query<&Projection, With<Camera2d>>,
     mut cam_q: Query<&mut Transform, (With<Camera2d>, Without<Player>)>,
@@ -687,17 +692,17 @@ fn update_camera(
     let ax = ptf.translation.x;
     let ay = ptf.translation.y;
 
-    if view_scale.scale != view_scale.prev_scale {
+    if vc.sight != vc.prev_sight {
         home.0.x = snap_home(ax);
         home.0.y = snap_home(ay);
     }
 
-    if view_scale.scale <= 1 {
+    if vc.reach() <= 1 {
         cam_tf.translation.x = snap(screen_camera(ax));
         cam_tf.translation.y = snap(screen_camera(ay));
         home.0 = Vec2::new(cam_tf.translation.x, cam_tf.translation.y);
     } else {
-        let view_half = view_scale.view_px() / 2.0;
+        let view_half = vc.reach_px() / 2.0;
         let buffer = CELL_SIZE; // 1 cell transition zone on each side
         let dead_half = view_half - buffer;
 
@@ -734,13 +739,13 @@ fn wrap_tiles(
 /// Spawn/despawn ghost copies of map tiles when the view scale changes.
 fn manage_ghosts(
     mut commands: Commands,
-    view_scale: Res<ViewScale>,
+    vc: Res<ViewConfig>,
     map: Res<MapConfig>,
     tiles: Res<TileAssets>,
     existing: Query<(Entity, &MapTile, Option<&Ghost>)>,
     mut prev_copies: Local<(i32, i32)>,
 ) {
-    let view_half = view_scale.view_px() / 2.0;
+    let view_half = vc.sight_px() / 2.0;
     // During scroll transitions the camera can move up to VIEW_PX past home,
     // so we need ghost copies to cover that extra range.
     let scroll_margin = VIEW_PX;
@@ -863,7 +868,7 @@ fn animate_sprite(
 fn sync_borders(
     windows: Query<&Window>,
     proj_q: Query<&Projection, With<Camera2d>>,
-    view_scale: Res<ViewScale>,
+    vc: Res<ViewConfig>,
     cam_q: Query<&Transform, With<Camera2d>>,
     mut borders: Query<(&mut Transform, &mut Sprite), (With<Border>, Without<Camera2d>)>,
 ) {
@@ -875,7 +880,7 @@ fn sync_borders(
     let s = ortho.scale;
     let ww = win.width() * s;
     let wh = win.height() * s;
-    let vp = view_scale.view_px();
+    let vp = vc.sight_px();
     let half = vp / 2.0;
     let cx = cam_tf.translation.x;
     let cy = cam_tf.translation.y;
@@ -903,7 +908,7 @@ fn hud_system(
     mut contexts: EguiContexts,
     mut chars: ResMut<CharacterAssets>,
     mut tiles: ResMut<TileAssets>,
-    mut view_scale: ResMut<ViewScale>,
+    mut vc: ResMut<ViewConfig>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
@@ -912,16 +917,16 @@ fn hud_system(
         .resizable(false)
         .collapsible(true)
         .show(ctx, |ui| {
-            let scale = view_scale.scale;
-            let max = view_scale.max_scale;
+            let sight = vc.sight;
+            let max_sight = vc.max_sight;
+            let reach = vc.reach();
             ui.horizontal(|ui| {
-                if ui.add_enabled(scale > 1, egui::Button::new("◀")).clicked() {
-                    view_scale.scale = scale - 1;
+                if ui.add_enabled(sight > VIEW_CELLS as u32, egui::Button::new("◀")).clicked() {
+                    vc.sight = sight - 2;
                 }
-                let tiles = view_scale.tiles_wide();
-                ui.label(format!("Reach: {scale} ({tiles}x{tiles})"));
-                if ui.add_enabled(scale < max, egui::Button::new("▶")).clicked() {
-                    view_scale.scale = scale + 1;
+                ui.label(format!("{sight}x{sight} (R:{reach}x{reach})"));
+                if ui.add_enabled(sight < max_sight, egui::Button::new("▶")).clicked() {
+                    vc.sight = sight + 2;
                 }
             });
 
@@ -976,7 +981,7 @@ fn hud_system(
 fn update_window_title(
     mut windows: Query<&mut Window>,
     player_q: Query<&Transform, With<Player>>,
-    view_scale: Res<ViewScale>,
+    vc: Res<ViewConfig>,
     chars: Res<CharacterAssets>,
     tiles: Res<TileAssets>,
     map: Res<MapConfig>,
@@ -984,7 +989,7 @@ fn update_window_title(
     let Ok(mut win) = windows.single_mut() else { return };
     let Ok(ptf) = player_q.single() else { return };
 
-    let tw = view_scale.tiles_wide();
+    let sc = vc.sight;
 
     let px = ptf.translation.x as i32;
     let py = ptf.translation.y as i32;
@@ -998,6 +1003,7 @@ fn update_window_title(
     let wall_name = &tiles.wall_sheets[tiles.wall_idx].0;
 
     win.title = format!(
-        "{tw}x{tw} | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}"
+        "R{} S{} ({sc}x{sc}) | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}",
+        vc.reach(), vc.sight
     );
 }
