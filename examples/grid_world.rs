@@ -266,6 +266,13 @@ struct ViewScale {
     max_scale: u32,
 }
 
+impl ViewScale {
+    /// Number of tiles visible per axis: scale 1 → 1, scale 2 → 3, scale 3 → 5, etc.
+    fn tiles_wide(&self) -> u32 { self.scale * 2 - 1 }
+    /// View size in pixels for one axis.
+    fn view_px(&self) -> f32 { self.tiles_wide() as f32 * VIEW_PX }
+}
+
 #[derive(Resource, Default)]
 struct CameraHome(Vec2);
 
@@ -525,7 +532,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         floor_sheets, wall_sheets,
         floor_idx: 0, wall_idx: 0,
     });
-    let max_scale = 9;
+    let max_scale = 5; // reach 5 → 9×9 tiles visible
 
     commands.insert_resource(MapConfig {
         cols: map.cols, rows: map.rows,
@@ -656,7 +663,7 @@ fn update_camera_scale(
     let Ok(win) = windows.single() else { return };
     let Ok(mut proj) = proj_q.single_mut() else { return };
     let Projection::Orthographic(ref mut ortho) = *proj else { return };
-    let needed = view_scale.scale as f32 * VIEW_PX;
+    let needed = view_scale.view_px();
     let integer_zoom = (win.width() / needed).min(win.height() / needed).floor().max(1.0);
     let new_scale = 1.0 / integer_zoom;
     if (ortho.scale - new_scale).abs() > f32::EPSILON { ortho.scale = new_scale; }
@@ -690,8 +697,7 @@ fn update_camera(
         cam_tf.translation.y = snap(screen_camera(ay));
         home.0 = Vec2::new(cam_tf.translation.x, cam_tf.translation.y);
     } else {
-        let scale = view_scale.scale as f32;
-        let view_half = scale * VIEW_PX / 2.0;
+        let view_half = view_scale.view_px() / 2.0;
         let buffer = CELL_SIZE; // 1 cell transition zone on each side
         let dead_half = view_half - buffer;
 
@@ -734,8 +740,7 @@ fn manage_ghosts(
     existing: Query<(Entity, &MapTile, Option<&Ghost>)>,
     mut prev_copies: Local<(i32, i32)>,
 ) {
-    let scale = view_scale.scale as f32;
-    let view_half = scale * VIEW_PX / 2.0;
+    let view_half = view_scale.view_px() / 2.0;
     // During scroll transitions the camera can move up to VIEW_PX past home,
     // so we need ghost copies to cover that extra range.
     let scroll_margin = VIEW_PX;
@@ -870,7 +875,7 @@ fn sync_borders(
     let s = ortho.scale;
     let ww = win.width() * s;
     let wh = win.height() * s;
-    let vp = view_scale.scale as f32 * VIEW_PX;
+    let vp = view_scale.view_px();
     let half = vp / 2.0;
     let cx = cam_tf.translation.x;
     let cy = cam_tf.translation.y;
@@ -911,11 +916,12 @@ fn hud_system(
             let max = view_scale.max_scale;
             ui.horizontal(|ui| {
                 if ui.add_enabled(scale > 1, egui::Button::new("◀")).clicked() {
-                    view_scale.scale = (scale - 2).max(1);
+                    view_scale.scale = scale - 1;
                 }
-                ui.label(format!("Scale: {scale}x{scale}"));
+                let tiles = view_scale.tiles_wide();
+                ui.label(format!("Reach: {scale} ({tiles}x{tiles})"));
                 if ui.add_enabled(scale < max, egui::Button::new("▶")).clicked() {
-                    view_scale.scale = (scale + 2).min(max);
+                    view_scale.scale = scale + 1;
                 }
             });
 
@@ -978,7 +984,7 @@ fn update_window_title(
     let Ok(mut win) = windows.single_mut() else { return };
     let Ok(ptf) = player_q.single() else { return };
 
-    let vs = view_scale.scale;
+    let tw = view_scale.tiles_wide();
 
     let px = ptf.translation.x as i32;
     let py = ptf.translation.y as i32;
@@ -992,6 +998,6 @@ fn update_window_title(
     let wall_name = &tiles.wall_sheets[tiles.wall_idx].0;
 
     win.title = format!(
-        "{vs}x{vs} | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}"
+        "{tw}x{tw} | ({px},{py}) [{cell_col},{cell_row}] {cell_type} | {char_name} | F: {floor_name} | W: {wall_name}"
     );
 }
