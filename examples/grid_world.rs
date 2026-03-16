@@ -219,6 +219,7 @@ struct WalkAnimation {
 }
 
 /// Remembers the last direction the player actually moved, for corner assist.
+/// Cleared when the player releases all input.
 #[derive(Component, Default)]
 struct LastMoveDir(Vec2);
 
@@ -541,13 +542,13 @@ fn player_movement(
             // Corner assist: if one axis is blocked and the other has no input,
             // continue moving on the unblocked axis using the remembered direction.
             // When an axis is blocked, redirect full speed to the unblocked axis.
-            let mut eff_x = if x_blocked { 0.0 } else { input.x.signum() };
-            let mut eff_y = if y_blocked { 0.0 } else { input.y.signum() };
+            let mut eff_x = if x_blocked || input.x == 0.0 { 0.0 } else { input.x.signum() };
+            let mut eff_y = if y_blocked || input.y == 0.0 { 0.0 } else { input.y.signum() };
 
-            if x_blocked && eff_y == 0.0 {
+            if x_blocked && eff_y == 0.0 && last_dir.0.y != 0.0 {
                 eff_y = last_dir.0.y.signum();
             }
-            if y_blocked && eff_x == 0.0 {
+            if y_blocked && eff_x == 0.0 && last_dir.0.x != 0.0 {
                 eff_x = last_dir.0.x.signum();
             }
 
@@ -573,6 +574,8 @@ fn player_movement(
             if moved != Vec2::ZERO {
                 last_dir.0 = moved;
             }
+        } else {
+            last_dir.0 = Vec2::ZERO;
         }
         if let Some(d) = new_facing { facing.0 = d; }
     }
