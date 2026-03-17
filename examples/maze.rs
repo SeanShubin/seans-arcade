@@ -85,16 +85,18 @@ const SHEET_COLS: usize = 14;
 const SHEET_W: usize = SHEET_COLS * KEY_SPRITE_SIZE;
 const KEYS_PER_COLOR: usize = 20;
 
+// Per-channel median of non-transparent pixels from Fantasy Keys-sheet.png.
+// Each color sampled across all 20 key designs for that category.
 const KEY_COLORS: [[u8; 4]; 9] = [
-    [205, 127,  50, 255], // 0: Bronze
-    [192, 192, 192, 255], // 1: Silver
-    [240, 240, 240, 255], // 2: White
-    [ 50,  50,  50, 255], // 3: Black
-    [220,  50,  50, 255], // 4: Red
-    [255, 215,   0, 255], // 5: Gold
-    [ 50, 180,  50, 255], // 6: Green
-    [ 50, 100, 220, 255], // 7: Blue
-    [150,  50, 200, 255], // 8: Purple
+    [ 73,  49,  38, 255], // 0: Bronze
+    [ 61,  62,  78, 255], // 1: Silver
+    [173, 169, 182, 255], // 2: White
+    [ 31,  28,  37, 255], // 3: Black
+    [148,  22,  34, 255], // 4: Red
+    [114,  76,  42, 255], // 5: Gold
+    [ 39,  96,  37, 255], // 6: Green
+    [ 34,  79, 146, 255], // 7: Blue
+    [ 63,  31, 100, 255], // 8: Purple
 ];
 
 fn key_sheet_pos(color: usize, design: usize) -> (usize, usize) {
@@ -318,98 +320,91 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
     let mut region_cells_list: Vec<Vec<(usize, usize)>> = vec![Vec::new(); num_regions];
     region_cells_list[0].push(center);
 
-    // Seed order for key regions: BFS through the dependency tree.
-    let mut seed_order: Vec<usize> = Vec::new();
-    let mut bfs_queue = VecDeque::new();
-    for ki in 0..nk {
-        if key_parents[ki] == usize::MAX {
-            bfs_queue.push_back(ki);
-        }
-    }
-    while let Some(ki) = bfs_queue.pop_front() {
-        seed_order.push(ki);
-        for chi in 0..nk {
-            if key_parents[chi] == ki {
-                bfs_queue.push_back(chi);
-            }
-        }
-    }
+    // Build a seeding schedule: (child_region, parent_region) pairs in order.
+    // Key regions seed from their parent's region (BFS tree order).
+    // Corridor regions form a linear chain from region 0.
+    // Goal seeds from the last corridor region.
+    let mut seed_schedule: Vec<(usize, usize)> = Vec::new();
 
-    // Seed key regions (in tree BFS order) from parent regions.
-    for &ki in &seed_order {
-        let parent_region = if key_parents[ki] == usize::MAX { 0 } else { key_parents[ki] + 1 };
-        let mut seeds = Vec::new();
-        for &(cx, cy) in &region_cells_list[parent_region] {
-            for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
-                let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
-                let ni = ny * cols + nx;
-                if cell_regions[ni] == usize::MAX {
-                    seeds.push((nx, ny));
-                }
-            }
-        }
-        let s = seeds[rng.random_range(0..seeds.len())];
-        cell_regions[s.1 * cols + s.0] = ki + 1;
-        region_cells_list[ki + 1].push(s);
-    }
-
-    // Seed corridor regions: linear chain seeding from region 0, then each
-    // corridor region seeds from the previous one.
-    // Sequential key order: gate 0 requires key 0, gate 1 requires key 1, etc.
-    // Collecting keys in order gets the player progressively closer to the goal.
-
+    // Key regions in BFS tree order
     {
-        // First corridor region seeds from region 0
-        let prev_region = 0;
-        let mut seeds = Vec::new();
-        for &(cx, cy) in &region_cells_list[prev_region] {
-            for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
-                let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
-                if cell_regions[ny * cols + nx] == usize::MAX {
-                    seeds.push((nx, ny));
-                }
+        let mut bfs_queue = VecDeque::new();
+        for ki in 0..nk {
+            if key_parents[ki] == usize::MAX { bfs_queue.push_back(ki); }
+        }
+        while let Some(ki) = bfs_queue.pop_front() {
+            let parent_region = if key_parents[ki] == usize::MAX { 0 } else { key_parents[ki] + 1 };
+            seed_schedule.push((ki + 1, parent_region));
+            for chi in 0..nk {
+                if key_parents[chi] == ki { bfs_queue.push_back(chi); }
             }
         }
-        let s = seeds[rng.random_range(0..seeds.len())];
-        cell_regions[s.1 * cols + s.0] = corridor_base;
-        region_cells_list[corridor_base].push(s);
     }
+
+    // Corridor regions: chain from region 0
+    seed_schedule.push((corridor_base, 0));
     for ci in 1..nk {
-        let prev = corridor_base + ci - 1;
-        let cur = corridor_base + ci;
-        let mut seeds = Vec::new();
-        for &(cx, cy) in &region_cells_list[prev] {
-            for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
-                let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
-                if cell_regions[ny * cols + nx] == usize::MAX {
-                    seeds.push((nx, ny));
-                }
-            }
-        }
-        let s = seeds[rng.random_range(0..seeds.len())];
-        cell_regions[s.1 * cols + s.0] = cur;
-        region_cells_list[cur].push(s);
+        seed_schedule.push((corridor_base + ci, corridor_base + ci - 1));
     }
 
-    // Seed goal region from the last corridor region
-    {
-        let last_corridor = if nk > 0 { corridor_base + nk - 1 } else { 0 };
-        let mut seeds = Vec::new();
-        for &(cx, cy) in &region_cells_list[last_corridor] {
-            for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
-                let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
-                let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
-                if cell_regions[ny * cols + nx] == usize::MAX {
-                    seeds.push((nx, ny));
+    // Goal region from last corridor (or region 0 if no keys)
+    let last_corridor = if nk > 0 { corridor_base + nk - 1 } else { 0 };
+    seed_schedule.push((goal_region, last_corridor));
+
+    // Seed each child region with one cell adjacent to its parent.
+    // Process in dependency order so parents exist before children.
+    // If the parent has no free neighbors, grow it by one cell first.
+    for &(child, parent) in &seed_schedule {
+        loop {
+            // Collect unassigned cells adjacent to the parent region.
+            let mut candidates: Vec<(usize, usize)> = Vec::new();
+            for &(cx, cy) in &region_cells_list[parent] {
+                for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
+                    let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
+                    if cell_regions[ny * cols + nx] == usize::MAX {
+                        candidates.push((nx, ny));
+                    }
+                }
+            }
+            if !candidates.is_empty() {
+                let pick = candidates[rng.random_range(0..candidates.len())];
+                cell_regions[pick.1 * cols + pick.0] = child;
+                region_cells_list[child].push(pick);
+                break;
+            }
+            // Parent is surrounded — grow it by claiming one neighbor from
+            // an adjacent region that still has unassigned neighbors itself,
+            // so we don't strand that region.
+            let mut grew = false;
+            'outer: for &(cx, cy) in &region_cells_list[parent].clone() {
+                for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                    let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
+                    let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
+                    let ni = ny * cols + nx;
+                    let nr = cell_regions[ni];
+                    if nr != usize::MAX && nr != parent && nr != child {
+                        cell_regions[ni] = parent;
+                        region_cells_list[parent].push((nx, ny));
+                        region_cells_list[nr].retain(|&c| c != (nx, ny));
+                        grew = true;
+                        break 'outer;
+                    }
+                }
+            }
+            if !grew {
+                // Last resort: grab any unassigned cell (may be disconnected,
+                // mop-up phase will clean up).
+                if let Some(i) = (0..n).find(|&i| cell_regions[i] == usize::MAX) {
+                    let cx = i % cols;
+                    let cy = i / cols;
+                    cell_regions[i] = parent;
+                    region_cells_list[parent].push((cx, cy));
+                } else {
+                    break; // grid full — shouldn't happen
                 }
             }
         }
-        let s = seeds[rng.random_range(0..seeds.len())];
-        cell_regions[s.1 * cols + s.0] = goal_region;
-        region_cells_list[goal_region].push(s);
     }
 
     // Grow all regions round-robin
@@ -961,17 +956,28 @@ fn movement(
     let eff_dy = if dy != 0 { dy } else { gs.glide.1 };
 
     if eff_dx == 0 && eff_dy == 0 {
+        // No input, no glide — snap to nearest cell alignment on both axes.
         let mw_i = mw as i32;
         let mh_i = mh as i32;
         let cell_i = CELL as i32;
         let wall_i = WALL_PX as i32;
+        let corr_i = CORR_PX as i32;
+
         let off_x = (gs.px.rem_euclid(mw_i) % cell_i) - wall_i;
-        if off_x != 0 && off_x.abs() <= wall_i / 2 {
-            gs.px = (gs.px - off_x).rem_euclid(mw_i);
+        if off_x != 0 {
+            if off_x > corr_i / 2 {
+                gs.px = (gs.px + (cell_i - off_x)).rem_euclid(mw_i);
+            } else {
+                gs.px = (gs.px - off_x).rem_euclid(mw_i);
+            }
         }
         let off_y = (gs.py.rem_euclid(mh_i) % cell_i) - wall_i;
-        if off_y != 0 && off_y.abs() <= wall_i / 2 {
-            gs.py = (gs.py - off_y).rem_euclid(mh_i);
+        if off_y != 0 {
+            if off_y > corr_i / 2 {
+                gs.py = (gs.py + (cell_i - off_y)).rem_euclid(mh_i);
+            } else {
+                gs.py = (gs.py - off_y).rem_euclid(mh_i);
+            }
         }
         gs.move_timer = 0.0;
         gs.last_dir = (0, 0);
