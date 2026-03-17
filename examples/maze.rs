@@ -144,6 +144,7 @@ struct GameState {
     keys: [bool; 2],
     won: bool,
     move_timer: f32,
+    last_dir: (i32, i32),
 }
 
 #[derive(Resource)]
@@ -233,7 +234,7 @@ fn start_pos() -> (i32, i32) {
 
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, windows: Query<&Window>) {
     let (sx, sy) = start_pos();
-    commands.insert_resource(GameState { px: sx, py: sy, keys: [false; 2], won: false, move_timer: 0.0 });
+    commands.insert_resource(GameState { px: sx, py: sy, keys: [false; 2], won: false, move_timer: 0.0, last_dir: (0, 0) });
 
     let Ok(win) = windows.single() else { return };
     let max_x = (win.width() / IMG_W as f32).floor() as u32;
@@ -306,17 +307,36 @@ fn movement(
     dx = dx.clamp(-1, 1);
     dy = dy.clamp(-1, 1);
 
-    if dx == 0 && dy == 0 { gs.move_timer = 0.0; return; }
+    if dx == 0 && dy == 0 { gs.move_timer = 0.0; gs.last_dir = (0, 0); return; }
 
     let col = build_collision(&gs.keys);
     gs.move_timer += time.delta_secs();
     let interval = 1.0 / MOVE_SPEED;
     while gs.move_timer >= interval {
         gs.move_timer -= interval;
-        if dx != 0 && can_move(gs.px + dx, gs.py, &col) {
-            gs.px += dx;
-        } else if dy != 0 && can_move(gs.px, gs.py + dy, &col) {
-            gs.py += dy;
+
+        let x_blocked = dx != 0 && !can_move(gs.px + dx, gs.py, &col);
+        let y_blocked = dy != 0 && !can_move(gs.px, gs.py + dy, &col);
+
+        let mut eff_x = if x_blocked { 0 } else { dx };
+        let mut eff_y = if y_blocked { 0 } else { dy };
+
+        // Corner assist: if one axis is blocked and the other has no input,
+        // continue on the unblocked axis using the remembered direction.
+        if x_blocked && eff_y == 0 && gs.last_dir.1 != 0 {
+            eff_y = gs.last_dir.1;
+        }
+        if y_blocked && eff_x == 0 && gs.last_dir.0 != 0 {
+            eff_x = gs.last_dir.0;
+        }
+
+        if eff_x != 0 && can_move(gs.px + eff_x, gs.py, &col) {
+            gs.px += eff_x;
+            gs.last_dir = (eff_x, gs.last_dir.1);
+        }
+        if eff_y != 0 && can_move(gs.px, gs.py + eff_y, &col) {
+            gs.py += eff_y;
+            gs.last_dir = (gs.last_dir.0, eff_y);
         }
     }
 
@@ -334,7 +354,7 @@ fn movement(
 fn restart(keyboard: Res<ButtonInput<KeyCode>>, mut gs: ResMut<GameState>) {
     if keyboard.just_pressed(KeyCode::KeyR) {
         let (sx, sy) = start_pos();
-        *gs = GameState { px: sx, py: sy, keys: [false; 2], won: false, move_timer: 0.0 };
+        *gs = GameState { px: sx, py: sy, keys: [false; 2], won: false, move_timer: 0.0, last_dir: (0, 0) };
     }
 }
 
