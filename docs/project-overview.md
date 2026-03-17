@@ -135,6 +135,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [classic-game-candidates.md](research/classic-game-candidates.md) — Candidate classic games for the arcade
 - [zelda-case-study.md](research/zelda-case-study.md) — Zelda design analysis
 - [design-topics-to-explore.md](research/design-topics-to-explore.md) — Design topics for future research
+- [maze-key-gate-design.md](research/maze-key-gate-design.md) — Maze generation with keys and gates: configuration knobs, dependency graphs, generation strategy
 - [character-rendering.md](research/character-rendering.md) — Character rendering approaches: goals, tensions, and tradeoffs (open question)
 - [third-party-assets.md](research/third-party-assets.md) — Free asset packs and tools for prototyping
 - [sprite-metadata-formats.md](research/sprite-metadata-formats.md) — Sprite and spritesheet metadata formats: what they contain, who uses them
