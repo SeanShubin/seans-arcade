@@ -18,6 +18,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use rand::{Rng, RngExt, SeedableRng};
 use std::collections::{HashSet, VecDeque};
+use std::io::Write;
 
 // ---------------------------------------------------------------------------
 // Maze design constraints
@@ -48,12 +49,55 @@ use std::collections::{HashSet, VecDeque};
 const WALL_PX: usize = 16;      // wall thickness in pixels
 const CORR_PX: usize = 64;      // corridor width in pixels
 const CELL: usize = WALL_PX + CORR_PX; // total cell pitch (80px)
-const ROOM_SIZE: usize = 5;     // cells per region side (minimum region area)
 
 // Puzzle
 const MAX_KEYS: usize = 9;      // maximum number of keys
-const DEFAULT_KEYS: usize = 2;  // starting key count
-const MAX_BRANCH: usize = 3;    // max children per node in dependency tree
+const DEFAULT_KEYS: usize = 9;  // starting key count
+
+// Tuning defaults
+const DEFAULT_BRANCH: usize = 2;
+
+#[derive(Clone, Copy, PartialEq, Resource)]
+enum GraphShape { Linear, Branching, Hub }
+
+impl GraphShape {
+    fn cycle(self) -> Self {
+        match self { Self::Linear => Self::Branching, Self::Branching => Self::Hub, Self::Hub => Self::Linear }
+    }
+    fn label(self) -> &'static str {
+        match self { Self::Linear => "LINEAR", Self::Branching => "BRANCHING", Self::Hub => "HUB" }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Resource)]
+enum RegionSize { Small, Medium, Large }
+
+impl RegionSize {
+    fn cells(self) -> usize {
+        match self { Self::Small => 4, Self::Medium => 8, Self::Large => 16 }
+    }
+    fn cycle(self) -> Self {
+        match self { Self::Small => Self::Medium, Self::Medium => Self::Large, Self::Large => Self::Small }
+    }
+    fn label(self) -> &'static str {
+        match self { Self::Small => "SMALL", Self::Medium => "MEDIUM", Self::Large => "LARGE" }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Resource)]
+enum DeadEndLevel { None, Low, High }
+
+impl DeadEndLevel {
+    fn ratio(self) -> f64 {
+        match self { Self::None => 0.0, Self::Low => 0.3, Self::High => 0.6 }
+    }
+    fn cycle(self) -> Self {
+        match self { Self::None => Self::Low, Self::Low => Self::High, Self::High => Self::None }
+    }
+    fn label(self) -> &'static str {
+        match self { Self::None => "NONE", Self::Low => "LOW", Self::High => "HIGH" }
+    }
+}
 
 // Viewport
 const DEFAULT_VIEW_CELLS: usize = 5;
@@ -123,7 +167,7 @@ const CHAR_W: usize = GLYPH_W * FONT_SCALE;  // 8
 const CHAR_H: usize = GLYPH_H * FONT_SCALE;  // 12
 const LEGEND_PAD: usize = WALL_PX;
 const LEGEND_LINE_H: usize = CHAR_H + 2;
-const LEGEND_LINES: usize = 6;
+const LEGEND_LINES: usize = 10;
 const LEGEND_GAP: usize = GAP_W;  // visual gap between content and legend
 const LEGEND_BODY_H: usize = LEGEND_PAD + LEGEND_LINES * LEGEND_LINE_H + LEGEND_PAD;
 const LEGEND_H: usize = LEGEND_GAP + LEGEND_BODY_H;
@@ -232,12 +276,11 @@ fn image_dims(view_cells: usize, num_keys: usize) -> (usize, usize) {
 
 /// Grid side length in cells.
 /// Regions: 1 start + num_keys key regions + num_keys corridor regions + 1 goal.
-fn grid_side(num_keys: usize) -> usize {
+fn grid_side(num_keys: usize, region_cells: usize) -> usize {
     let num_regions = 1 + num_keys + num_keys + 1; // start + keys + corridor + goal
-    // Key/corridor regions need at least a few cells; start/goal need ROOM_SIZE²
-    let min_cells = 2 * ROOM_SIZE * ROOM_SIZE + num_keys * 2 * 4;
-    let min_from_regions = num_regions * 4; // at least 4 cells per region
-    let target = min_cells.max(min_from_regions);
+    // 50% padding ensures seeding has room to grow parents without
+    // stealing other regions' only cells.
+    let target = num_regions * region_cells * 3 / 2;
     let mut s = 2usize;
     while s * s < target { s += 1; }
     s
@@ -350,24 +393,125 @@ fn find_boundary_edges(
     edges
 }
 
+/// Squared toroidal distance between two cell coordinates.
+fn torus_dist_sq(a: (usize, usize), b: (usize, usize), cols: usize, rows: usize) -> usize {
+    let dx = {
+        let d = (a.0 as i32 - b.0 as i32).unsigned_abs() as usize;
+        d.min(cols - d)
+    };
+    let dy = {
+        let d = (a.1 as i32 - b.1 as i32).unsigned_abs() as usize;
+        d.min(rows - d)
+    };
+    dx * dx + dy * dy
+}
+
+/// Pick the boundary edge farthest from existing gates of the same color.
+fn pick_spaced_gate_edge(
+    boundary: &[[(usize, usize); 2]],
+    gates: &[Gate],
+    key_index: usize,
+    cols: usize, rows: usize,
+    rng: &mut impl Rng,
+) -> [(usize, usize); 2] {
+    let same_color: Vec<(usize, usize)> = gates.iter()
+        .filter(|g| g.key_index == key_index)
+        .map(|g| {
+            // midpoint of the two gate cells
+            let mid_x = (g.cells[0].0 + g.cells[1].0) / 2;
+            let mid_y = (g.cells[0].1 + g.cells[1].1) / 2;
+            (mid_x, mid_y)
+        })
+        .collect();
+    if same_color.is_empty() {
+        return boundary[rng.random_range(0..boundary.len())];
+    }
+    // Score each boundary edge by minimum distance to same-color gates
+    let mut best_score = 0usize;
+    let mut best: Vec<usize> = Vec::new();
+    for (i, edge) in boundary.iter().enumerate() {
+        let mid = ((edge[0].0 + edge[1].0) / 2, (edge[0].1 + edge[1].1) / 2);
+        let min_dist = same_color.iter()
+            .map(|&sc| torus_dist_sq(mid, sc, cols, rows))
+            .min().unwrap();
+        if min_dist > best_score {
+            best_score = min_dist;
+            best = vec![i];
+        } else if min_dist == best_score {
+            best.push(i);
+        }
+    }
+    boundary[best[rng.random_range(0..best.len())]]
+}
+
+/// Open extra passages within regions to reduce dead-ends.
+/// At ratio 0.0, opens all internal walls (no dead-ends).
+/// At ratio 0.6, opens only 40% (most DFS dead-ends remain).
+fn open_extra_passages(
+    h_walls: &mut [bool], v_walls: &mut [bool],
+    cols: usize, rows: usize,
+    cell_regions: &[usize], num_regions: usize,
+    dead_end_ratio: f64,
+    rng: &mut impl Rng,
+) {
+    for region in 0..num_regions {
+        // Collect internal walls still closed within this region
+        let mut internal: Vec<(usize, usize, usize, usize)> = Vec::new();
+        for cy in 0..rows {
+            for cx in 0..cols {
+                if cell_regions[cy * cols + cx] != region { continue; }
+                let nx = (cx + 1) % cols;
+                if cell_regions[cy * cols + nx] == region && h_walls[cy * cols + cx] {
+                    internal.push((cx, cy, nx, cy));
+                }
+                let ny = (cy + 1) % rows;
+                if cell_regions[ny * cols + cx] == region && v_walls[cy * cols + cx] {
+                    internal.push((cx, cy, cx, ny));
+                }
+            }
+        }
+        // Shuffle
+        for i in (1..internal.len()).rev() {
+            let j = rng.random_range(0..=i);
+            internal.swap(i, j);
+        }
+        // Open (1 - ratio) fraction of them
+        let open_count = ((1.0 - dead_end_ratio) * internal.len() as f64) as usize;
+        for &(cx, cy, nx, ny) in internal.iter().take(open_count) {
+            remove_wall(h_walls, v_walls, cols, rows, cx, cy, nx, ny);
+        }
+    }
+}
+
 /// Build a random dependency tree for `num_keys` keys.
 /// Returns `parent[ki]` = parent key index, or `usize::MAX` for root keys.
-/// Max branching factor of 2-3; depth emerges naturally.
-fn build_dependency_tree(num_keys: usize, rng: &mut impl Rng) -> Vec<usize> {
+fn build_dependency_tree(num_keys: usize, shape: GraphShape, max_branch: usize, rng: &mut impl Rng) -> Vec<usize> {
     if num_keys == 0 { return vec![]; }
     let mut parent = vec![usize::MAX; num_keys];
-    // Key 0 is always a root (reachable from start region)
-    // Assign remaining keys to random parents with branching cap
-    let mut children_count = vec![0usize; num_keys];
-    let max_branch = MAX_BRANCH.min(num_keys.saturating_sub(1).max(1));
-    for ki in 1..num_keys {
-        // Eligible parents: keys 0..ki that haven't hit the branching cap
-        let eligible: Vec<usize> = (0..ki)
-            .filter(|&p| children_count[p] < max_branch)
-            .collect();
-        let p = eligible[rng.random_range(0..eligible.len())];
-        parent[ki] = p;
-        children_count[p] += 1;
+    match shape {
+        GraphShape::Linear => {
+            for ki in 1..num_keys { parent[ki] = ki - 1; }
+        }
+        GraphShape::Hub => {
+            // All keys are roots — every key region connects directly to start
+        }
+        GraphShape::Branching => {
+            let mut children_count = vec![0usize; num_keys];
+            let cap = max_branch.min(num_keys.saturating_sub(1).max(1));
+            for ki in 1..num_keys {
+                let eligible: Vec<usize> = (0..ki)
+                    .filter(|&p| children_count[p] < cap)
+                    .collect();
+                // If all parents are full, fall back to chain (parent = ki-1)
+                let p = if eligible.is_empty() {
+                    ki - 1
+                } else {
+                    eligible[rng.random_range(0..eligible.len())]
+                };
+                parent[ki] = p;
+                children_count[p] += 1;
+            }
+        }
     }
     parent
 }
@@ -383,13 +527,34 @@ fn build_dependency_tree(num_keys: usize, rng: &mut impl Rng) -> Vec<usize> {
 /// The branching tree gives non-linear key discovery. The goal corridor
 /// ensures ALL keys are needed: it's a linear chain of single-key gates,
 /// one per key, leading to the goal. Topology enforces the constraint.
-fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
-    let side = grid_side(num_keys);
+fn generate_maze(seed: u64, num_keys: usize, config: &MazeConfig) -> MazeLayout {
+    let _ = std::fs::create_dir_all("logs");
+    let mut log = std::fs::File::create("logs/maze_gen.log")
+        .expect("failed to create logs/maze_gen.log");
+
+    macro_rules! log {
+        ($($arg:tt)*) => {{
+            let _ = writeln!(log, $($arg)*);
+            let _ = log.flush();
+        }};
+    }
+
+    let side = grid_side(num_keys, config.region_size.cells());
     let cols = side;
     let rows = side;
     let n = cols * rows;
     let maze_w = cols * CELL;
     let maze_h = rows * CELL;
+
+    log!("=== MAZE GENERATION ===");
+    log!("seed: {seed}");
+    log!("num_keys: {num_keys}");
+    log!("graph_shape: {}", config.graph_shape.label());
+    log!("region_size: {} ({})", config.region_size.label(), config.region_size.cells());
+    log!("dead_ends: {}", config.dead_ends.label());
+    log!("max_branch: {}", config.max_branch);
+    log!("grid: {cols}x{rows} = {n} cells");
+    log!("maze_px: {maze_w}x{maze_h}");
 
     // Region indices:
     //   0           = start
@@ -403,8 +568,22 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
+    log!("");
+    log!("num_regions: {num_regions} (start=0, keys=1..={nk}, corridor={corridor_base}..={}, goal={goal_region})",
+        corridor_base + nk.saturating_sub(1));
+
     // --- Step 1: Build dependency tree for key discovery ---
-    let key_parents = build_dependency_tree(num_keys, &mut rng);
+    let key_parents = build_dependency_tree(num_keys, config.graph_shape, config.max_branch, &mut rng);
+
+    log!("");
+    log!("--- Step 1: Dependency tree ---");
+    for ki in 0..nk {
+        if key_parents[ki] == usize::MAX {
+            log!("  key {ki}: root (free from start)");
+        } else {
+            log!("  key {ki}: parent=key {}", key_parents[ki]);
+        }
+    }
 
     // --- Step 2: Assign regions at cell level ---
     let cells_per_region = n / num_regions;
@@ -450,6 +629,12 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
     let last_corridor = if nk > 0 { corridor_base + nk - 1 } else { 0 };
     seed_schedule.push((goal_region, last_corridor));
 
+    log!("");
+    log!("--- Step 2: Region assignment ---");
+    log!("cells_per_region (target): {cells_per_region}");
+    log!("target_sizes: {:?}", target_sizes);
+    log!("seed_schedule ({} entries): {:?}", seed_schedule.len(), seed_schedule);
+
     // Seed each child region with one cell adjacent to its parent.
     // Process in dependency order so parents exist before children.
     // If the parent has no free neighbors, grow it by one cell first.
@@ -482,7 +667,9 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
                     let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
                     let ni = ny * cols + nx;
                     let nr = cell_regions[ni];
-                    if nr != usize::MAX && nr != parent && nr != child {
+                    if nr != usize::MAX && nr != parent && nr != child
+                        && region_cells_list[nr].len() > 1
+                    {
                         cell_regions[ni] = parent;
                         region_cells_list[parent].push((nx, ny));
                         region_cells_list[nr].retain(|&c| c != (nx, ny));
@@ -504,6 +691,11 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
                 }
             }
         }
+    }
+
+    log!("seeding complete — region sizes after seeding:");
+    for r in 0..num_regions {
+        log!("  region {r}: {} cells", region_cells_list[r].len());
     }
 
     // Grow all regions round-robin
@@ -554,64 +746,193 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
         }
     }
 
-    // --- Step 3: DFS carve per region ---
+    let unassigned = cell_regions.iter().filter(|&&r| r == usize::MAX).count();
+    log!("after growth+mopup: {unassigned} unassigned cells remain");
+    log!("final region sizes:");
+    for r in 0..num_regions {
+        log!("  region {r}: {} cells (target {})", region_cells_list[r].len(), target_sizes[r]);
+    }
+
+    // --- Step 3: Ensure required boundaries exist ---
+    log!("");
+    log!("--- Step 3: Ensure required boundaries ---");
+    // First, collect all (region_a, region_b) pairs that need a shared boundary.
+    let mut required_boundaries: Vec<(usize, usize)> = Vec::new();
+    for ki in 0..nk {
+        let parent_region = if key_parents[ki] == usize::MAX { 0 } else { key_parents[ki] + 1 };
+        required_boundaries.push((parent_region, ki + 1));
+    }
+    required_boundaries.push((0, corridor_base));
+    for ci in 1..nk {
+        required_boundaries.push((corridor_base + ci - 1, corridor_base + ci));
+    }
+    let last_corridor = if nk > 0 { corridor_base + nk - 1 } else { 0 };
+    required_boundaries.push((last_corridor, goal_region));
+
+    log!("required_boundaries: {:?}", required_boundaries);
+
+    // Ensure each required pair shares at least one boundary edge.
+    // If not, BFS from region_b toward region_a, converting cells along the
+    // shortest path until they touch. Bounded: path length ≤ grid diameter.
+    for &(ra, rb) in &required_boundaries {
+        let existing = find_boundary_edges(&cell_regions, cols, rows, ra, rb);
+        if !existing.is_empty() {
+            log!("  boundary ({ra}, {rb}): OK ({} edges)", existing.len());
+            continue;
+        }
+        log!("  boundary ({ra}, {rb}): MISSING — fixing via BFS (ra has {} cells, rb has {} cells)",
+            region_cells_list[ra].len(), region_cells_list[rb].len());
+        // BFS from all cells of rb to find the nearest cell of ra.
+        let mut dist = vec![usize::MAX; n];
+        let mut prev = vec![usize::MAX; n];
+        let mut queue = VecDeque::new();
+        for &(cx, cy) in &region_cells_list[rb] {
+            let idx = cy * cols + cx;
+            dist[idx] = 0;
+            queue.push_back(idx);
+        }
+        let mut target = usize::MAX;
+        while let Some(cur) = queue.pop_front() {
+            let cx = cur % cols;
+            let cy = cur / cols;
+            if cell_regions[cur] == ra {
+                target = cur;
+                break;
+            }
+            for (ddx, ddy) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                let nx = (cx as i32 + ddx).rem_euclid(cols as i32) as usize;
+                let ny = (cy as i32 + ddy).rem_euclid(rows as i32) as usize;
+                let ni = ny * cols + nx;
+                if dist[ni] == usize::MAX {
+                    dist[ni] = dist[cur] + 1;
+                    prev[ni] = cur;
+                    queue.push_back(ni);
+                }
+            }
+        }
+        // Walk the path back from target, converting cells to rb until we
+        // reach a cell already in rb. The last converted cell is adjacent to ra.
+        if target != usize::MAX {
+            let mut converted = 0usize;
+            let mut cur = prev[target]; // skip the ra cell itself
+            while cur != usize::MAX && cell_regions[cur] != rb {
+                let old_region = cell_regions[cur];
+                cell_regions[cur] = rb;
+                let cx = cur % cols;
+                let cy = cur / cols;
+                region_cells_list[rb].push((cx, cy));
+                if old_region != usize::MAX {
+                    region_cells_list[old_region].retain(|&c| c != (cx, cy));
+                }
+                converted += 1;
+                cur = prev[cur];
+            }
+            log!("    converted {converted} cells to region {rb} (BFS dist={})", dist[target]);
+            let fixed = find_boundary_edges(&cell_regions, cols, rows, ra, rb);
+            log!("    boundary now has {} edges", fixed.len());
+        } else {
+            log!("    WARNING: BFS could not find region {ra} from region {rb}!");
+        }
+    }
+
+    // --- Step 4: DFS carve per region (after boundary fixes) ---
+    log!("");
+    log!("--- Step 4: DFS carve per region ---");
     let mut h_walls = vec![true; n];
     let mut v_walls = vec![true; n];
     for region in 0..num_regions {
-        if region_cells_list[region].is_empty() { continue; }
+        if region_cells_list[region].is_empty() {
+            log!("  region {region}: EMPTY — skipped");
+            continue;
+        }
         let start = region_cells_list[region][0];
+        log!("  region {region}: {} cells, DFS from ({}, {})", region_cells_list[region].len(), start.0, start.1);
         maze_dfs_region(&mut h_walls, &mut v_walls, cols, rows, &cell_regions, region, start, &mut rng);
     }
 
-    // --- Step 4: Gates ---
+    // --- Step 4b: Open extra passages to reduce dead-ends ---
+    let ratio = config.dead_ends.ratio();
+    log!("");
+    log!("--- Step 4b: Dead-end pass (ratio={ratio}) ---");
+    if ratio < 1.0 {
+        open_extra_passages(&mut h_walls, &mut v_walls, cols, rows, &cell_regions, num_regions, ratio, &mut rng);
+        log!("  opened extra passages");
+    } else {
+        log!("  ratio=1.0, no extra passages");
+    }
+
+    // --- Step 5: Place gates — boundaries are guaranteed to exist ---
+    log!("");
+    log!("--- Step 5: Place gates ---");
     let mut gates = Vec::new();
 
-    // Key tree gates: gate into region ki+1 opened by parent key.
-    // Root keys have no gate (freely accessible from region 0).
+    // Key tree gates
     for ki in 0..nk {
         let parent_region = if key_parents[ki] == usize::MAX { 0 } else { key_parents[ki] + 1 };
         let child_region = ki + 1;
         let boundary = find_boundary_edges(&cell_regions, cols, rows, parent_region, child_region);
-        assert!(!boundary.is_empty(),
-            "BUG: key regions {} and {} share no boundary", parent_region, child_region);
-        let pair = boundary[rng.random_range(0..boundary.len())];
+        if boundary.is_empty() {
+            log!("  key {ki}: regions {parent_region}-{child_region} NO BOUNDARY — free passage");
+            continue;
+        }
         if key_parents[ki] == usize::MAX {
+            let pair = boundary[rng.random_range(0..boundary.len())];
+            log!("  key {ki}: root, open wall between ({},{}) and ({},{})",
+                pair[0].0, pair[0].1, pair[1].0, pair[1].1);
             remove_wall(&mut h_walls, &mut v_walls, cols, rows,
                 pair[0].0, pair[0].1, pair[1].0, pair[1].1);
         } else {
+            let pair = pick_spaced_gate_edge(&boundary, &gates, key_parents[ki], cols, rows, &mut rng);
+            log!("  key {ki}: gate (key_index={}) at ({},{})—({},{}) [{} candidates]",
+                key_parents[ki], pair[0].0, pair[0].1, pair[1].0, pair[1].1, boundary.len());
             gates.push(Gate { cells: pair, key_index: key_parents[ki] });
         }
     }
 
-    // Corridor gates: linear chain, each gate requires one key.
-    // Corridor gates: key 0 guards the entrance, key 1 the next, etc.
-    // Last corridor → goal region has no gate (open passage).
+    // Corridor gates: linear chain, key i guards corridor i.
     {
         let boundary = find_boundary_edges(&cell_regions, cols, rows, 0, corridor_base);
-        assert!(!boundary.is_empty(), "BUG: corridor entrance has no boundary");
-        let pair = boundary[rng.random_range(0..boundary.len())];
-        gates.push(Gate { cells: pair, key_index: 0 });
+        if !boundary.is_empty() {
+            let pair = pick_spaced_gate_edge(&boundary, &gates, 0, cols, rows, &mut rng);
+            log!("  corridor entrance: gate (key_index=0) at ({},{})—({},{}) [{} candidates]",
+                pair[0].0, pair[0].1, pair[1].0, pair[1].1, boundary.len());
+            gates.push(Gate { cells: pair, key_index: 0 });
+        } else {
+            log!("  corridor entrance: NO BOUNDARY — free passage");
+        }
     }
     for ci in 1..nk {
-        let prev = corridor_base + ci - 1;
-        let cur = corridor_base + ci;
-        let boundary = find_boundary_edges(&cell_regions, cols, rows, prev, cur);
-        assert!(!boundary.is_empty(),
-            "BUG: corridor regions {} and {} share no boundary", prev, cur);
-        let pair = boundary[rng.random_range(0..boundary.len())];
+        let prev_r = corridor_base + ci - 1;
+        let cur_r = corridor_base + ci;
+        let boundary = find_boundary_edges(&cell_regions, cols, rows, prev_r, cur_r);
+        if boundary.is_empty() {
+            log!("  corridor {ci}: regions {prev_r}-{cur_r} NO BOUNDARY — free passage");
+            continue;
+        }
+        let pair = pick_spaced_gate_edge(&boundary, &gates, ci, cols, rows, &mut rng);
+        log!("  corridor {ci}: gate (key_index={ci}) at ({},{})—({},{}) [{} candidates]",
+            pair[0].0, pair[0].1, pair[1].0, pair[1].1, boundary.len());
         gates.push(Gate { cells: pair, key_index: ci });
     }
     // Open passage from last corridor to goal
     {
-        let last_corridor = if nk > 0 { corridor_base + nk - 1 } else { 0 };
         let boundary = find_boundary_edges(&cell_regions, cols, rows, last_corridor, goal_region);
-        assert!(!boundary.is_empty(), "BUG: goal entrance has no boundary");
-        let pair = boundary[rng.random_range(0..boundary.len())];
-        remove_wall(&mut h_walls, &mut v_walls, cols, rows,
-            pair[0].0, pair[0].1, pair[1].0, pair[1].1);
+        if !boundary.is_empty() {
+            let pair = boundary[rng.random_range(0..boundary.len())];
+            log!("  goal passage: open wall between ({},{}) and ({},{})",
+                pair[0].0, pair[0].1, pair[1].0, pair[1].1);
+            remove_wall(&mut h_walls, &mut v_walls, cols, rows,
+                pair[0].0, pair[0].1, pair[1].0, pair[1].1);
+        } else {
+            log!("  goal passage: NO BOUNDARY — free passage");
+        }
     }
 
-    // --- Step 5: Place start, keys, goal ---
+    log!("total gates placed: {}", gates.len());
+
+    // --- Step 6: Place start, keys, goal ---
+    log!("");
+    log!("--- Step 6: Place start, keys, goal ---");
     let start = *region_cells_list[0].iter()
         .min_by_key(|&&(cx, cy)| {
             let dx = cx as i32 - center.0 as i32;
@@ -619,6 +940,7 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
             dx * dx + dy * dy
         })
         .unwrap();
+    log!("  start: ({}, {}) in region 0", start.0, start.1);
 
     let mut occupied: HashSet<(usize, usize)> = HashSet::new();
     occupied.insert(start);
@@ -626,20 +948,40 @@ fn generate_maze(seed: u64, num_keys: usize) -> MazeLayout {
     let mut key_cells = Vec::new();
     for ki in 0..nk {
         let region = ki + 1;
-        let available: Vec<_> = region_cells_list[region].iter()
+        let mut available: Vec<_> = region_cells_list[region].iter()
             .filter(|c| !occupied.contains(c))
             .cloned().collect();
+        // Fallback: if region is empty, place in start region
+        if available.is_empty() {
+            log!("  key {ki}: region {region} EMPTY — falling back to region 0");
+            available = region_cells_list[0].iter()
+                .filter(|c| !occupied.contains(c))
+                .cloned().collect();
+        }
+        log!("  key {ki}: region {region} has {} available cells", available.len());
         let kc = available[rng.random_range(0..available.len())];
+        log!("  key {ki}: placed at ({}, {})", kc.0, kc.1);
         key_cells.push(kc);
         occupied.insert(kc);
     }
 
-    let goal_available: Vec<_> = region_cells_list[goal_region].iter()
+    let mut goal_available: Vec<_> = region_cells_list[goal_region].iter()
         .filter(|c| !occupied.contains(c))
         .cloned().collect();
+    if goal_available.is_empty() {
+        log!("  goal: region {goal_region} EMPTY — falling back to region 0");
+        goal_available = region_cells_list[0].iter()
+            .filter(|c| !occupied.contains(c))
+            .cloned().collect();
+    }
+    log!("  goal: region {goal_region} has {} available cells", goal_available.len());
     let goal = goal_available[rng.random_range(0..goal_available.len())];
+    log!("  goal: placed at ({}, {})", goal.0, goal.1);
 
     let key_designs: Vec<usize> = (0..nk).map(|_| rng.random_range(0..KEYS_PER_COLOR)).collect();
+
+    log!("");
+    log!("=== GENERATION COMPLETE ===");
 
     MazeLayout {
         seed, num_keys, cols, rows, maze_w, maze_h,
@@ -909,6 +1251,10 @@ struct KeySheetPixels(Option<Vec<u8>>);
 struct MazeConfig {
     num_keys: usize,
     view_cells: usize,
+    graph_shape: GraphShape,
+    region_size: RegionSize,
+    dead_ends: DeadEndLevel,
+    max_branch: usize,
 }
 
 #[derive(Resource)]
@@ -935,13 +1281,20 @@ fn setup(
 ) {
     let num_keys = DEFAULT_KEYS;
     let view_cells = DEFAULT_VIEW_CELLS;
+    let config = MazeConfig {
+        num_keys, view_cells,
+        graph_shape: GraphShape::Branching,
+        region_size: RegionSize::Medium,
+        dead_ends: DeadEndLevel::High,
+        max_branch: DEFAULT_BRANCH,
+    };
     let seed: u64 = rand::random();
-    let layout = generate_maze(seed, num_keys);
+    let layout = generate_maze(seed, num_keys, &config);
     let (sx, sy) = cell_pixel(layout.start.0, layout.start.1);
     let view_px = (view_cells * CELL) as i32;
     let cam_x = sx + CORR_PX as i32 / 2 - view_px / 2;
     let cam_y = sy + CORR_PX as i32 / 2 - view_px / 2;
-    commands.insert_resource(MazeConfig { num_keys, view_cells });
+    commands.insert_resource(config);
     commands.insert_resource(layout);
     commands.insert_resource(GameState {
         px: sx, py: sy, cam_x, cam_y,
@@ -1218,21 +1571,30 @@ fn restart_or_new(
     let fewer_keys = keyboard.just_pressed(KeyCode::Minus) || keyboard.just_pressed(KeyCode::NumpadSubtract);
     let bigger_view = keyboard.just_pressed(KeyCode::BracketRight);
     let smaller_view = keyboard.just_pressed(KeyCode::BracketLeft);
+    let cycle_shape = keyboard.just_pressed(KeyCode::KeyG);
+    let cycle_region = keyboard.just_pressed(KeyCode::KeyF);
+    let cycle_dead = keyboard.just_pressed(KeyCode::KeyV);
+    let cycle_branch = keyboard.just_pressed(KeyCode::KeyB);
 
-    if more_keys && config.num_keys < MAX_KEYS {
-        config.num_keys += 1;
+    // Settings that trigger regeneration
+    let mut regen = false;
+    if cycle_shape { config.graph_shape = config.graph_shape.cycle(); regen = true; }
+    if cycle_region { config.region_size = config.region_size.cycle(); regen = true; }
+    if cycle_dead { config.dead_ends = config.dead_ends.cycle(); regen = true; }
+    if cycle_branch {
+        config.max_branch = config.max_branch % 3 + 1; // 1->2->3->1
+        regen = true;
+    }
+    if more_keys && config.num_keys < MAX_KEYS { config.num_keys += 1; regen = true; }
+    if fewer_keys && config.num_keys > 1 { config.num_keys -= 1; regen = true; }
+    if new_maze { regen = true; }
+
+    if regen {
         let seed: u64 = rand::random();
-        *layout = generate_maze(seed, config.num_keys);
-    } else if fewer_keys && config.num_keys > 1 {
-        config.num_keys -= 1;
-        let seed: u64 = rand::random();
-        *layout = generate_maze(seed, config.num_keys);
-    } else if new_maze {
-        let seed: u64 = rand::random();
-        *layout = generate_maze(seed, config.num_keys);
+        *layout = generate_maze(seed, config.num_keys, &config);
     }
 
-    if new_maze || restart || more_keys || fewer_keys {
+    if regen || restart {
         let (sx, sy) = cell_pixel(layout.start.0, layout.start.1);
         gs.px = sx;
         gs.py = sy;
@@ -1245,10 +1607,10 @@ fn restart_or_new(
     }
 
     if bigger_view && config.view_cells < MAX_VIEW_CELLS {
-        config.view_cells += 2; // odd only
+        config.view_cells += 2;
         center_camera(&mut gs, &layout, config.view_cells);
     } else if smaller_view && config.view_cells > MIN_VIEW_CELLS {
-        config.view_cells -= 2; // odd only
+        config.view_cells -= 2;
         center_camera(&mut gs, &layout, config.view_cells);
     }
 }
@@ -1453,6 +1815,16 @@ fn render(
                 }
             };
 
+            // Border around the cross shape
+            let b = 2usize;
+            let col_border: [u8; 4] = [140, 140, 140, 255];
+            // Horizontal bar border (left-center-right)
+            fill(data, arrow_cx - half - arrow_size - b, arrow_cy - half - b,
+                arrow_size * 3 + b * 2, arrow_size + b * 2, col_border);
+            // Vertical bar border (up-center-down)
+            fill(data, arrow_cx - half - b, arrow_cy - half - arrow_size - b,
+                arrow_size + b * 2, arrow_size * 3 + b * 2, col_border);
+
             // Draw all 4 direction stubs + center as muted reference
             let col_ref: [u8; 4] = [100, 100, 100, 255];
             fill(data, arrow_cx + half, arrow_cy - half, arrow_size, arrow_size, col_ref);  // right
@@ -1521,6 +1893,26 @@ fn render(
 
     let view_str = format!("VIEW: {}x{}", config.view_cells, config.view_cells);
     draw_text(data, img_w, img_h, &view_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let shape_str = format!("SHAPE: {}", config.graph_shape.label());
+    draw_text(data, img_w, img_h, &shape_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let region_str = format!("REGION: {}/{}", config.region_size.label(), config.region_size.cells());
+    draw_text(data, img_w, img_h, &region_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let dead_str = format!("DEAD ENDS: {}", config.dead_ends.label());
+    draw_text(data, img_w, img_h, &dead_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    if config.graph_shape == GraphShape::Branching {
+        let branch_str = format!("BRANCH: {}", config.max_branch);
+        draw_text(data, img_w, img_h, &branch_str, lx, ly, COL_VALUE);
+    } else {
+        draw_text(data, img_w, img_h, "BRANCH: N/A", lx, ly, COL_DIM);
+    }
 
     // Controls column
     let mut ry = legend_y0 + LEGEND_PAD;
@@ -1537,7 +1929,16 @@ fn render(
     draw_text(data, img_w, img_h, "[/]: VIEW", rx, ry, COL_LABEL);
     ry += LEGEND_LINE_H;
 
-    draw_text(data, img_w, img_h, "ARROWS/WASD: MOVE", rx, ry, COL_LABEL);
+    draw_text(data, img_w, img_h, "G: SHAPE", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "F: REGION SIZE", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "V: DEAD ENDS", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "B: BRANCH WIDTH", rx, ry, COL_LABEL);
 }
 
 fn update_title(
