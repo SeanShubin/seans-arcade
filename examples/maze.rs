@@ -112,6 +112,104 @@ const COL_PLAYER: [u8; 4] = [0, 220, 0, 255];
 const COL_GOAL: [u8; 4] = [255, 255, 0, 255];
 const COL_DIM: [u8; 4] = [50, 50, 50, 255];
 const COL_WIN: [u8; 4] = [255, 255, 255, 255];
+const COL_LABEL: [u8; 4] = [180, 180, 180, 255];
+const COL_VALUE: [u8; 4] = [255, 255, 255, 255];
+
+// Legend layout
+const FONT_SCALE: usize = 2;       // each font pixel = 2×2 screen pixels
+const GLYPH_W: usize = 4;          // raw glyph width (3 px + 1 spacing)
+const GLYPH_H: usize = 6;          // raw glyph height (5 px + 1 spacing)
+const CHAR_W: usize = GLYPH_W * FONT_SCALE;  // 8
+const CHAR_H: usize = GLYPH_H * FONT_SCALE;  // 12
+const LEGEND_PAD: usize = WALL_PX;
+const LEGEND_LINE_H: usize = CHAR_H + 2;
+const LEGEND_LINES: usize = 6;
+const LEGEND_GAP: usize = GAP_W;  // visual gap between content and legend
+const LEGEND_BODY_H: usize = LEGEND_PAD + LEGEND_LINES * LEGEND_LINE_H + LEGEND_PAD;
+const LEGEND_H: usize = LEGEND_GAP + LEGEND_BODY_H;
+
+// ---------------------------------------------------------------------------
+// Tiny 4×5 pixel font (3px wide + 1 spacing, 5px tall)
+// ---------------------------------------------------------------------------
+// Each glyph is 5 rows of 3 bits, packed into a u16 (low 15 bits).
+// Row 0 = bits 14..12, row 1 = bits 11..9, etc.
+fn glyph_bits(ch: char) -> u16 {
+    match ch {
+        'A' => 0b_010_111_101_111_101,
+        'B' => 0b_110_101_110_101_110,
+        'C' => 0b_011_100_100_100_011,
+        'D' => 0b_110_101_101_101_110,
+        'E' => 0b_111_100_110_100_111,
+        'F' => 0b_111_100_110_100_100,
+        'G' => 0b_011_100_101_101_011,
+        'H' => 0b_101_101_111_101_101,
+        'I' => 0b_111_010_010_010_111,
+        'J' => 0b_001_001_001_101_010,
+        'K' => 0b_101_110_100_110_101,
+        'L' => 0b_100_100_100_100_111,
+        'M' => 0b_101_111_111_101_101,
+        'N' => 0b_101_111_111_111_101,
+        'O' => 0b_010_101_101_101_010,
+        'P' => 0b_110_101_110_100_100,
+        'Q' => 0b_010_101_101_110_011,
+        'R' => 0b_110_101_110_101_101,
+        'S' => 0b_011_100_010_001_110,
+        'T' => 0b_111_010_010_010_010,
+        'U' => 0b_101_101_101_101_010,
+        'V' => 0b_101_101_101_010_010,
+        'W' => 0b_101_101_111_111_101,
+        'X' => 0b_101_101_010_101_101,
+        'Y' => 0b_101_101_010_010_010,
+        'Z' => 0b_111_001_010_100_111,
+        '0' => 0b_010_101_101_101_010,
+        '1' => 0b_010_110_010_010_111,
+        '2' => 0b_110_001_010_100_111,
+        '3' => 0b_110_001_010_001_110,
+        '4' => 0b_101_101_111_001_001,
+        '5' => 0b_111_100_110_001_110,
+        '6' => 0b_011_100_111_101_011,
+        '7' => 0b_111_001_010_010_010,
+        '8' => 0b_010_101_010_101_010,
+        '9' => 0b_110_101_111_001_110,
+        ':' => 0b_000_010_000_010_000,
+        '/' => 0b_001_001_010_100_100,
+        '+' => 0b_000_010_111_010_000,
+        '-' => 0b_000_000_111_000_000,
+        '[' => 0b_011_010_010_010_011,
+        ']' => 0b_110_010_010_010_110,
+        '=' => 0b_000_111_000_111_000,
+        '.' => 0b_000_000_000_000_010,
+        'x' => 0b_000_101_010_101_000, // lowercase x for dimensions
+        _ => 0,
+    }
+}
+
+fn draw_char(data: &mut [u8], img_w: usize, img_h: usize, ch: char, x0: usize, y0: usize, col: [u8; 4]) {
+    let bits = glyph_bits(ch);
+    if bits == 0 && ch != ' ' { return; }
+    for row in 0..5 {
+        for c in 0..3 {
+            if bits & (1 << (14 - row * 3 - c)) != 0 {
+                for sy in 0..FONT_SCALE {
+                    for sx in 0..FONT_SCALE {
+                        let px = x0 + c * FONT_SCALE + sx;
+                        let py = y0 + row * FONT_SCALE + sy;
+                        if px < img_w && py < img_h {
+                            let i = (py * img_w + px) * 4;
+                            data[i..i + 4].copy_from_slice(&col);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn draw_text(data: &mut [u8], img_w: usize, img_h: usize, text: &str, x0: usize, y0: usize, col: [u8; 4]) {
+    for (i, ch) in text.chars().enumerate() {
+        draw_char(data, img_w, img_h, ch, x0 + i * CHAR_W, y0, col);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Layout helpers
@@ -122,8 +220,9 @@ fn image_dims(view_cells: usize, num_keys: usize) -> (usize, usize) {
     let view_px = view_cells * CELL;
     let rows = num_keys.max(1).min(INV_ROWS);
     let inv_content_h = rows * KEY_SPRITE_SIZE + (rows + 1) * WALL_PX;
+    let content_h = view_px.max(inv_content_h);
     let img_w = inv_w(num_keys) + GAP_W + view_px;
-    let img_h = view_px.max(inv_content_h);
+    let img_h = content_h + LEGEND_H;
     (img_w, img_h)
 }
 
@@ -1224,6 +1323,7 @@ fn render(
     };
 
     // --- Clear entire image with gap color ---
+    let content_h = img_h - LEGEND_H;
     for y in 0..img_h { for x in 0..img_w { set(data, x, y, COL_GAP); } }
 
     // --- Build full maze buffer ---
@@ -1306,7 +1406,7 @@ fn render(
     let inv_rows = nk.max(1).min(INV_ROWS);
     let inv_content_h = inv_rows * KEY_SPRITE_SIZE + (inv_rows + 1) * WALL_PX;
     let panel_w = inv_w(nk);
-    let inv_y0 = if inv_content_h < img_h { (img_h - inv_content_h) / 2 } else { 0 };
+    let inv_y0 = if inv_content_h < content_h { (content_h - inv_content_h) / 2 } else { 0 };
     fill(data, 0, inv_y0, panel_w, inv_content_h.min(img_h), COL_BG);
 
     for i in 0..nk {
@@ -1379,7 +1479,7 @@ fn render(
 
     // --- Maze viewport (right side) ---
     let maze_x0 = panel_w + GAP_W;
-    let maze_y0 = if view_px < img_h { (img_h - view_px) / 2 } else { 0 };
+    let maze_y0 = if view_px < content_h { (content_h - view_px) / 2 } else { 0 };
     let cam_x = gs.cam_x;
     let cam_y = gs.cam_y;
     for vy in 0..view_px {
@@ -1395,24 +1495,59 @@ fn render(
             }
         }
     }
+
+    // --- Legend (bottom strip) ---
+    // COL_GAP gap is already there from the clear; paint the body below it.
+    let legend_y0 = content_h + LEGEND_GAP;
+    fill(data, 0, legend_y0, img_w, LEGEND_BODY_H, COL_BG);
+
+    // Two columns: left = state, right = controls
+    let lx = LEGEND_PAD;
+    let rx = img_w / 2;
+    let mut ly = legend_y0 + LEGEND_PAD;
+
+    // State column
+    let seed_str = format!("SEED: {}", layout.seed);
+    draw_text(data, img_w, img_h, &seed_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let keys_str = format!("KEYS: {}/{}", gs.keys.iter().filter(|&&k| k).count(), config.num_keys);
+    draw_text(data, img_w, img_h, &keys_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let grid_str = format!("GRID: {}x{}", layout.cols, layout.rows);
+    draw_text(data, img_w, img_h, &grid_str, lx, ly, COL_VALUE);
+    ly += LEGEND_LINE_H;
+
+    let view_str = format!("VIEW: {}x{}", config.view_cells, config.view_cells);
+    draw_text(data, img_w, img_h, &view_str, lx, ly, COL_VALUE);
+
+    // Controls column
+    let mut ry = legend_y0 + LEGEND_PAD;
+
+    draw_text(data, img_w, img_h, "N: NEW MAZE", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "R: RESTART", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "+/-: KEYS", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "[/]: VIEW", rx, ry, COL_LABEL);
+    ry += LEGEND_LINE_H;
+
+    draw_text(data, img_w, img_h, "ARROWS/WASD: MOVE", rx, ry, COL_LABEL);
 }
 
 fn update_title(
     mut windows: Query<&mut Window>,
     gs: Res<GameState>,
     layout: Res<MazeLayout>,
-    config: Res<MazeConfig>,
 ) {
     let Ok(mut win) = windows.single_mut() else { return };
-    let status = if gs.won { "WIN!" } else { "maze" };
-    let grid = format!("{}×{}", layout.cols, layout.rows);
-    let view = format!("view {}×{}", config.view_cells, config.view_cells);
-    win.title = format!(
-        "{status} | keys: {}/{} | {grid} | {view} | seed: {} | N/R/+/-/[/]",
-        gs.keys.iter().filter(|&&k| k).count(),
-        config.num_keys,
-        layout.seed,
-    );
+    let status = if gs.won { "WIN!" } else { "9 Keys" };
+    win.title = format!("{status} | seed {}", layout.seed);
 }
 
 // ---------------------------------------------------------------------------
