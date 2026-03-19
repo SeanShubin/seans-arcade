@@ -1,25 +1,84 @@
 //! Interactive 47-blob texture tweaker with map preview.
 //!
 //! Usage:
-//!   cargo run --example texture_lab
+//!   cargo run --example texture_lab                    # GUI mode
+//!   cargo run --example texture_lab -- --render        # render to PNG and exit
+//!   cargo run --example texture_lab -- --render out.png
+//!   cargo run --example texture_lab -- --preset "Dark Stone" --render
 //!
-//! Controls:
+//! GUI Controls:
 //!   - Left panel: tweak material parameters
 //!   - Scroll wheel: zoom in/out
 //!   - Click + drag: pan camera
 //!   - Presets dropdown to switch between starting points
 //!   - "Save PNG" button to export the current tileset
 
+#[allow(unused_imports)]
 use bevy::asset::RenderAssetUsages;
+#[allow(unused_imports)]
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+#[allow(unused_imports)]
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+#[allow(unused_imports)]
+use bevy_egui::{EguiContexts, egui};
 use noise::{NoiseFn, OpenSimplex, Perlin};
 
 const TILE_SIZE: u32 = 64;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    let render_mode = args.iter().any(|a| a == "--render");
+    let preset_name = args.iter().position(|a| a == "--preset").map(|i| {
+        args.get(i + 1).expect("--preset requires a name").clone()
+    });
+    let output_path = if render_mode {
+        // Check for a path arg after --render (that isn't another flag)
+        let ri = args.iter().position(|a| a == "--render").unwrap();
+        args.get(ri + 1)
+            .filter(|a| !a.starts_with("--"))
+            .cloned()
+            .unwrap_or_else(|| "assets/generated/wall/_preview.png".to_string())
+    } else {
+        String::new()
+    };
+
+    // Apply preset if specified
+    let params = if let Some(name) = &preset_name {
+        PRESETS
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .unwrap_or_else(|| {
+                let names: Vec<_> = PRESETS.iter().map(|(n, _)| *n).collect();
+                panic!("Unknown preset '{}'. Available: {:?}", name, names);
+            })
+            .1()
+    } else {
+        TexParams::default()
+    };
+
+    if render_mode {
+        render_and_exit(&params, &output_path);
+    } else {
+        run_gui(params);
+    }
+}
+
+fn render_and_exit(params: &TexParams, output_path: &str) {
+    let grid = MapGrid::load();
+    let pixels = generate_map_pixels(params, &grid);
+    let img = image::RgbaImage::from_raw(grid.pixel_width(), grid.pixel_height(), pixels)
+        .expect("Failed to create image buffer");
+    let dir = std::path::Path::new(output_path).parent().unwrap_or(std::path::Path::new("."));
+    std::fs::create_dir_all(dir).ok();
+    img.save(output_path).expect("Failed to save image");
+    println!("Rendered: {}", output_path);
+}
+
+fn run_gui(params: TexParams) {
+    use bevy_egui::EguiPlugin;
+
     App::new()
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
@@ -32,10 +91,10 @@ fn main() {
             }),
             EguiPlugin::default(),
         ))
-        .init_resource::<TexParams>()
+        .insert_resource(params)
         .init_resource::<TexDirty>()
         .add_systems(Startup, setup)
-        .add_systems(EguiPrimaryContextPass, ui_system)
+        .add_systems(bevy_egui::EguiPrimaryContextPass, ui_system)
         .add_systems(Update, (regenerate_system, camera_zoom, camera_pan))
         .run();
 }
@@ -50,7 +109,8 @@ struct TexParams {
     noise_octaves: u32,
     pattern: usize, // index into PATTERN_NAMES
     bevel_width: f32,
-    bevel_depth: f32,
+    shadow_strength: f32,
+    highlight_strength: f32,
     light_angle: f32,
     speckle_density: f32,
     speckle_color: [f32; 3],
@@ -69,8 +129,9 @@ impl Default for TexParams {
             noise_scale: 0.08,
             noise_octaves: 3,
             pattern: 0,
-            bevel_width: 11.0,
-            bevel_depth: 0.8,
+            bevel_width: 14.0,
+            shadow_strength: 0.7,
+            highlight_strength: 0.4,
             light_angle: 135.0,
             speckle_density: 0.0,
             speckle_color: [1.0, 1.0, 1.0],
@@ -92,8 +153,9 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.08,
         noise_octaves: 3,
         pattern: 0,
-        bevel_width: 11.0,
-        bevel_depth: 0.8,
+        bevel_width: 14.0,
+        shadow_strength: 0.7,
+        highlight_strength: 0.4,
         light_angle: 135.0,
         speckle_density: 0.0,
         speckle_color: [1.0; 3],
@@ -110,7 +172,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 2,
         pattern: 2,
         bevel_width: 4.0,
-        bevel_depth: 0.4,
+        shadow_strength: 0.4,
+        highlight_strength: 0.2,
         light_angle: 135.0,
         speckle_density: 0.08,
         speckle_color: [0.85, 0.85, 0.8],
@@ -127,7 +190,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 4,
         pattern: 1,
         bevel_width: 6.0,
-        bevel_depth: 0.45,
+        shadow_strength: 0.5,
+        highlight_strength: 0.2,
         light_angle: 135.0,
         speckle_density: 0.0,
         speckle_color: [1.0; 3],
@@ -144,7 +208,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 4,
         pattern: 4,
         bevel_width: 4.0,
-        bevel_depth: 0.3,
+        shadow_strength: 0.3,
+        highlight_strength: 0.5,
         light_angle: 135.0,
         speckle_density: 0.0,
         speckle_color: [1.0; 3],
@@ -161,7 +226,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 3,
         pattern: 3,
         bevel_width: 5.0,
-        bevel_depth: 0.35,
+        shadow_strength: 0.35,
+        highlight_strength: 0.15,
         light_angle: 135.0,
         speckle_density: 0.0,
         speckle_color: [1.0; 3],
@@ -178,7 +244,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 1,
         pattern: 0,
         bevel_width: 4.0,
-        bevel_depth: 0.5,
+        shadow_strength: 0.5,
+        highlight_strength: 0.7,
         light_angle: 135.0,
         speckle_density: 0.0,
         speckle_color: [1.0; 3],
@@ -195,7 +262,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 3,
         pattern: 0,
         bevel_width: 5.0,
-        bevel_depth: 0.35,
+        shadow_strength: 0.35,
+        highlight_strength: 0.15,
         light_angle: 135.0,
         speckle_density: 0.04,
         speckle_color: [0.85, 0.78, 0.6],
@@ -212,7 +280,8 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_octaves: 1,
         pattern: 0,
         bevel_width: 3.0,
-        bevel_depth: 0.55,
+        shadow_strength: 0.5,
+        highlight_strength: 0.8,
         light_angle: 135.0,
         speckle_density: 0.02,
         speckle_color: [0.7, 0.72, 0.75],
@@ -282,6 +351,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, params: Res<
 
     let grid = MapGrid::load();
     let pixels = generate_map_pixels(&params, &grid);
+
     let image = Image::new(
         Extent3d {
             width: grid.pixel_width(),
@@ -398,7 +468,10 @@ fn ui_system(
             .add(egui::Slider::new(&mut params.bevel_width, 0.0..=20.0).text("Width"))
             .changed();
         changed |= ui
-            .add(egui::Slider::new(&mut params.bevel_depth, 0.0..=1.0).text("Depth"))
+            .add(egui::Slider::new(&mut params.shadow_strength, 0.0..=1.0).text("Shadow"))
+            .changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut params.highlight_strength, 0.0..=1.0).text("Highlight"))
             .changed();
         changed |= ui
             .add(egui::Slider::new(&mut params.light_angle, 0.0..=360.0).text("Light angle°"))
@@ -723,79 +796,142 @@ fn apply_speckle(params: &TexParams, perlin: &Perlin, base: [f64; 3], x: f64, y:
     }
 }
 
+/// Compute bevel using minimum-distance-to-void with smooth normal blending.
+///
+/// Instead of summing independent edge contributions (which breaks at corners),
+/// we find the nearest void boundary and compute a single surface normal there.
+/// At outer corners, normals blend smoothly to create proper diagonal mitering.
 fn compute_bevel(edges: &Edges, x: f64, y: f64, params: &TexParams, light_rad: f64) -> f64 {
     let w = params.bevel_width as f64;
     let size = TILE_SIZE as f64;
     let light_x = light_rad.cos();
     let light_y = -light_rad.sin();
 
-    let mut bevel = 0.0f64;
+    // Collect distances to each exposed edge/corner, with outward normals.
+    // We'll blend the normals weighted by proximity.
+    let mut total_weight = 0.0;
+    let mut nx = 0.0;
+    let mut ny = 0.0;
+    let mut min_dist = f64::MAX;
 
-    // sqrt falloff: stays strong across most of the bevel, then drops at the inner edge
+    // Cardinal edges
     if edges.n && y < w {
-        let t = (1.0 - y / w).sqrt();
-        bevel += t * -light_y;
+        let d = y;
+        if d < min_dist { min_dist = d; }
+        // Weight: stronger when closer to this edge (inverse distance, softened)
+        let weight = 1.0 / (d + 0.5);
+        nx += 0.0 * weight;
+        ny += -1.0 * weight;
+        total_weight += weight;
     }
-    if edges.s && y > size - w {
-        let t = (1.0 - (size - y) / w).sqrt();
-        bevel += t * light_y;
+    if edges.s && (size - 1.0 - y) < w {
+        let d = size - 1.0 - y;
+        if d < min_dist { min_dist = d; }
+        let weight = 1.0 / (d + 0.5);
+        nx += 0.0 * weight;
+        ny += 1.0 * weight;
+        total_weight += weight;
     }
     if edges.w && x < w {
-        let t = (1.0 - x / w).sqrt();
-        bevel += t * -light_x;
+        let d = x;
+        if d < min_dist { min_dist = d; }
+        let weight = 1.0 / (d + 0.5);
+        nx += -1.0 * weight;
+        ny += 0.0 * weight;
+        total_weight += weight;
     }
-    if edges.e && x > size - w {
-        let t = (1.0 - (size - x) / w).sqrt();
-        bevel += t * light_x;
-    }
-
-    let cw = w * 1.2;
-    if edges.inner_nw && x < cw && y < cw {
-        let dist = (x * x + y * y).sqrt();
-        if dist < cw {
-            let t = (1.0 - dist / cw).sqrt();
-            bevel += t * (-light_x - light_y) * 0.7;
-        }
-    }
-    if edges.inner_ne && x > size - cw && y < cw {
-        let dx = size - x;
-        let dist = (dx * dx + y * y).sqrt();
-        if dist < cw {
-            let t = (1.0 - dist / cw).sqrt();
-            bevel += t * (light_x - light_y) * 0.7;
-        }
-    }
-    if edges.inner_sw && x < cw && y > size - cw {
-        let dy = size - y;
-        let dist = (x * x + dy * dy).sqrt();
-        if dist < cw {
-            let t = (1.0 - dist / cw).sqrt();
-            bevel += t * (-light_x + light_y) * 0.7;
-        }
-    }
-    if edges.inner_se && x > size - cw && y > size - cw {
-        let dx = size - x;
-        let dy = size - y;
-        let dist = (dx * dx + dy * dy).sqrt();
-        if dist < cw {
-            let t = (1.0 - dist / cw).sqrt();
-            bevel += t * (light_x + light_y) * 0.7;
-        }
+    if edges.e && (size - 1.0 - x) < w {
+        let d = size - 1.0 - x;
+        if d < min_dist { min_dist = d; }
+        let weight = 1.0 / (d + 0.5);
+        nx += 1.0 * weight;
+        ny += 0.0 * weight;
+        total_weight += weight;
     }
 
-    bevel.clamp(-1.0, 1.0)
+    // Inner corners (concave): diagonal neighbor is void but both adjacent cardinals are wall.
+    // The void is at the corner point — distance is to the corner.
+    let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
+    if edges.inner_nw {
+        let d = (x * x + y * y).sqrt();
+        if d < w * 1.4 {
+            if d < min_dist { min_dist = d; }
+            let weight = 1.0 / (d + 0.5);
+            nx += -inv_sqrt2 * weight;
+            ny += -inv_sqrt2 * weight;
+            total_weight += weight;
+        }
+    }
+    if edges.inner_ne {
+        let dx = size - 1.0 - x;
+        let d = (dx * dx + y * y).sqrt();
+        if d < w * 1.4 {
+            if d < min_dist { min_dist = d; }
+            let weight = 1.0 / (d + 0.5);
+            nx += inv_sqrt2 * weight;
+            ny += -inv_sqrt2 * weight;
+            total_weight += weight;
+        }
+    }
+    if edges.inner_sw {
+        let dy = size - 1.0 - y;
+        let d = (x * x + dy * dy).sqrt();
+        if d < w * 1.4 {
+            if d < min_dist { min_dist = d; }
+            let weight = 1.0 / (d + 0.5);
+            nx += -inv_sqrt2 * weight;
+            ny += inv_sqrt2 * weight;
+            total_weight += weight;
+        }
+    }
+    if edges.inner_se {
+        let dx = size - 1.0 - x;
+        let dy = size - 1.0 - y;
+        let d = (dx * dx + dy * dy).sqrt();
+        if d < w * 1.4 {
+            if d < min_dist { min_dist = d; }
+            let weight = 1.0 / (d + 0.5);
+            nx += inv_sqrt2 * weight;
+            ny += inv_sqrt2 * weight;
+            total_weight += weight;
+        }
+    }
+
+    if total_weight == 0.0 || min_dist >= w {
+        return 0.0;
+    }
+
+    // Normalize the blended normal
+    nx /= total_weight;
+    ny /= total_weight;
+    let len = (nx * nx + ny * ny).sqrt();
+    if len < 0.001 {
+        return 0.0;
+    }
+    nx /= len;
+    ny /= len;
+
+    // Bevel strength from distance (sqrt falloff = stays strong, drops near inner edge)
+    let t = (1.0 - min_dist / w).sqrt();
+
+    // Lighting: dot product of surface normal with light direction
+    let lighting = nx * light_x + ny * light_y;
+
+    (t * lighting).clamp(-1.0, 1.0)
 }
 
 fn apply_bevel(color: [f64; 3], bevel: f64, params: &TexParams) -> [f64; 3] {
-    let factor = bevel * params.bevel_depth as f64;
-    if factor > 0.0 {
+    if bevel > 0.0 {
+        // Highlight: lerp toward white
+        let f = bevel * params.highlight_strength as f64;
         [
-            lerp(color[0], 1.0, factor),
-            lerp(color[1], 1.0, factor),
-            lerp(color[2], 1.0, factor),
+            lerp(color[0], 1.0, f),
+            lerp(color[1], 1.0, f),
+            lerp(color[2], 1.0, f),
         ]
     } else {
-        let f = -factor;
+        // Shadow: lerp toward black
+        let f = -bevel * params.shadow_strength as f64;
         [
             lerp(color[0], 0.0, f),
             lerp(color[1], 0.0, f),
