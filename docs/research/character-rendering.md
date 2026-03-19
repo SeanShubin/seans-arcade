@@ -100,14 +100,35 @@ A character is a hierarchy of 2D art pieces (torso, arms, legs, head) rigged to 
 
 **Tools:** Spine ($70+, proprietary), DragonBones (free), bevy_spine or similar (runtime).
 
+### F: Procedural Vector Animation
+
+The character is assembled from geometric primitives (rectangles, circles, triangles) and animated entirely through code — positions, rotations, and scales computed at runtime from math and state. No external art assets.
+
+| Goal                    | Status                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| Zelda-like aesthetic    | Partial — geometric/minimalist, evokes retro feel but not pixel art          |
+| Camera flexibility      | No — part arrangements are authored for top-down view                        |
+| Resolution independence | Yes — vector graphics scale to any resolution                                |
+| No art skill investment | Yes — everything is code, no drawing or modeling required                    |
+| Parallax and depth      | Partial — depth via draw order, not real 3D                                  |
+
+**Tools:** Bevy `Gizmos` (prototyping), `Mesh2d` (production). No external tools required.
+
+**Key advantage:** Characters are fully interactive — weapons, projectiles, and animations respond to gameplay state in real time, not canned sprite sequences. Ideal for prototyping game mechanics before committing to an art style.
+
+**Key problem:** The aesthetic is abstract/geometric. It works well as a prototyping tool or a deliberate style choice, but won't replicate pixel art charm.
+
+**Learning plan:** See `docs/research/procedural-animation.md`.
+
 ## Summary
 
-| Approach         | Zelda   | Camera | Resolution | No Art Skill | Parallax |
-| ---------------- | ------- | ------ | ---------- | ------------ | -------- |
-| A: Sprite sheets | Yes     | No     | No         | Yes          | Partial  |
-| B: 3D models     | No      | Yes    | Yes        | Partial      | Yes      |
-| C: HD-2D shader  | Partial | Yes    | Yes        | No           | Yes      |
-| D: Voxel models  | No      | Yes    | Yes        | Yes          | Yes      |
-| E: Skeletal 2D   | No      | No     | Yes        | Partial      | Partial  |
+| Approach              | Zelda   | Camera | Resolution | No Art Skill | Parallax |
+| --------------------- | ------- | ------ | ---------- | ------------ | -------- |
+| A: Sprite sheets      | Yes     | No     | No         | Yes          | Partial  |
+| B: 3D models          | No      | Yes    | Yes        | Partial      | Yes      |
+| C: HD-2D shader       | Partial | Yes    | Yes        | No           | Yes      |
+| D: Voxel models       | No      | Yes    | Yes        | Yes          | Yes      |
+| E: Skeletal 2D        | No      | No     | Yes        | Partial      | Partial  |
+| F: Procedural vectors | Partial | No     | Yes        | Yes          | Partial  |
 
 No approach satisfies all five goals. The tensions between Zelda aesthetic, camera flexibility, and resolution independence prevent a single solution from covering everything. Prototyping is needed to evaluate which tradeoffs are acceptable in practice.
