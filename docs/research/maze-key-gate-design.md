@@ -158,14 +158,14 @@ For procedural generation with replayability, the enum approach is probably the 
 
 Some knobs amplify or conflict with each other:
 
-| Combination | Effect |
-|-------------|--------|
-| High depth + no backtracking | Forces a very long linear corridor — each region feeds into the next |
-| High width + small regions | Lots of short parallel branches — feels like a hub with spokes |
-| Multi-key gates + consumed keys | Extremely hard to generate without soft-locks |
+| Combination                          | Effect                                                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| High depth + no backtracking         | Forces a very long linear corridor — each region feeds into the next                                           |
+| High width + small regions           | Lots of short parallel branches — feels like a hub with spokes                                                 |
+| Multi-key gates + consumed keys      | Extremely hard to generate without soft-locks                                                                  |
 | Many dead ends + global backtracking | Frustrating without a map — the player can't distinguish dead ends from locked-gate paths they should remember |
-| High gates-per-key + low depth | Burst-exploration pattern — long stretches of free exploration punctuated by key finds |
-| Large regions + many keys | Very long play time — each key takes significant effort to find |
+| High gates-per-key + low depth       | Burst-exploration pattern — long stretches of free exploration punctuated by key finds                         |
+| Large regions + many keys            | Very long play time — each key takes significant effort to find                                                |
 
 ## Wrapping Topology
 

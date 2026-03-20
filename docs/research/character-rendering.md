@@ -104,13 +104,13 @@ A character is a hierarchy of 2D art pieces (torso, arms, legs, head) rigged to 
 
 The character is assembled from geometric primitives (rectangles, circles, triangles) and animated entirely through code — positions, rotations, and scales computed at runtime from math and state. No external art assets.
 
-| Goal                    | Status                                                                       |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| Zelda-like aesthetic    | Partial — geometric/minimalist, evokes retro feel but not pixel art          |
-| Camera flexibility      | No — part arrangements are authored for top-down view                        |
-| Resolution independence | Yes — vector graphics scale to any resolution                                |
-| No art skill investment | Yes — everything is code, no drawing or modeling required                    |
-| Parallax and depth      | Partial — depth via draw order, not real 3D                                  |
+| Goal                    | Status                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| Zelda-like aesthetic    | Partial — geometric/minimalist, evokes retro feel but not pixel art |
+| Camera flexibility      | No — part arrangements are authored for top-down view               |
+| Resolution independence | Yes — vector graphics scale to any resolution                       |
+| No art skill investment | Yes — everything is code, no drawing or modeling required           |
+| Parallax and depth      | Partial — depth via draw order, not real 3D                         |
 
 **Tools:** Bevy `Gizmos` (prototyping), `Mesh2d` (production). No external tools required.
 

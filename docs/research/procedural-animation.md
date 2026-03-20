@@ -13,40 +13,46 @@ Top-down 2D character animation using vector graphics (no sprites). The characte
 
 ### Drawing
 
-| Technique | What it does | When you need it |
-|---|---|---|
-| Gizmos (lines, circles, rects) | Immediate-mode vector drawing | Example 1 onward |
-| Shape composition | Assembling a character from child entities with local offsets | Example 1 |
-| Z-ordering / draw order | Controlling which parts render in front | Example 2 |
+Two drawing systems serve different roles:
+
+- **`Mesh2d`** — the game world. Filled shapes (rectangles, circles) as entities with `MeshMaterial2d`. Used for the character, weapons, projectiles, and environment. These are persistent entities you move, rotate, and recolor.
+- **Gizmos** — debug/development overlays. Hitbox outlines, origin crosshairs, bounding boxes, pivot points. Immediate-mode drawing that doesn't create entities. Toggle on/off during development.
+
+| Technique                                     | What it does                                                 | When you need it |
+| ---------------------------------------------- | ------------------------------------------------------------ | ---------------- |
+| `Mesh2d` + `MeshMaterial2d` (filled shapes)   | Persistent entity-based shape rendering for the game world   | Example 1 onward |
+| Shape composition                              | Assembling a character from child entities with local offsets | Example 1        |
+| Z-ordering / draw order                        | Controlling which parts render in front                      | Example 2        |
+| Gizmos (debug overlays)                        | Immediate-mode lines/circles for development visualization   | Example 4 onward |
 
 ### Animation
 
-| Technique | What it does | When you need it |
-|---|---|---|
-| Sine-wave oscillation | Repeating smooth motion (walk bob, arm sway) | Example 3 |
-| Lerp / easing | Smooth transitions between values with controllable feel | Example 4 |
-| Arc interpolation | Rotating a part around a pivot over time (sword swing) | Example 4 |
-| State machine | Switching between idle/walk/attack/item states | Example 3 |
+| Technique             | What it does                                             | When you need it |
+| --------------------- | -------------------------------------------------------- | ---------------- |
+| Sine-wave oscillation | Repeating smooth motion (walk bob, arm sway)             | Example 3        |
+| Lerp / easing         | Smooth transitions between values with controllable feel | Example 4        |
+| Arc interpolation     | Rotating a part around a pivot over time (sword swing)   | Example 4        |
+| State machine         | Switching between idle/walk/attack/item states           | Example 3        |
 
 ### Gameplay
 
-| Technique | What it does | When you need it |
-|---|---|---|
-| Entity spawning | Creating projectile entities at runtime | Example 5 |
-| Velocity + lifetime | Moving projectiles and despawning them | Example 5 |
-| Return curves | Boomerang-style projectiles that curve back to the player | Example 5 |
-| Squash & stretch | Brief scale changes for impact feel | Example 6 |
-| Hit flash | Momentary color change on damage | Example 6 |
+| Technique           | What it does                                              | When you need it |
+| ------------------- | --------------------------------------------------------- | ---------------- |
+| Entity spawning     | Creating projectile entities at runtime                   | Example 5        |
+| Velocity + lifetime | Moving projectiles and despawning them                    | Example 5        |
+| Return curves       | Boomerang-style projectiles that curve back to the player | Example 5        |
+| Squash & stretch    | Brief scale changes for impact feel                       | Example 6        |
+| Hit flash           | Momentary color change on damage                          | Example 6        |
 
 ### Key Math
 
-| Function | Purpose |
-|---|---|
-| `atan2(dy, dx)` | Angle from one point to another |
-| `sin(t) / cos(t)` | Oscillation, converting angle to direction |
-| `lerp(a, b, t)` | Linear interpolation between two values |
-| `smoothstep(t)` | S-curve interpolation (3t² - 2t³) |
-| `vec2.length() / normalize()` | Distance and direction |
+| Function                      | Purpose                                    |
+| ----------------------------- | ------------------------------------------ |
+| `atan2(dy, dx)`               | Angle from one point to another            |
+| `sin(t) / cos(t)`             | Oscillation, converting angle to direction |
+| `lerp(a, b, t)`               | Linear interpolation between two values    |
+| `smoothstep(t)`               | S-curve interpolation (3t² - 2t³)          |
+| `vec2.length() / normalize()` | Distance and direction                     |
 
 ## Example Progression
 
@@ -54,11 +60,11 @@ Each example is a standalone file in `examples/` that builds on concepts from th
 
 ### Example 1: Shape Composition (`procedural_hero_shapes.rs`)
 
-Assemble a static top-down character from geometric primitives using Gizmos.
+Assemble a static top-down character from filled geometric primitives using `Mesh2d`.
 
-**Concepts:** Gizmos API, shape primitives (rect, circle, triangle), color, positioning parts relative to a character origin.
+**Concepts:** `Mesh2d` + `MeshMaterial2d`, shape primitives (rectangle, circle), color, positioning body part entities relative to a character origin, entity hierarchy.
 
-**Result:** A static hero-like figure facing down — head, body, legs, arms, shield outline. No movement, no input.
+**Result:** A static hero figure facing down — head, body, legs, arms, shield. Filled solid shapes, not outlines. Camera zoom/pan for inspection.
 
 ### Example 2: Facing Directions (`procedural_hero_facing.rs`)
 
