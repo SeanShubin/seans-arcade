@@ -70,12 +70,24 @@ const EYE_FORWARD: f32 = 0.26;
 
 const HAIR_RADIUS: f32 = 0.31;
 
+// Twin tails — 4-segment chains arcing outward then down
+// Rest pose (right side, facing down): NE → E → SE → S
+// Each segment adds ~45° (π/4) relative to its parent
+const PIGTAIL_SEGMENTS: usize = 4;
+const PIGTAIL_WIDTH: f32 = 0.08;
+const PIGTAIL_SEGMENT_HEIGHT: f32 = 0.12;
+const PIGTAIL_DEPTH: f32 = 0.08;
+const PIGTAIL_X: f32 = HAIR_RADIUS - PIGTAIL_WIDTH / 2.0; // block edge meets hair surface
+const PIGTAIL_Y: f32 = HEAD_Y + HEAD_RADIUS - PIGTAIL_SEGMENT_HEIGHT / 2.0; // bottom of first block aligns with hair edge
+const PIGTAIL_SWING_BASE: f32 = 0.1; // walk animation swing per segment
+const PIGTAIL_REST_ANGLE: f32 = std::f32::consts::FRAC_PI_4; // 45° per segment
+
 // Hero palette
 const COLOR_SKIN: Color = Color::srgb(0.93, 0.76, 0.57);
 const COLOR_TUNIC: Color = Color::srgb(0.18, 0.55, 0.18);
 const COLOR_PANTS: Color = Color::srgb(0.55, 0.40, 0.25);
-const COLOR_HAIR: Color = Color::srgb(0.75, 0.60, 0.20);
-const COLOR_EYE: Color = Color::BLACK;
+const COLOR_HAIR: Color = Color::srgb(0.8, 0.2, 0.05);
+const COLOR_EYE: Color = Color::srgb(0.15, 0.4, 0.9);
 
 // Movement
 const MOVE_SPEED: f32 = 5.0;
@@ -127,6 +139,15 @@ enum BodyPart {
     Hair,
     LeftEye,
     RightEye,
+}
+
+/// A segment of a pigtail/twin tail chain.
+/// `side`: -1.0 for left, 1.0 for right.
+/// `depth`: 0 = root (attached to head), 1 = middle, 2 = tip.
+#[derive(Component)]
+struct PigtailSegment {
+    side: f32,
+    depth: usize,
 }
 
 #[derive(Component, Default)]
@@ -358,6 +379,11 @@ fn setup_hero(
     for part in parts {
         spawn_part(&mut commands, hero, part, &mut meshes, &mut materials);
     }
+
+    // Twin tails — two chains of segments, one on each side
+    for &side in &[-1.0_f32, 1.0] {
+        spawn_pigtail(&mut commands, hero, side, &mut meshes, &mut materials);
+    }
 }
 
 fn spawn_part(
@@ -389,6 +415,51 @@ fn spawn_part(
 
     commands.entity(pivot).add_child(mesh_child);
     commands.entity(hero).add_child(pivot);
+}
+
+fn spawn_pigtail(
+    commands: &mut Commands,
+    hero: Entity,
+    side: f32,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) {
+    let mesh = meshes.add(Cuboid::new(PIGTAIL_WIDTH, PIGTAIL_SEGMENT_HEIGHT, PIGTAIL_DEPTH));
+    let material = materials.add(StandardMaterial::from_color(COLOR_HAIR));
+
+    // First segment's pivot is relative to the hero root, at the side of the head
+    let mut parent = hero;
+    for depth in 0..PIGTAIL_SEGMENTS {
+        let pivot_offset = if depth == 0 {
+            // Root segment: attached high on the side of the head
+            Vec3::new(side * PIGTAIL_X, PIGTAIL_Y, 0.0)
+        } else {
+            // Subsequent segments: connect at the end of the previous
+            // Segments extend upward in local space; rotation arcs them over
+            Vec3::new(0.0, PIGTAIL_SEGMENT_HEIGHT, 0.0)
+        };
+
+        let pivot = commands
+            .spawn((
+                PigtailSegment { side, depth },
+                Transform::from_translation(pivot_offset),
+                Visibility::default(),
+            ))
+            .id();
+
+        let mesh_child = commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                // Mesh extends upward from pivot
+                Transform::from_translation(Vec3::new(0.0, PIGTAIL_SEGMENT_HEIGHT / 2.0, 0.0)),
+            ))
+            .id();
+
+        commands.entity(pivot).add_child(mesh_child);
+        commands.entity(parent).add_child(pivot);
+        parent = pivot;
+    }
 }
 
 /// Returns (mesh, material, pivot_offset, mesh_offset).
@@ -742,7 +813,8 @@ fn apply_movement(
 
 fn animate_walk_cycle(
     hero_query: Query<&WalkAnimation, With<Hero>>,
-    mut part_query: Query<(&BodyPart, &mut Transform), Without<Hero>>,
+    mut part_query: Query<(&BodyPart, &mut Transform), (Without<Hero>, Without<PigtailSegment>)>,
+    mut pigtail_query: Query<(&PigtailSegment, &mut Transform), Without<BodyPart>>,
 ) {
     let Ok(walk) = hero_query.single() else {
         return;
@@ -758,6 +830,22 @@ fn animate_walk_cycle(
         } else {
             transform.translation = base_offset;
             transform.rotation = Quat::IDENTITY;
+        }
+    }
+
+    // Twin tail animation — each segment tilts 45° outward (rest pose),
+    // walk adds cascading swing on top.
+    for (segment, mut transform) in &mut pigtail_query {
+        let rest_rot = Quat::from_rotation_z(-PIGTAIL_REST_ANGLE * segment.side);
+
+        if walk.active {
+            let depth_factor = (segment.depth + 1) as f32;
+            let phase_delay = segment.depth as f32 * 0.4;
+            let swing = (walk.phase + phase_delay).sin() * PIGTAIL_SWING_BASE * depth_factor;
+            let walk_rot = Quat::from_rotation_z(swing * segment.side);
+            transform.rotation = rest_rot * walk_rot;
+        } else {
+            transform.rotation = rest_rot;
         }
     }
 }
