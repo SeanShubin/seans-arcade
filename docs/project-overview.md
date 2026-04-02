@@ -164,6 +164,7 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [bevy-wasm-build.md](research/bevy-wasm-build.md) — Building Bevy examples for WebAssembly: setup, config, dev runner, production builds
 - [bevy-scrollable-ui.md](research/bevy-scrollable-ui.md) — Bevy 0.18 scrollable UI: flexbox gotchas, scroll containers, scrollbar implementation
 - [autotile-blob-patterns.md](research/autotile-blob-patterns.md) — Auto-tiling systems: 47-tile blob patterns, Wang tiles, how they relate, LDtk/Tiled usage
+- [software-rasterizer-vs-distance-field.md](research/software-rasterizer-vs-distance-field.md) — Two approaches for CPU bevel rendering: quad rasterization vs distance-weighted normals
 
 ### Postmortems
 
