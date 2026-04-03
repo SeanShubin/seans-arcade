@@ -43,7 +43,6 @@ const GRID_COLS: u32 = 12;
 const GRID_ROWS: u32 = 5;
 const TILE_SIZE: u32 = 64;
 const TILE_GAP: u32 = 2;
-const TILE_STRIDE: u32 = TILE_SIZE + TILE_GAP;
 
 const BLOB_LAYOUT: [(u32, u32, u8); 47] = [
     (0, 0, 28),  (1, 0, 124), (2, 0, 112), (3, 0, 4),   (4, 0, 68),
@@ -90,9 +89,13 @@ fn main() {
 }
 
 fn render_and_exit(params: &TexParams, output_path: &str) {
-    let pixels = render_all_tiles(params);
-    let img = image::RgbaImage::from_raw(image_width(), image_height(), pixels)
-        .expect("Failed to create image buffer");
+    let pixels_per_unit = 1.0;
+    let pixels = render_all_tiles(params, pixels_per_unit);
+    let img = image::RgbaImage::from_raw(
+        scaled_image_width(pixels_per_unit),
+        scaled_image_height(pixels_per_unit),
+        pixels,
+    ).expect("Failed to create image buffer");
     let dir = std::path::Path::new(output_path).parent().unwrap_or(std::path::Path::new("."));
     std::fs::create_dir_all(dir).ok();
     img.save(output_path).expect("Failed to save image");
@@ -163,7 +166,7 @@ fn parse_params_from_args(args: &[String]) -> TexParams {
     if let Some(v) = arg_f32(args, "--noise-scale") { params.noise_scale = v; }
     if let Some(v) = arg_u32(args, "--noise-octaves") { params.noise_octaves = v; }
     if let Some(v) = arg_usize(args, "--pattern") { params.pattern = v; }
-    if let Some(v) = arg_f32(args, "--bevel-width") { params.bevel_width = v; }
+    if let Some(v) = arg_f32(args, "--bevel-fraction") { params.bevel_fraction = v; }
     if let Some(v) = arg_f32(args, "--shadow-strength") { params.shadow_strength = v; }
     if let Some(v) = arg_f32(args, "--highlight-strength") { params.highlight_strength = v; }
     if let Some(v) = arg_f32(args, "--light-angle") { params.light_angle = v; }
@@ -174,6 +177,7 @@ fn parse_params_from_args(args: &[String]) -> TexParams {
     if let Some(v) = arg_u32(args, "--seed") { params.seed = v; }
     if arg_flag(args, "--3d-lighting") { params.use_3d_lighting = true; }
     if arg_flag(args, "--edge-lines") { params.show_edge_lines = true; }
+    if arg_flag(args, "--no-textures") { params.procedural_textures = false; }
 
     params
 }
@@ -189,7 +193,7 @@ struct TexParams {
     noise_scale: f32,
     noise_octaves: u32,
     pattern: usize,
-    bevel_width: f32,
+    bevel_fraction: f32,
     shadow_strength: f32,
     highlight_strength: f32,
     light_angle: f32,
@@ -201,6 +205,7 @@ struct TexParams {
     seed: u32,
     use_3d_lighting: bool,
     show_edge_lines: bool,
+    procedural_textures: bool,
 }
 
 impl Default for TexParams {
@@ -211,7 +216,7 @@ impl Default for TexParams {
             noise_scale: 0.08,
             noise_octaves: 3,
             pattern: 0,
-            bevel_width: 14.0,
+            bevel_fraction: 0.22,
             shadow_strength: 0.7,
             highlight_strength: 0.4,
             light_angle: 135.0,
@@ -223,6 +228,7 @@ impl Default for TexParams {
             seed: 42,
             use_3d_lighting: false,
             show_edge_lines: false,
+            procedural_textures: true,
         }
     }
 }
@@ -230,13 +236,33 @@ impl Default for TexParams {
 const PATTERN_NAMES: &[&str] = &["Perlin", "Cellular", "Brick", "Stripe", "Marble"];
 
 const PRESETS: &[(&str, fn() -> TexParams)] = &[
+    ("Beveled Block", || TexParams {
+        base_color: [0.50, 0.50, 0.55],
+        color_variation: 0.0,
+        noise_scale: 0.08,
+        noise_octaves: 1,
+        pattern: 0,
+        bevel_fraction: 0.25,
+        shadow_strength: 0.7,
+        highlight_strength: 0.4,
+        light_angle: 202.5,
+        speckle_density: 0.0,
+        speckle_color: [1.0; 3],
+        use_secondary: false,
+        secondary_color: [0.3; 3],
+        stripe_angle: 0.0,
+        seed: 42,
+        use_3d_lighting: true,
+        show_edge_lines: true,
+        procedural_textures: false,
+    }),
     ("Concrete", || TexParams {
         base_color: [0.62, 0.62, 0.62],
         color_variation: 0.06,
         noise_scale: 0.08,
         noise_octaves: 3,
         pattern: 0,
-        bevel_width: 14.0,
+        bevel_fraction: 0.22,
         shadow_strength: 0.7,
         highlight_strength: 0.4,
         light_angle: 135.0,
@@ -248,6 +274,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Red Brick", || TexParams {
         base_color: [0.6, 0.25, 0.18],
@@ -255,7 +282,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.1,
         noise_octaves: 2,
         pattern: 2,
-        bevel_width: 4.0,
+        bevel_fraction: 0.06,
         shadow_strength: 0.4,
         highlight_strength: 0.2,
         light_angle: 135.0,
@@ -267,6 +294,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Dark Stone", || TexParams {
         base_color: [0.3, 0.3, 0.32],
@@ -274,7 +302,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.04,
         noise_octaves: 4,
         pattern: 1,
-        bevel_width: 6.0,
+        bevel_fraction: 0.09,
         shadow_strength: 0.5,
         highlight_strength: 0.2,
         light_angle: 135.0,
@@ -286,6 +314,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Marble", || TexParams {
         base_color: [0.88, 0.86, 0.82],
@@ -293,7 +322,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.03,
         noise_octaves: 4,
         pattern: 4,
-        bevel_width: 4.0,
+        bevel_fraction: 0.06,
         shadow_strength: 0.3,
         highlight_strength: 0.5,
         light_angle: 135.0,
@@ -305,6 +334,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Wood Plank", || TexParams {
         base_color: [0.55, 0.38, 0.22],
@@ -312,7 +342,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.06,
         noise_octaves: 3,
         pattern: 3,
-        bevel_width: 5.0,
+        bevel_fraction: 0.08,
         shadow_strength: 0.35,
         highlight_strength: 0.15,
         light_angle: 135.0,
@@ -324,6 +354,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Blue Tile", || TexParams {
         base_color: [0.2, 0.35, 0.6],
@@ -331,7 +362,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.15,
         noise_octaves: 1,
         pattern: 0,
-        bevel_width: 4.0,
+        bevel_fraction: 0.06,
         shadow_strength: 0.5,
         highlight_strength: 0.7,
         light_angle: 135.0,
@@ -343,6 +374,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Sandstone", || TexParams {
         base_color: [0.72, 0.62, 0.45],
@@ -350,7 +382,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.07,
         noise_octaves: 3,
         pattern: 0,
-        bevel_width: 5.0,
+        bevel_fraction: 0.08,
         shadow_strength: 0.35,
         highlight_strength: 0.15,
         light_angle: 135.0,
@@ -362,6 +394,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
     ("Metal Plate", || TexParams {
         base_color: [0.5, 0.52, 0.55],
@@ -369,7 +402,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         noise_scale: 0.2,
         noise_octaves: 1,
         pattern: 0,
-        bevel_width: 3.0,
+        bevel_fraction: 0.05,
         shadow_strength: 0.5,
         highlight_strength: 0.8,
         light_angle: 135.0,
@@ -381,6 +414,7 @@ const PRESETS: &[(&str, fn() -> TexParams)] = &[
         seed: 42,
         use_3d_lighting: false,
         show_edge_lines: false,
+        procedural_textures: true,
     }),
 ];
 
@@ -389,6 +423,9 @@ struct TexDirty(bool);
 
 #[derive(Resource)]
 struct TilesetImageHandle(Handle<Image>);
+
+#[derive(Resource)]
+struct LastRenderScale(f32);
 
 // =====================================================================
 // Image dimensions with tile gaps
@@ -413,29 +450,38 @@ fn spawn_camera_and_tileset(
 ) {
     commands.spawn(Camera2d);
 
-    let pixels = render_all_tiles(&params);
-    let image = create_tileset_image(pixels);
+    let pixels_per_unit = 1.0;
+    let pixels = render_all_tiles(&params, pixels_per_unit);
+    let image = create_tileset_image_scaled(pixels, pixels_per_unit);
     let handle = images.add(image);
 
     commands.spawn(Sprite {
         image: handle.clone(),
+        custom_size: Some(Vec2::new(image_width() as f32, image_height() as f32)),
         ..default()
     });
     commands.insert_resource(TilesetImageHandle(handle));
+    commands.insert_resource(LastRenderScale(1.0));
 }
 
-fn create_tileset_image(pixels: Vec<u8>) -> Image {
+fn create_tileset_image_scaled(pixels: Vec<u8>, pixels_per_unit: f64) -> Image {
+    let w = scaled_image_width(pixels_per_unit);
+    let h = scaled_image_height(pixels_per_unit);
     Image::new(
-        Extent3d {
-            width: image_width(),
-            height: image_height(),
-            depth_or_array_layers: 1,
-        },
+        Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         TextureDimension::D2,
         pixels,
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
     )
+}
+
+fn scaled_image_width(pixels_per_unit: f64) -> u32 {
+    ((image_width() as f64) * pixels_per_unit).ceil() as u32
+}
+
+fn scaled_image_height(pixels_per_unit: f64) -> u32 {
+    ((image_height() as f64) * pixels_per_unit).ceil() as u32
 }
 
 // =====================================================================
@@ -458,7 +504,8 @@ fn parameter_ui(
             | show_color_controls(ui, &mut params)
             | show_noise_controls(ui, &mut params)
             | show_bevel_controls(ui, &mut params)
-            | show_speckle_controls(ui, &mut params);
+            | show_speckle_controls(ui, &mut params)
+            | show_rendering_controls(ui, &mut params);
 
         if changed {
             dirty.0 = true;
@@ -475,12 +522,7 @@ fn show_preset_buttons(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> boo
     ui.horizontal_wrapped(|ui| {
         for &(name, make_fn) in PRESETS {
             if ui.button(name).clicked() {
-                // Preserve toggle state across preset changes
-                let use_3d = params.use_3d_lighting;
-                let edges = params.show_edge_lines;
                 **params = make_fn();
-                params.use_3d_lighting = use_3d;
-                params.show_edge_lines = edges;
                 changed = true;
             }
         }
@@ -549,7 +591,7 @@ fn show_bevel_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> boo
     let mut changed = false;
     ui.label("Bevel");
     changed |= ui
-        .add(egui::Slider::new(&mut params.bevel_width, 0.0..=20.0).text("Width"))
+        .add(egui::Slider::new(&mut params.bevel_fraction, 0.0..=0.5).text("Bevel"))
         .changed();
 
     changed |= ui.checkbox(&mut params.use_3d_lighting, "3D lighting").changed();
@@ -585,23 +627,56 @@ fn show_speckle_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> b
     changed
 }
 
+fn show_rendering_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
+    let mut changed = false;
+    ui.separator();
+    ui.label("Rendering");
+    changed |= ui.checkbox(&mut params.procedural_textures, "Procedural textures").changed();
+    changed
+}
+
 // =====================================================================
-// Regenerate tileset when parameters change
+// Regenerate tileset when zoom or parameters change
 // =====================================================================
 
 fn regenerate_tileset(
     mut dirty: ResMut<TexDirty>,
     params: Res<TexParams>,
     tileset_handle: Res<TilesetImageHandle>,
+    mut last_scale: ResMut<LastRenderScale>,
     mut images: ResMut<Assets<Image>>,
+    camera_q: Query<&Projection, With<Camera2d>>,
+    mut sprite_q: Query<&mut Sprite>,
 ) {
-    if !dirty.0 {
+    let ortho_scale = camera_q.iter().find_map(|p| {
+        if let Projection::Orthographic(o) = p { Some(o.scale) } else { None }
+    }).unwrap_or(1.0);
+
+    let scale_changed = (ortho_scale - last_scale.0).abs() > 0.001;
+    if !dirty.0 && !scale_changed {
         return;
     }
     dirty.0 = false;
+    last_scale.0 = ortho_scale;
+
+    let pixels_per_unit = 1.0 / ortho_scale as f64;
+    let new_w = scaled_image_width(pixels_per_unit);
+    let new_h = scaled_image_height(pixels_per_unit);
+    let pixels = render_all_tiles(&params, pixels_per_unit);
 
     if let Some(image) = images.get_mut(&tileset_handle.0) {
-        image.data = Some(render_all_tiles(&params));
+        image.resize(Extent3d {
+            width: new_w,
+            height: new_h,
+            depth_or_array_layers: 1,
+        });
+        image.data = Some(pixels);
+    }
+
+    // Keep sprite at the same world size regardless of pixel resolution
+    let world_size = Vec2::new(image_width() as f32, image_height() as f32);
+    for mut sprite in &mut sprite_q {
+        sprite.custom_size = Some(world_size);
     }
 }
 
@@ -658,21 +733,25 @@ fn camera_pan(
 // Tile rendering — produces RGBA pixel buffer for the full grid with gaps
 // =====================================================================
 
-fn render_all_tiles(params: &TexParams) -> Vec<u8> {
-    let img_w = image_width();
-    let img_h = image_height();
+fn render_all_tiles(params: &TexParams, pixels_per_unit: f64) -> Vec<u8> {
+    let img_w = scaled_image_width(pixels_per_unit);
+    let img_h = scaled_image_height(pixels_per_unit);
     let mut pixels = vec![0u8; (img_w * img_h * 4) as usize];
 
     let perlin = Perlin::new(params.seed);
     let simplex = OpenSimplex::new(params.seed.wrapping_add(81));
 
+    let tile_px = (TILE_SIZE as f64 * pixels_per_unit).ceil() as u32;
+    let gap_px = (TILE_GAP as f64 * pixels_per_unit).ceil() as u32;
+
     for &(col, row, mask) in &BLOB_LAYOUT {
         let edges = edges_from_blob_mask(mask);
-        let tile_origin_x = col * TILE_STRIDE;
-        let tile_origin_y = row * TILE_STRIDE;
+        let origin_x = col * (tile_px + gap_px);
+        let origin_y = row * (tile_px + gap_px);
         render_single_tile(
             &mut pixels, img_w,
-            tile_origin_x, tile_origin_y,
+            origin_x, origin_y, tile_px,
+            pixels_per_unit,
             &edges, params, &perlin, &simplex,
         );
     }
@@ -683,40 +762,52 @@ fn render_all_tiles(params: &TexParams) -> Vec<u8> {
 fn render_single_tile(
     pixels: &mut [u8],
     img_w: u32,
-    tile_origin_x: u32,
-    tile_origin_y: u32,
+    origin_x: u32, origin_y: u32,
+    tile_px: u32,
+    pixels_per_unit: f64,
     edges: &BevelEdges,
     params: &TexParams,
     perlin: &Perlin,
     simplex: &OpenSimplex,
 ) {
-    let bevel = params.bevel_width as f64;
+    let bevel = params.bevel_fraction as f64 * TILE_SIZE as f64;
     let size = TILE_SIZE as f64;
     let tile_colors = TileBevelColors::new(edges, params);
+    let step = 1.0 / pixels_per_unit;
 
-    for py in 0..TILE_SIZE {
-        for px in 0..TILE_SIZE {
-            let world_x = (tile_origin_x + px) as f64;
-            let world_y = (tile_origin_y + py) as f64;
-            let fpx = px as f64;
-            let fpy = py as f64;
+    for py in 0..tile_px {
+        for px in 0..tile_px {
+            // Map output pixel back to tile-local coordinates [0, TILE_SIZE)
+            let local_x = px as f64 * step;
+            let local_y = py as f64 * step;
+            // World coordinates for noise sampling (tile origin in world units + local)
+            let world_x = (origin_x as f64 * step) + local_x;
+            let world_y = (origin_y as f64 * step) + local_y;
 
-            let texture_color = sample_textured_pixel(params, perlin, simplex, world_x, world_y);
-            let brightness = rasterize_bevel_brightness(&tile_colors, edges, fpx, fpy, bevel, size);
+            let texture_color = if params.procedural_textures {
+                sample_textured_pixel(params, perlin, simplex, world_x, world_y)
+            } else {
+                [params.base_color[0] as f64, params.base_color[1] as f64, params.base_color[2] as f64]
+            };
+            let brightness = rasterize_bevel_brightness(&tile_colors, edges, local_x, local_y, bevel, size);
             let lit_color = apply_brightness(texture_color, brightness, params.use_3d_lighting);
             let final_color = if params.show_edge_lines {
-                apply_edge_line_overlay(lit_color, edges, fpx, fpy, bevel)
+                apply_edge_line_overlay(lit_color, edges, local_x, local_y, bevel)
             } else {
                 lit_color
             };
 
-            let img_x = tile_origin_x + px;
-            let img_y = tile_origin_y + py;
-            let idx = (img_y * img_w + img_x) as usize * 4;
-            pixels[idx] = (final_color[0].clamp(0.0, 1.0) * 255.0) as u8;
-            pixels[idx + 1] = (final_color[1].clamp(0.0, 1.0) * 255.0) as u8;
-            pixels[idx + 2] = (final_color[2].clamp(0.0, 1.0) * 255.0) as u8;
-            pixels[idx + 3] = 255;
+            let img_x = origin_x + px;
+            let img_y = origin_y + py;
+            if img_x < img_w {
+                let idx = (img_y * img_w + img_x) as usize * 4;
+                if idx + 3 < pixels.len() {
+                    pixels[idx] = (final_color[0].clamp(0.0, 1.0) * 255.0) as u8;
+                    pixels[idx + 1] = (final_color[1].clamp(0.0, 1.0) * 255.0) as u8;
+                    pixels[idx + 2] = (final_color[2].clamp(0.0, 1.0) * 255.0) as u8;
+                    pixels[idx + 3] = 255;
+                }
+            }
         }
     }
 }
@@ -790,7 +881,7 @@ impl TileBevelColors {
     }
 
     fn from_3d_lighting(edges: &BevelEdges, params: &TexParams) -> Self {
-        let bevel_width = params.bevel_width as f64;
+        let bevel_width = params.bevel_fraction as f64 * TILE_SIZE as f64;
         let bevel_angle = (BEVEL_DEPTH / bevel_width).atan();
         let bevel_sin = bevel_angle.sin();
         let bevel_cos = bevel_angle.cos();
@@ -813,15 +904,16 @@ impl TileBevelColors {
             let diffuse = light.2.max(0.0);
             AMBIENT + (1.0 - AMBIENT) * diffuse
         };
-        let top = brightness_3d(0.0, -1.0);
-        let bottom = brightness_3d(0.0, 1.0);
+        // Directions in Y-up world space (matching beveled_block's coordinate system)
+        let top = brightness_3d(0.0, 1.0);
+        let bottom = brightness_3d(0.0, -1.0);
         let left = brightness_3d(-1.0, 0.0);
         let right = brightness_3d(1.0, 0.0);
         let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
-        let top_left = brightness_3d(-inv_sqrt2, -inv_sqrt2);
-        let top_right = brightness_3d(inv_sqrt2, -inv_sqrt2);
-        let bottom_left = brightness_3d(-inv_sqrt2, inv_sqrt2);
-        let bottom_right = brightness_3d(inv_sqrt2, inv_sqrt2);
+        let top_left = brightness_3d(-inv_sqrt2, inv_sqrt2);
+        let top_right = brightness_3d(inv_sqrt2, inv_sqrt2);
+        let bottom_left = brightness_3d(-inv_sqrt2, -inv_sqrt2);
+        let bottom_right = brightness_3d(inv_sqrt2, -inv_sqrt2);
 
         Self {
             face, top, bottom, left, right,
@@ -884,6 +976,34 @@ impl TileBevelColors {
 /// brightness. Layers are applied in the same order as beveled_block's mesh
 /// spawning: face first, then cardinal bevels (N, S, W, E — last overwrites
 /// at corner overlaps), then concave corners on top.
+fn north_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
+    let t = py / bevel;
+    let s = px / (size - 1.0);
+    let outer = lerp(colors.north_left, colors.north_right, s);
+    lerp(outer, colors.top, t)
+}
+
+fn south_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
+    let t = (size - 1.0 - py) / bevel;
+    let s = px / (size - 1.0);
+    let outer = lerp(colors.south_left, colors.south_right, s);
+    lerp(outer, colors.bottom, t)
+}
+
+fn west_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
+    let t = px / bevel;
+    let s = py / (size - 1.0);
+    let outer = lerp(colors.west_top, colors.west_bottom, s);
+    lerp(outer, colors.left, t)
+}
+
+fn east_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
+    let t = (size - 1.0 - px) / bevel;
+    let s = py / (size - 1.0);
+    let outer = lerp(colors.east_top, colors.east_bottom, s);
+    lerp(outer, colors.right, t)
+}
+
 fn rasterize_bevel_brightness(
     colors: &TileBevelColors,
     edges: &BevelEdges,
@@ -892,30 +1012,34 @@ fn rasterize_bevel_brightness(
 ) -> f64 {
     let mut brightness = colors.face;
 
-    // Cardinal bevels — spawn order N, S, W, E (last wins at overlaps)
-    if edges.n && py < bevel {
-        let t = py / bevel;
-        let s = px / (size - 1.0);
-        let outer = lerp(colors.north_left, colors.north_right, s);
-        brightness = lerp(outer, colors.top, t);
-    }
-    if edges.s && py >= size - bevel {
-        let t = (size - 1.0 - py) / bevel;
-        let s = px / (size - 1.0);
-        let outer = lerp(colors.south_left, colors.south_right, s);
-        brightness = lerp(outer, colors.bottom, t);
-    }
-    if edges.w && px < bevel {
-        let t = px / bevel;
-        let s = py / (size - 1.0);
-        let outer = lerp(colors.west_top, colors.west_bottom, s);
-        brightness = lerp(outer, colors.left, t);
-    }
-    if edges.e && px >= size - bevel {
-        let t = (size - 1.0 - px) / bevel;
-        let s = py / (size - 1.0);
-        let outer = lerp(colors.east_top, colors.east_bottom, s);
-        brightness = lerp(outer, colors.right, t);
+    let in_n = edges.n && py < bevel;
+    let in_s = edges.s && py >= size - bevel;
+    let in_w = edges.w && px < bevel;
+    let in_e = edges.e && px >= size - bevel;
+
+    // Cardinal bevels with diagonal splits at convex corners.
+    // Each bevel quad owns one half of the corner — the diagonal runs
+    // from the tile's outer corner to the inner face corner.
+    if in_n && in_w {
+        brightness = if py < px { north_bevel(colors, px, py, bevel, size) }
+                     else { west_bevel(colors, px, py, bevel, size) };
+    } else if in_n && in_e {
+        brightness = if py < size - px { north_bevel(colors, px, py, bevel, size) }
+                     else { east_bevel(colors, px, py, bevel, size) };
+    } else if in_s && in_w {
+        brightness = if py >= size - px { south_bevel(colors, px, py, bevel, size) }
+                     else { west_bevel(colors, px, py, bevel, size) };
+    } else if in_s && in_e {
+        brightness = if py >= px { south_bevel(colors, px, py, bevel, size) }
+                     else { east_bevel(colors, px, py, bevel, size) };
+    } else if in_n {
+        brightness = north_bevel(colors, px, py, bevel, size);
+    } else if in_s {
+        brightness = south_bevel(colors, px, py, bevel, size);
+    } else if in_w {
+        brightness = west_bevel(colors, px, py, bevel, size);
+    } else if in_e {
+        brightness = east_bevel(colors, px, py, bevel, size);
     }
 
     // Concave corners — flat brightness, diagonal split (higher Z)

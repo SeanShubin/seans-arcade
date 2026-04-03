@@ -796,30 +796,68 @@ fn render_tile_to_pixels(
             // Start with face color
             let mut color = dc.face;
 
-            // Cardinal bevels (spawn order: N, S, W, E — last wins at overlaps)
-            if bevel_n && fpy < bevel {
+            // Cardinal bevels with diagonal splits at convex corners.
+            let in_n = bevel_n && fpy < bevel;
+            let in_s = bevel_s && fpy >= size - bevel;
+            let in_w = bevel_w && fpx < bevel;
+            let in_e = bevel_e && fpx >= size - bevel;
+
+            if in_n && in_w {
+                color = if fpy < fpx {
+                    let t = fpy / bevel;
+                    let s = fpx / (size - 1.0);
+                    lerp_rgb(lerp_rgb(north_left, north_right, s), dc.top, t)
+                } else {
+                    let t = fpx / bevel;
+                    let s = fpy / (size - 1.0);
+                    lerp_rgb(lerp_rgb(west_top, west_bottom, s), dc.left, t)
+                };
+            } else if in_n && in_e {
+                color = if fpy < size - fpx {
+                    let t = fpy / bevel;
+                    let s = fpx / (size - 1.0);
+                    lerp_rgb(lerp_rgb(north_left, north_right, s), dc.top, t)
+                } else {
+                    let t = (size - 1.0 - fpx) / bevel;
+                    let s = fpy / (size - 1.0);
+                    lerp_rgb(lerp_rgb(east_top, east_bottom, s), dc.right, t)
+                };
+            } else if in_s && in_w {
+                color = if fpy >= size - fpx {
+                    let t = (size - 1.0 - fpy) / bevel;
+                    let s = fpx / (size - 1.0);
+                    lerp_rgb(lerp_rgb(south_left, south_right, s), dc.bottom, t)
+                } else {
+                    let t = fpx / bevel;
+                    let s = fpy / (size - 1.0);
+                    lerp_rgb(lerp_rgb(west_top, west_bottom, s), dc.left, t)
+                };
+            } else if in_s && in_e {
+                color = if fpy >= fpx {
+                    let t = (size - 1.0 - fpy) / bevel;
+                    let s = fpx / (size - 1.0);
+                    lerp_rgb(lerp_rgb(south_left, south_right, s), dc.bottom, t)
+                } else {
+                    let t = (size - 1.0 - fpx) / bevel;
+                    let s = fpy / (size - 1.0);
+                    lerp_rgb(lerp_rgb(east_top, east_bottom, s), dc.right, t)
+                };
+            } else if in_n {
                 let t = fpy / bevel;
                 let s = fpx / (size - 1.0);
-                let outer = lerp_rgb(north_left, north_right, s);
-                color = lerp_rgb(outer, dc.top, t);
-            }
-            if bevel_s && fpy >= size - bevel {
+                color = lerp_rgb(lerp_rgb(north_left, north_right, s), dc.top, t);
+            } else if in_s {
                 let t = (size - 1.0 - fpy) / bevel;
                 let s = fpx / (size - 1.0);
-                let outer = lerp_rgb(south_left, south_right, s);
-                color = lerp_rgb(outer, dc.bottom, t);
-            }
-            if bevel_w && fpx < bevel {
+                color = lerp_rgb(lerp_rgb(south_left, south_right, s), dc.bottom, t);
+            } else if in_w {
                 let t = fpx / bevel;
                 let s = fpy / (size - 1.0);
-                let outer = lerp_rgb(west_top, west_bottom, s);
-                color = lerp_rgb(outer, dc.left, t);
-            }
-            if bevel_e && fpx >= size - bevel {
+                color = lerp_rgb(lerp_rgb(west_top, west_bottom, s), dc.left, t);
+            } else if in_e {
                 let t = (size - 1.0 - fpx) / bevel;
                 let s = fpy / (size - 1.0);
-                let outer = lerp_rgb(east_top, east_bottom, s);
-                color = lerp_rgb(outer, dc.right, t);
+                color = lerp_rgb(lerp_rgb(east_top, east_bottom, s), dc.right, t);
             }
 
             // Concave corners override (higher Z than face and bevels)
