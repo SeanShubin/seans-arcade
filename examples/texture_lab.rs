@@ -2,14 +2,14 @@
 //!
 //! Renders all 47 blob tiles using procedural textures with adjustable parameters.
 //! Uses the standard LDtk blob layout (12×5 grid) with 2px gaps between tiles.
+//! Supports two tile styles: Bevel (elevated with beveled edges) and Ground (flat
+//! with a border texture). Each style has independent face and edge textures.
 //!
 //! Usage:
 //!   cargo run --example texture_lab                        # interactive
 //!   cargo run --example texture_lab -- --render            # export PNG
 //!   cargo run --example texture_lab -- --render out.png    # export to path
 //!   cargo run --example texture_lab -- --preset Concrete --render
-//!   cargo run --example texture_lab -- --render --base-color 0.5,0.5,0.55 \
-//!     --bevel-width 16 --3d-lighting --edge-lines
 //!
 //! Controls:
 //!   Scroll wheel — zoom in/out
@@ -67,39 +67,67 @@ const AMBIENT: f64 = 0.25;
 const OVERHEAD_LIGHT_Z: f64 = 2.0;
 const EDGE_LINE_HALF_WIDTH: f64 = 0.5;
 
+const PATTERN_NAMES: &[&str] = &["Perlin", "Cellular", "Ridged", "Stripe", "Marble", "Turbulence", "Domain Warp"];
+
 // =====================================================================
 // App entry point
 // =====================================================================
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let render_mode = args.iter().any(|a| a == "--render");
+    let export_mode = args.iter().any(|a| a == "--export");
     let params = parse_params_from_args(&args);
 
-    if render_mode {
-        let render_idx = args.iter().position(|a| a == "--render").unwrap();
-        let output_path = args.get(render_idx + 1)
+    if export_mode {
+        let export_idx = args.iter().position(|a| a == "--export").unwrap();
+        let output_path = args.get(export_idx + 1)
             .filter(|a| !a.starts_with("--"))
             .map(|s| s.as_str())
             .unwrap_or("assets/generated/texture_lab.png");
-        render_and_exit(&params, output_path);
+
+        fn arg_u32(args: &[String], name: &str) -> Option<u32> {
+            args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)?.parse().ok())
+        }
+        let tile_size = arg_u32(&args, "--tile-size").unwrap_or(64);
+
+        export_tileset(&params, tile_size, output_path);
     } else {
         run_interactive(params);
     }
 }
 
-fn render_and_exit(params: &TexParams, output_path: &str) {
-    let pixels_per_unit = 1.0;
-    let pixels = render_all_tiles(params, pixels_per_unit);
-    let img = image::RgbaImage::from_raw(
-        scaled_image_width(pixels_per_unit),
-        scaled_image_height(pixels_per_unit),
-        pixels,
-    ).expect("Failed to create image buffer");
+/// Export tileset as a PNG with no gaps between tiles at the specified tile resolution.
+fn export_tileset(params: &TexParams, tile_size_px: u32, output_path: &str) {
+    let pixels_per_unit = tile_size_px as f64 / TILE_SIZE as f64;
+    let img_w = GRID_COLS * tile_size_px;
+    let img_h = GRID_ROWS * tile_size_px;
+    let mut pixels = vec![0u8; (img_w * img_h * 4) as usize];
+
+    let noise = NoiseSet {
+        face_perlin: Perlin::new(params.face_texture.seed),
+        face_simplex: OpenSimplex::new(params.face_texture.seed.wrapping_add(81)),
+        edge_perlin: Perlin::new(params.edge_texture.seed.wrapping_add(500)),
+        edge_simplex: OpenSimplex::new(params.edge_texture.seed.wrapping_add(581)),
+    };
+
+    for &(col, row, mask) in &BLOB_LAYOUT {
+        let edges = edges_from_blob_mask(mask);
+        let origin_x = col * tile_size_px;
+        let origin_y = row * tile_size_px;
+        render_single_tile(
+            &mut pixels, img_w,
+            origin_x, origin_y, tile_size_px,
+            pixels_per_unit,
+            &edges, params, &noise,
+        );
+    }
+
+    let img = image::RgbaImage::from_raw(img_w, img_h, pixels)
+        .expect("Failed to create image buffer");
     let dir = std::path::Path::new(output_path).parent().unwrap_or(std::path::Path::new("."));
     std::fs::create_dir_all(dir).ok();
     img.save(output_path).expect("Failed to save image");
-    println!("Rendered: {}", output_path);
+    println!("Exported {}x{} tileset ({tile_size_px}px tiles): {output_path}", img_w, img_h);
 }
 
 fn run_interactive(params: TexParams) {
@@ -117,6 +145,7 @@ fn run_interactive(params: TexParams) {
         ))
         .insert_resource(params)
         .insert_resource(TexDirty(true))
+        .insert_resource(ExportSettings { tile_size: 64 })
         .add_systems(Startup, spawn_camera_and_tileset)
         .add_systems(bevy_egui::EguiPrimaryContextPass, parameter_ui)
         .add_systems(Update, (regenerate_tileset, camera_zoom, camera_pan))
@@ -128,7 +157,6 @@ fn run_interactive(params: TexParams) {
 // =====================================================================
 
 fn parse_params_from_args(args: &[String]) -> TexParams {
-    // Start from preset if specified, otherwise default
     let mut params = if let Some(pos) = args.iter().position(|a| a == "--preset") {
         let name = args.get(pos + 1).expect("--preset requires a name");
         PRESETS.iter()
@@ -145,39 +173,18 @@ fn parse_params_from_args(args: &[String]) -> TexParams {
     fn arg_f32(args: &[String], name: &str) -> Option<f32> {
         args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)?.parse().ok())
     }
-    fn arg_u32(args: &[String], name: &str) -> Option<u32> {
-        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)?.parse().ok())
-    }
-    fn arg_usize(args: &[String], name: &str) -> Option<usize> {
-        args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)?.parse().ok())
-    }
-    fn arg_rgb(args: &[String], name: &str) -> Option<[f32; 3]> {
-        let pos = args.iter().position(|a| a == name)?;
-        let val = args.get(pos + 1)?;
-        let parts: Vec<f32> = val.split(',').filter_map(|s| s.parse().ok()).collect();
-        if parts.len() == 3 { Some([parts[0], parts[1], parts[2]]) } else { None }
-    }
     fn arg_flag(args: &[String], name: &str) -> bool {
         args.iter().any(|a| a == name)
     }
 
-    if let Some(v) = arg_rgb(args, "--base-color") { params.base_color = v; }
-    if let Some(v) = arg_f32(args, "--color-variation") { params.color_variation = v; }
-    if let Some(v) = arg_f32(args, "--noise-scale") { params.noise_scale = v; }
-    if let Some(v) = arg_u32(args, "--noise-octaves") { params.noise_octaves = v; }
-    if let Some(v) = arg_usize(args, "--pattern") { params.pattern = v; }
-    if let Some(v) = arg_f32(args, "--bevel-fraction") { params.bevel_fraction = v; }
-    if let Some(v) = arg_f32(args, "--shadow-strength") { params.shadow_strength = v; }
-    if let Some(v) = arg_f32(args, "--highlight-strength") { params.highlight_strength = v; }
+    // Global settings
+    if let Some(v) = arg_f32(args, "--bevel-fraction") { params.edge_fraction = v; }
+    if let Some(v) = arg_f32(args, "--edge-fraction") { params.edge_fraction = v; }
     if let Some(v) = arg_f32(args, "--light-angle") { params.light_angle = v; }
-    if let Some(v) = arg_f32(args, "--speckle-density") { params.speckle_density = v; }
-    if let Some(v) = arg_rgb(args, "--speckle-color") { params.speckle_color = v; }
-    if let Some(v) = arg_rgb(args, "--secondary-color") { params.secondary_color = v; params.use_secondary = true; }
-    if let Some(v) = arg_f32(args, "--stripe-angle") { params.stripe_angle = v; }
-    if let Some(v) = arg_u32(args, "--seed") { params.seed = v; }
     if arg_flag(args, "--3d-lighting") { params.use_3d_lighting = true; }
     if arg_flag(args, "--edge-lines") { params.show_edge_lines = true; }
     if arg_flag(args, "--no-textures") { params.procedural_textures = false; }
+    if arg_flag(args, "--ground") { params.style = TileStyle::Ground; }
 
     params
 }
@@ -186,24 +193,74 @@ fn parse_params_from_args(args: &[String]) -> TexParams {
 // Resources
 // =====================================================================
 
-#[derive(Resource)]
-struct TexParams {
+/// Per-zone texture configuration.
+#[derive(Clone)]
+struct TextureConfig {
     base_color: [f32; 3],
     color_variation: f32,
     noise_scale: f32,
     noise_octaves: u32,
     pattern: usize,
-    bevel_fraction: f32,
-    shadow_strength: f32,
-    highlight_strength: f32,
-    light_angle: f32,
     speckle_density: f32,
     speckle_color: [f32; 3],
     use_secondary: bool,
     secondary_color: [f32; 3],
     stripe_angle: f32,
     seed: u32,
+}
+
+impl TextureConfig {
+    fn concrete() -> Self {
+        Self {
+            base_color: [0.62, 0.62, 0.62],
+            color_variation: 0.06,
+            noise_scale: 0.08,
+            noise_octaves: 3,
+            pattern: 0,
+            speckle_density: 0.0,
+            speckle_color: [1.0, 1.0, 1.0],
+            use_secondary: false,
+            secondary_color: [0.3, 0.3, 0.3],
+            stripe_angle: 90.0,
+            seed: 42,
+        }
+    }
+
+    fn flat_gray() -> Self {
+        Self {
+            base_color: [0.50, 0.50, 0.55],
+            color_variation: 0.0,
+            noise_scale: 0.08,
+            noise_octaves: 1,
+            pattern: 0,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: false,
+            secondary_color: [0.3; 3],
+            stripe_angle: 90.0,
+            seed: 42,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum TileStyle {
+    Bevel,
+    Ground,
+}
+
+#[derive(Resource)]
+struct TexParams {
+    style: TileStyle,
+    face_texture: TextureConfig,
+    edge_texture: TextureConfig,
+    edge_fraction: f32,
+    // Bevel lighting
+    shadow_strength: f32,
+    highlight_strength: f32,
+    light_angle: f32,
     use_3d_lighting: bool,
+    // Display
     show_edge_lines: bool,
     procedural_textures: bool,
 }
@@ -211,21 +268,13 @@ struct TexParams {
 impl Default for TexParams {
     fn default() -> Self {
         Self {
-            base_color: [0.62, 0.62, 0.62],
-            color_variation: 0.06,
-            noise_scale: 0.08,
-            noise_octaves: 3,
-            pattern: 0,
-            bevel_fraction: 0.22,
+            style: TileStyle::Bevel,
+            face_texture: TextureConfig::concrete(),
+            edge_texture: TextureConfig::concrete(),
+            edge_fraction: 0.22,
             shadow_strength: 0.7,
             highlight_strength: 0.4,
             light_angle: 135.0,
-            speckle_density: 0.0,
-            speckle_color: [1.0, 1.0, 1.0],
-            use_secondary: false,
-            secondary_color: [0.3, 0.3, 0.3],
-            stripe_angle: 90.0,
-            seed: 42,
             use_3d_lighting: false,
             show_edge_lines: false,
             procedural_textures: true,
@@ -233,213 +282,249 @@ impl Default for TexParams {
     }
 }
 
-const PATTERN_NAMES: &[&str] = &["Perlin", "Cellular", "Ridged", "Stripe", "Marble", "Turbulence", "Domain Warp"];
+// =====================================================================
+// Presets
+// =====================================================================
 
 const PRESETS: &[(&str, fn() -> TexParams)] = &[
     ("Beveled Block", || TexParams {
-        base_color: [0.50, 0.50, 0.55],
-        color_variation: 0.0,
-        noise_scale: 0.08,
-        noise_octaves: 1,
-        pattern: 0,
-        bevel_fraction: 0.25,
+        style: TileStyle::Bevel,
+        face_texture: TextureConfig::flat_gray(),
+        edge_texture: TextureConfig::flat_gray(),
+        edge_fraction: 0.25,
         shadow_strength: 0.7,
         highlight_strength: 0.4,
         light_angle: 202.5,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: false,
-        secondary_color: [0.3; 3],
-        stripe_angle: 90.0,
-        seed: 42,
         use_3d_lighting: true,
         show_edge_lines: true,
         procedural_textures: false,
     }),
-    ("Concrete", || TexParams {
-        base_color: [0.62, 0.62, 0.62],
-        color_variation: 0.06,
-        noise_scale: 0.08,
-        noise_octaves: 3,
-        pattern: 0,
-        bevel_fraction: 0.22,
-        shadow_strength: 0.7,
-        highlight_strength: 0.4,
-        light_angle: 135.0,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: false,
-        secondary_color: [0.3; 3],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Concrete", || {
+        let tex = TextureConfig::concrete();
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.22,
+            shadow_strength: 0.7,
+            highlight_strength: 0.4,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Red Stone", || TexParams {
-        base_color: [0.6, 0.25, 0.18],
-        color_variation: 0.06,
-        noise_scale: 0.1,
-        noise_octaves: 2,
-        pattern: 2,
-        bevel_fraction: 0.06,
-        shadow_strength: 0.4,
-        highlight_strength: 0.2,
-        light_angle: 135.0,
-        speckle_density: 0.08,
-        speckle_color: [0.85, 0.85, 0.8],
-        use_secondary: true,
-        secondary_color: [0.78, 0.75, 0.65],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Red Stone", || {
+        let tex = TextureConfig {
+            base_color: [0.6, 0.25, 0.18],
+            color_variation: 0.06,
+            noise_scale: 0.1,
+            noise_octaves: 2,
+            pattern: 2,
+            speckle_density: 0.08,
+            speckle_color: [0.85, 0.85, 0.8],
+            use_secondary: true,
+            secondary_color: [0.78, 0.75, 0.65],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.06,
+            shadow_strength: 0.4,
+            highlight_strength: 0.2,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Dark Stone", || TexParams {
-        base_color: [0.3, 0.3, 0.32],
-        color_variation: 0.1,
-        noise_scale: 0.04,
-        noise_octaves: 4,
-        pattern: 1,
-        bevel_fraction: 0.09,
-        shadow_strength: 0.5,
-        highlight_strength: 0.2,
-        light_angle: 135.0,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: true,
-        secondary_color: [0.18, 0.18, 0.2],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Dark Stone", || {
+        let tex = TextureConfig {
+            base_color: [0.3, 0.3, 0.32],
+            color_variation: 0.1,
+            noise_scale: 0.04,
+            noise_octaves: 4,
+            pattern: 1,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: true,
+            secondary_color: [0.18, 0.18, 0.2],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.09,
+            shadow_strength: 0.5,
+            highlight_strength: 0.2,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Marble", || TexParams {
-        base_color: [0.88, 0.86, 0.82],
-        color_variation: 0.15,
-        noise_scale: 0.03,
-        noise_octaves: 4,
-        pattern: 4,
-        bevel_fraction: 0.06,
-        shadow_strength: 0.3,
-        highlight_strength: 0.5,
-        light_angle: 135.0,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: true,
-        secondary_color: [0.4, 0.35, 0.3],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Marble", || {
+        let tex = TextureConfig {
+            base_color: [0.88, 0.86, 0.82],
+            color_variation: 0.15,
+            noise_scale: 0.03,
+            noise_octaves: 4,
+            pattern: 4,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: true,
+            secondary_color: [0.4, 0.35, 0.3],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.06,
+            shadow_strength: 0.3,
+            highlight_strength: 0.5,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Wood Plank", || TexParams {
-        base_color: [0.55, 0.38, 0.22],
-        color_variation: 0.12,
-        noise_scale: 0.06,
-        noise_octaves: 3,
-        pattern: 3,
-        bevel_fraction: 0.08,
-        shadow_strength: 0.35,
-        highlight_strength: 0.15,
-        light_angle: 135.0,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: true,
-        secondary_color: [0.42, 0.28, 0.15],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Wood Plank", || {
+        let tex = TextureConfig {
+            base_color: [0.55, 0.38, 0.22],
+            color_variation: 0.12,
+            noise_scale: 0.06,
+            noise_octaves: 3,
+            pattern: 3,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: true,
+            secondary_color: [0.42, 0.28, 0.15],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.08,
+            shadow_strength: 0.35,
+            highlight_strength: 0.15,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Blue Tile", || TexParams {
-        base_color: [0.2, 0.35, 0.6],
-        color_variation: 0.03,
-        noise_scale: 0.15,
-        noise_octaves: 1,
-        pattern: 0,
-        bevel_fraction: 0.06,
-        shadow_strength: 0.5,
-        highlight_strength: 0.7,
-        light_angle: 135.0,
-        speckle_density: 0.0,
-        speckle_color: [1.0; 3],
-        use_secondary: false,
-        secondary_color: [0.3; 3],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Blue Tile", || {
+        let tex = TextureConfig {
+            base_color: [0.2, 0.35, 0.6],
+            color_variation: 0.03,
+            noise_scale: 0.15,
+            noise_octaves: 1,
+            pattern: 0,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: false,
+            secondary_color: [0.3; 3],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.06,
+            shadow_strength: 0.5,
+            highlight_strength: 0.7,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Sandstone", || TexParams {
-        base_color: [0.72, 0.62, 0.45],
-        color_variation: 0.1,
-        noise_scale: 0.07,
-        noise_octaves: 3,
-        pattern: 0,
-        bevel_fraction: 0.08,
-        shadow_strength: 0.35,
-        highlight_strength: 0.15,
-        light_angle: 135.0,
-        speckle_density: 0.04,
-        speckle_color: [0.85, 0.78, 0.6],
-        use_secondary: false,
-        secondary_color: [0.3; 3],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Metal Plate", || {
+        let tex = TextureConfig {
+            base_color: [0.5, 0.52, 0.55],
+            color_variation: 0.02,
+            noise_scale: 0.2,
+            noise_octaves: 1,
+            pattern: 0,
+            speckle_density: 0.02,
+            speckle_color: [0.7, 0.72, 0.75],
+            use_secondary: false,
+            secondary_color: [0.3; 3],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Bevel,
+            face_texture: tex.clone(),
+            edge_texture: tex,
+            edge_fraction: 0.05,
+            shadow_strength: 0.5,
+            highlight_strength: 0.8,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
-    ("Metal Plate", || TexParams {
-        base_color: [0.5, 0.52, 0.55],
-        color_variation: 0.02,
-        noise_scale: 0.2,
-        noise_octaves: 1,
-        pattern: 0,
-        bevel_fraction: 0.05,
-        shadow_strength: 0.5,
-        highlight_strength: 0.8,
-        light_angle: 135.0,
-        speckle_density: 0.02,
-        speckle_color: [0.7, 0.72, 0.75],
-        use_secondary: false,
-        secondary_color: [0.3; 3],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
-    }),
-    ("Grass", || TexParams {
-        base_color: [0.28, 0.45, 0.18],
-        color_variation: 0.08,
-        noise_scale: 0.12,
-        noise_octaves: 3,
-        pattern: 1,
-        bevel_fraction: 0.05,
-        shadow_strength: 0.25,
-        highlight_strength: 0.15,
-        light_angle: 135.0,
-        speckle_density: 0.04,
-        speckle_color: [0.35, 0.55, 0.2],
-        use_secondary: true,
-        secondary_color: [0.18, 0.32, 0.1],
-        stripe_angle: 90.0,
-        seed: 42,
-        use_3d_lighting: false,
-        show_edge_lines: false,
-        procedural_textures: true,
+    ("Grass", || {
+        let center = TextureConfig {
+            base_color: [0.28, 0.45, 0.18],
+            color_variation: 0.08,
+            noise_scale: 0.12,
+            noise_octaves: 3,
+            pattern: 1,
+            speckle_density: 0.04,
+            speckle_color: [0.35, 0.55, 0.2],
+            use_secondary: true,
+            secondary_color: [0.18, 0.32, 0.1],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        let border = TextureConfig {
+            base_color: [0.45, 0.38, 0.28],
+            color_variation: 0.06,
+            noise_scale: 0.08,
+            noise_octaves: 2,
+            pattern: 0,
+            speckle_density: 0.0,
+            speckle_color: [1.0; 3],
+            use_secondary: false,
+            secondary_color: [0.3; 3],
+            stripe_angle: 90.0,
+            seed: 42,
+        };
+        TexParams {
+            style: TileStyle::Ground,
+            face_texture: center,
+            edge_texture: border,
+            edge_fraction: 0.08,
+            shadow_strength: 0.25,
+            highlight_strength: 0.15,
+            light_angle: 135.0,
+            use_3d_lighting: false,
+            show_edge_lines: false,
+            procedural_textures: true,
+        }
     }),
 ];
 
 #[derive(Resource)]
 struct TexDirty(bool);
+
+#[derive(Resource)]
+struct ExportSettings {
+    tile_size: u32,
+}
 
 #[derive(Resource)]
 struct TilesetImageHandle(Handle<Image>);
@@ -457,6 +542,14 @@ fn image_width() -> u32 {
 
 fn image_height() -> u32 {
     GRID_ROWS * TILE_SIZE + (GRID_ROWS - 1) * TILE_GAP
+}
+
+fn scaled_image_width(pixels_per_unit: f64) -> u32 {
+    ((image_width() as f64) * pixels_per_unit).ceil() as u32
+}
+
+fn scaled_image_height(pixels_per_unit: f64) -> u32 {
+    ((image_height() as f64) * pixels_per_unit).ceil() as u32
 }
 
 // =====================================================================
@@ -496,14 +589,6 @@ fn create_tileset_image_scaled(pixels: Vec<u8>, pixels_per_unit: f64) -> Image {
     )
 }
 
-fn scaled_image_width(pixels_per_unit: f64) -> u32 {
-    ((image_width() as f64) * pixels_per_unit).ceil() as u32
-}
-
-fn scaled_image_height(pixels_per_unit: f64) -> u32 {
-    ((image_height() as f64) * pixels_per_unit).ceil() as u32
-}
-
 // =====================================================================
 // Parameter UI
 // =====================================================================
@@ -512,28 +597,66 @@ fn parameter_ui(
     mut contexts: EguiContexts,
     mut params: ResMut<TexParams>,
     mut dirty: ResMut<TexDirty>,
+    mut export: ResMut<ExportSettings>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
 
-    egui::SidePanel::left("controls").min_width(260.0).show(ctx, |ui| {
+    egui::SidePanel::left("controls").min_width(280.0).show(ctx, |ui| {
         ui.heading("Texture Lab");
         ui.separator();
 
-        let changed = show_preset_buttons(ui, &mut params)
-            | show_pattern_controls(ui, &mut params)
-            | show_color_controls(ui, &mut params)
-            | show_noise_controls(ui, &mut params)
-            | show_bevel_controls(ui, &mut params)
-            | show_speckle_controls(ui, &mut params)
+        let mut changed = show_preset_buttons(ui, &mut params)
+            | show_style_controls(ui, &mut params)
+            | show_texture_config_ui(ui, "Face texture", &mut params.face_texture);
+
+        ui.horizontal(|ui| {
+            if ui.small_button("Face -> Edge").clicked() {
+                params.edge_texture = params.face_texture.clone();
+                changed = true;
+            }
+            if ui.small_button("Edge -> Face").clicked() {
+                params.face_texture = params.edge_texture.clone();
+                changed = true;
+            }
+        });
+
+        changed |= show_texture_config_ui(ui, "Edge texture", &mut params.edge_texture)
+            | show_lighting_controls(ui, &mut params)
             | show_rendering_controls(ui, &mut params);
 
         if changed {
             dirty.0 = true;
         }
 
+        show_export_controls(ui, &params, &mut export);
+
         ui.separator();
         ui.label("Scroll to zoom, middle-drag to pan");
     });
+}
+
+fn show_export_controls(ui: &mut egui::Ui, params: &TexParams, export: &mut ExportSettings) {
+    ui.separator();
+    ui.label("Export");
+    let mut size = export.tile_size as i32;
+    if ui.add(egui::Slider::new(&mut size, 16..=512).text("Tile size (px)")).changed() {
+        export.tile_size = size as u32;
+    }
+    let img_w = GRID_COLS * export.tile_size;
+    let img_h = GRID_ROWS * export.tile_size;
+    ui.label(format!("Output: {}x{}", img_w, img_h));
+
+    if ui.button("Save PNG").clicked() {
+        let dir = std::path::Path::new("assets/generated");
+        std::fs::create_dir_all(dir).ok();
+        let mut i = 1;
+        let path = loop {
+            let p = dir.join(format!("tileset_{}.png", i));
+            if !p.exists() { break p; }
+            i += 1;
+        };
+        export_tileset(params, export.tile_size, &path.to_string_lossy());
+    }
 }
 
 fn show_preset_buttons(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
@@ -551,105 +674,113 @@ fn show_preset_buttons(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> boo
     changed
 }
 
-fn show_pattern_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
+fn show_style_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
     let mut changed = false;
-    ui.label("Pattern");
-    egui::ComboBox::from_id_salt("pattern")
-        .selected_text(PATTERN_NAMES[params.pattern])
-        .show_ui(ui, |ui| {
-            for (i, name) in PATTERN_NAMES.iter().enumerate() {
-                if ui.selectable_value(&mut params.pattern, i, *name).changed() {
-                    changed = true;
+    ui.horizontal(|ui| {
+        ui.label("Style");
+        if ui.selectable_label(params.style == TileStyle::Bevel, "Bevel").clicked() {
+            params.style = TileStyle::Bevel;
+            changed = true;
+        }
+        if ui.selectable_label(params.style == TileStyle::Ground, "Ground").clicked() {
+            params.style = TileStyle::Ground;
+            changed = true;
+        }
+    });
+    changed |= ui
+        .add(egui::Slider::new(&mut params.edge_fraction, 0.0..=0.5).text("Edge size"))
+        .changed();
+    ui.separator();
+    changed
+}
+
+fn show_texture_config_ui(ui: &mut egui::Ui, label: &str, tex: &mut TextureConfig) -> bool {
+    let mut changed = false;
+
+    let id = ui.make_persistent_id(label);
+    egui::CollapsingHeader::new(label).id_salt(id).show(ui, |ui| {
+        // Pattern
+        egui::ComboBox::from_id_salt(format!("{}_pattern", label))
+            .selected_text(PATTERN_NAMES[tex.pattern])
+            .show_ui(ui, |ui| {
+                for (i, name) in PATTERN_NAMES.iter().enumerate() {
+                    if ui.selectable_value(&mut tex.pattern, i, *name).changed() {
+                        changed = true;
+                    }
                 }
-            }
+            });
+        if tex.pattern == 3 {
+            changed |= ui
+                .add(egui::Slider::new(&mut tex.stripe_angle, 0.0..=360.0).text("Stripe angle"))
+                .changed();
+        }
+
+        // Colors
+        ui.horizontal(|ui| {
+            ui.label("Color");
+            changed |= ui.color_edit_button_rgb(&mut tex.base_color).changed();
         });
-    if params.pattern == 3 {
         changed |= ui
-            .add(egui::Slider::new(&mut params.stripe_angle, 0.0..=360.0).text("Stripe angle"))
+            .add(egui::Slider::new(&mut tex.color_variation, 0.0..=0.3).text("Variation"))
             .changed();
-    }
-    ui.separator();
+        changed |= ui.checkbox(&mut tex.use_secondary, "Secondary color").changed();
+        if tex.use_secondary {
+            changed |= ui.color_edit_button_rgb(&mut tex.secondary_color).changed();
+        }
+
+        // Noise
+        changed |= ui
+            .add(egui::Slider::new(&mut tex.noise_scale, 0.01..=0.5).text("Noise scale"))
+            .changed();
+        let mut octaves = tex.noise_octaves as i32;
+        if ui.add(egui::Slider::new(&mut octaves, 1..=6).text("Octaves")).changed() {
+            tex.noise_octaves = octaves as u32;
+            changed = true;
+        }
+        let mut seed = tex.seed as i32;
+        if ui.add(egui::Slider::new(&mut seed, 0..=999).text("Seed")).changed() {
+            tex.seed = seed as u32;
+            changed = true;
+        }
+
+        // Speckle
+        changed |= ui
+            .add(egui::Slider::new(&mut tex.speckle_density, 0.0..=0.3).text("Speckle"))
+            .changed();
+        if tex.speckle_density > 0.0 {
+            changed |= ui.color_edit_button_rgb(&mut tex.speckle_color).changed();
+        }
+    });
+
     changed
 }
 
-fn show_color_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
+fn show_lighting_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
     let mut changed = false;
-    ui.label("Base color");
-    changed |= ui.color_edit_button_rgb(&mut params.base_color).changed();
-    changed |= ui
-        .add(egui::Slider::new(&mut params.color_variation, 0.0..=0.3).text("Color variation"))
-        .changed();
-    changed |= ui.checkbox(&mut params.use_secondary, "Secondary color").changed();
-    if params.use_secondary {
-        changed |= ui.color_edit_button_rgb(&mut params.secondary_color).changed();
-    }
-    ui.separator();
-    changed
-}
 
-fn show_noise_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
-    let mut changed = false;
-    ui.label("Noise");
-    changed |= ui
-        .add(egui::Slider::new(&mut params.noise_scale, 0.01..=0.5).text("Scale"))
-        .changed();
-    let mut octaves = params.noise_octaves as i32;
-    if ui.add(egui::Slider::new(&mut octaves, 1..=6).text("Octaves")).changed() {
-        params.noise_octaves = octaves as u32;
-        changed = true;
-    }
-    let mut seed = params.seed as i32;
-    if ui.add(egui::Slider::new(&mut seed, 0..=999).text("Seed")).changed() {
-        params.seed = seed as u32;
-        changed = true;
-    }
-    ui.separator();
-    changed
-}
-
-fn show_bevel_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
-    let mut changed = false;
-    ui.label("Bevel");
-    changed |= ui
-        .add(egui::Slider::new(&mut params.bevel_fraction, 0.0..=0.5).text("Bevel"))
-        .changed();
-
-    changed |= ui.checkbox(&mut params.use_3d_lighting, "3D lighting").changed();
-
-    if !params.use_3d_lighting {
+    if params.style == TileStyle::Bevel {
+        ui.label("Lighting");
+        changed |= ui.checkbox(&mut params.use_3d_lighting, "3D lighting").changed();
+        if !params.use_3d_lighting {
+            changed |= ui
+                .add(egui::Slider::new(&mut params.shadow_strength, 0.0..=1.0).text("Shadow"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(&mut params.highlight_strength, 0.0..=1.0).text("Highlight"))
+                .changed();
+        }
         changed |= ui
-            .add(egui::Slider::new(&mut params.shadow_strength, 0.0..=1.0).text("Shadow"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut params.highlight_strength, 0.0..=1.0).text("Highlight"))
+            .add(egui::Slider::new(&mut params.light_angle, 0.0..=360.0).text("Light angle°"))
             .changed();
     }
-
-    changed |= ui
-        .add(egui::Slider::new(&mut params.light_angle, 0.0..=360.0).text("Light angle°"))
-        .changed();
 
     changed |= ui.checkbox(&mut params.show_edge_lines, "Edge lines").changed();
-
     ui.separator();
-    changed
-}
-
-fn show_speckle_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
-    let mut changed = false;
-    ui.label("Speckle");
-    changed |= ui
-        .add(egui::Slider::new(&mut params.speckle_density, 0.0..=0.3).text("Density"))
-        .changed();
-    if params.speckle_density > 0.0 {
-        changed |= ui.color_edit_button_rgb(&mut params.speckle_color).changed();
-    }
     changed
 }
 
 fn show_rendering_controls(ui: &mut egui::Ui, params: &mut ResMut<TexParams>) -> bool {
     let mut changed = false;
-    ui.separator();
     ui.label("Rendering");
     changed |= ui.checkbox(&mut params.procedural_textures, "Procedural textures").changed();
     changed
@@ -693,7 +824,6 @@ fn regenerate_tileset(
         image.data = Some(pixels);
     }
 
-    // Keep sprite at the same world size regardless of pixel resolution
     let world_size = Vec2::new(image_width() as f32, image_height() as f32);
     for mut sprite in &mut sprite_q {
         sprite.custom_size = Some(world_size);
@@ -758,11 +888,18 @@ fn render_all_tiles(params: &TexParams, pixels_per_unit: f64) -> Vec<u8> {
     let img_h = scaled_image_height(pixels_per_unit);
     let mut pixels = vec![0u8; (img_w * img_h * 4) as usize];
 
-    let perlin = Perlin::new(params.seed);
-    let simplex = OpenSimplex::new(params.seed.wrapping_add(81));
+    let face_perlin = Perlin::new(params.face_texture.seed);
+    let face_simplex = OpenSimplex::new(params.face_texture.seed.wrapping_add(81));
+    let edge_perlin = Perlin::new(params.edge_texture.seed.wrapping_add(500));
+    let edge_simplex = OpenSimplex::new(params.edge_texture.seed.wrapping_add(581));
 
     let tile_px = (TILE_SIZE as f64 * pixels_per_unit).ceil() as u32;
     let gap_px = (TILE_GAP as f64 * pixels_per_unit).ceil() as u32;
+
+    let noise = NoiseSet {
+        face_perlin, face_simplex,
+        edge_perlin, edge_simplex,
+    };
 
     for &(col, row, mask) in &BLOB_LAYOUT {
         let edges = edges_from_blob_mask(mask);
@@ -772,11 +909,18 @@ fn render_all_tiles(params: &TexParams, pixels_per_unit: f64) -> Vec<u8> {
             &mut pixels, img_w,
             origin_x, origin_y, tile_px,
             pixels_per_unit,
-            &edges, params, &perlin, &simplex,
+            &edges, params, &noise,
         );
     }
 
     pixels
+}
+
+struct NoiseSet {
+    face_perlin: Perlin,
+    face_simplex: OpenSimplex,
+    edge_perlin: Perlin,
+    edge_simplex: OpenSimplex,
 }
 
 fn render_single_tile(
@@ -787,44 +931,72 @@ fn render_single_tile(
     pixels_per_unit: f64,
     edges: &BevelEdges,
     params: &TexParams,
-    perlin: &Perlin,
-    simplex: &OpenSimplex,
+    noise: &NoiseSet,
 ) {
-    let bevel = params.bevel_fraction as f64 * TILE_SIZE as f64;
+    let edge_width = params.edge_fraction as f64 * TILE_SIZE as f64;
     let size = TILE_SIZE as f64;
-    let tile_colors = TileBevelColors::new(edges, params);
     let step = 1.0 / pixels_per_unit;
-    // Surface stretch factor: how much longer the bevel surface is than its projection
-    let slope_stretch = if bevel > 0.001 {
-        (1.0 + (BEVEL_DEPTH / bevel).powi(2)).sqrt()
-    } else {
-        1.0
-    };
     let tile_world_x = origin_x as f64 * step;
     let tile_world_y = origin_y as f64 * step;
 
+    // Bevel-specific: precomputed lighting and slope stretch
+    let tile_colors = if params.style == TileStyle::Bevel {
+        Some(TileBevelColors::new(edges, params))
+    } else {
+        None
+    };
+    let slope_stretch = if params.style == TileStyle::Bevel && edge_width > 0.001 {
+        (1.0 + (BEVEL_DEPTH / edge_width).powi(2)).sqrt()
+    } else {
+        1.0
+    };
+
     for py in 0..tile_px {
         for px in 0..tile_px {
-            // Map output pixel back to tile-local coordinates [0, TILE_SIZE)
             let local_x = px as f64 * step;
             let local_y = py as f64 * step;
 
-            let face = determine_bevel_face(edges, local_x, local_y, bevel, size);
-            let (tex_x, tex_y) = project_texture_coords(
-                local_x, local_y, bevel, size, &face, slope_stretch,
-            );
+            let face = determine_tile_face(edges, local_x, local_y, edge_width, size);
+            let is_edge_zone = !matches!(face, TileFace::Top);
+
+            // Pick the right texture config and noise generators
+            let (tex_config, perlin, simplex) = if is_edge_zone {
+                (&params.edge_texture, &noise.edge_perlin, &noise.edge_simplex)
+            } else {
+                (&params.face_texture, &noise.face_perlin, &noise.face_simplex)
+            };
+
+            // Compute texture sampling coordinates
+            let (tex_x, tex_y) = if params.style == TileStyle::Bevel {
+                project_texture_coords(local_x, local_y, edge_width, size, &face, slope_stretch)
+            } else {
+                (local_x, local_y)
+            };
             let world_x = tile_world_x + tex_x;
             let world_y = tile_world_y + tex_y;
 
+            // Sample texture
             let texture_color = if params.procedural_textures {
-                sample_textured_pixel(params, perlin, simplex, world_x, world_y)
+                sample_textured_pixel(tex_config, perlin, simplex, world_x, world_y)
             } else {
-                [params.base_color[0] as f64, params.base_color[1] as f64, params.base_color[2] as f64]
+                [tex_config.base_color[0] as f64, tex_config.base_color[1] as f64, tex_config.base_color[2] as f64]
             };
-            let brightness = rasterize_bevel_brightness_for_face(&tile_colors, &face, edges, local_x, local_y, bevel, size);
-            let lit_color = apply_brightness(texture_color, brightness, params.use_3d_lighting);
+
+            // Apply lighting (bevel style only)
+            let lit_color = if params.style == TileStyle::Bevel {
+                if let Some(ref colors) = tile_colors {
+                    let brightness = rasterize_bevel_brightness_for_face(colors, &face, edges, local_x, local_y, edge_width, size);
+                    apply_brightness(texture_color, brightness, params.use_3d_lighting)
+                } else {
+                    texture_color
+                }
+            } else {
+                texture_color
+            };
+
+            // Edge line overlay
             let final_color = if params.show_edge_lines {
-                apply_edge_line_overlay(lit_color, edges, local_x, local_y, bevel)
+                apply_edge_line_overlay(lit_color, edges, local_x, local_y, edge_width)
             } else {
                 lit_color
             };
@@ -845,14 +1017,14 @@ fn render_single_tile(
 }
 
 fn sample_textured_pixel(
-    params: &TexParams,
+    tex: &TextureConfig,
     perlin: &Perlin,
     simplex: &OpenSimplex,
     world_x: f64,
     world_y: f64,
 ) -> [f64; 3] {
-    let base = sample_pattern(params, perlin, simplex, world_x, world_y);
-    apply_speckle(params, perlin, base, world_x, world_y)
+    let base = sample_pattern(tex, perlin, simplex, world_x, world_y);
+    apply_speckle(tex, perlin, base, world_x, world_y)
 }
 
 // =====================================================================
@@ -879,20 +1051,108 @@ fn edges_from_blob_mask(mask: u8) -> BevelEdges {
 }
 
 // =====================================================================
-// Software rasterizer — determines bevel brightness per pixel by
-// identifying which bevel quad/triangle the pixel falls in and
-// bilinearly interpolating precomputed vertex brightnesses.
+// Face determination — which zone a pixel belongs to
 // =====================================================================
 
-/// Precomputed brightness values for all bevel directions and the face.
+/// Which surface zone a pixel belongs to.
+enum TileFace {
+    Top,
+    North,
+    South,
+    East,
+    West,
+}
+
+/// Determine which face a pixel belongs to. For Bevel style, uses diagonal
+/// splits at convex corners and assigns concave corners to their cardinal
+/// direction. For Ground style, the edge zone uses the same geometry but
+/// without lighting.
+fn determine_tile_face(
+    edges: &BevelEdges,
+    px: f64, py: f64,
+    edge_width: f64, size: f64,
+) -> TileFace {
+    let in_n = edges.n && py < edge_width;
+    let in_s = edges.s && py >= size - edge_width;
+    let in_w = edges.w && px < edge_width;
+    let in_e = edges.e && px >= size - edge_width;
+
+    // Convex corner diagonal splits
+    if in_n && in_w { return if py < px { TileFace::North } else { TileFace::West }; }
+    if in_n && in_e { return if py < size - px { TileFace::North } else { TileFace::East }; }
+    if in_s && in_w { return if py >= size - px { TileFace::South } else { TileFace::West }; }
+    if in_s && in_e { return if py >= px { TileFace::South } else { TileFace::East }; }
+
+    if in_n { return TileFace::North; }
+    if in_s { return TileFace::South; }
+    if in_w { return TileFace::West; }
+    if in_e { return TileFace::East; }
+
+    // Concave corners — diagonal neighbor absent but both cardinals present.
+    // For bevel: a beveled notch. For ground: border texture in the corner.
+    let sx = size - px;
+    let sy = size - py;
+    if edges.inner_nw && px < edge_width && py < edge_width {
+        return if py >= px { TileFace::North } else { TileFace::West };
+    }
+    if edges.inner_ne && sx < edge_width && py < edge_width {
+        return if py >= sx { TileFace::North } else { TileFace::East };
+    }
+    if edges.inner_sw && px < edge_width && sy < edge_width {
+        return if sy >= px { TileFace::South } else { TileFace::West };
+    }
+    if edges.inner_se && sx < edge_width && sy < edge_width {
+        return if sy >= sx { TileFace::South } else { TileFace::East };
+    }
+
+    TileFace::Top
+}
+
+// =====================================================================
+// Texture coordinate projection for bevel surfaces
+// =====================================================================
+
+fn project_texture_coords(
+    local_x: f64, local_y: f64,
+    bevel: f64, size: f64,
+    face: &TileFace,
+    slope_stretch: f64,
+) -> (f64, f64) {
+    match face {
+        TileFace::Top => (local_x, local_y),
+        TileFace::North => {
+            let dist_from_inner = bevel - local_y;
+            let ty = bevel - dist_from_inner * slope_stretch;
+            (local_x, ty)
+        }
+        TileFace::South => {
+            let dist_from_inner = local_y - (size - bevel);
+            let ty = (size - bevel) + dist_from_inner * slope_stretch;
+            (local_x, ty)
+        }
+        TileFace::West => {
+            let dist_from_inner = bevel - local_x;
+            let stretched_x = bevel - dist_from_inner * slope_stretch;
+            (local_y, stretched_x)
+        }
+        TileFace::East => {
+            let dist_from_inner = local_x - (size - bevel);
+            let stretched_x = (size - bevel) + dist_from_inner * slope_stretch;
+            (local_y, stretched_x)
+        }
+    }
+}
+
+// =====================================================================
+// Software rasterizer — bevel brightness
+// =====================================================================
+
 struct TileBevelColors {
     face: f64,
-    // Cardinal bevel brightnesses (used for inner edges and concave corners)
     top: f64,
     bottom: f64,
     left: f64,
     right: f64,
-    // Vertex brightnesses for each cardinal bevel quad's outer edge
     north_left: f64,
     north_right: f64,
     south_left: f64,
@@ -913,8 +1173,8 @@ impl TileBevelColors {
     }
 
     fn from_3d_lighting(edges: &BevelEdges, params: &TexParams) -> Self {
-        let bevel_width = params.bevel_fraction as f64 * TILE_SIZE as f64;
-        let bevel_angle = (BEVEL_DEPTH / bevel_width).atan();
+        let bevel_width = params.edge_fraction as f64 * TILE_SIZE as f64;
+        let bevel_angle = if bevel_width > 0.001 { (BEVEL_DEPTH / bevel_width).atan() } else { 0.0 };
         let bevel_sin = bevel_angle.sin();
         let bevel_cos = bevel_angle.cos();
 
@@ -936,7 +1196,6 @@ impl TileBevelColors {
             let diffuse = light.2.max(0.0);
             AMBIENT + (1.0 - AMBIENT) * diffuse
         };
-        // Directions in Y-up world space (matching beveled_block's coordinate system)
         let top = brightness_3d(0.0, 1.0);
         let bottom = brightness_3d(0.0, -1.0);
         let left = brightness_3d(-1.0, 0.0);
@@ -967,17 +1226,9 @@ impl TileBevelColors {
         let shadow = params.shadow_strength as f64;
         let highlight = params.highlight_strength as f64;
 
-        // For 2D mode, brightness encodes highlight/shadow as offset from 1.0:
-        //   brightness > 1.0 = highlight (lerp toward white)
-        //   brightness < 1.0 = shadow (lerp toward black)
-        //   brightness = 1.0 = no bevel effect (face)
         let bevel_2d = |dir_x: f64, dir_y: f64| -> f64 {
             let dot = dir_x * lx + dir_y * ly;
-            if dot > 0.0 {
-                1.0 + dot * highlight
-            } else {
-                1.0 + dot * shadow
-            }
+            if dot > 0.0 { 1.0 + dot * highlight } else { 1.0 + dot * shadow }
         };
 
         let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
@@ -1004,145 +1255,48 @@ impl TileBevelColors {
     }
 }
 
-/// Determine which bevel region a pixel falls in and return the interpolated
-/// brightness. Layers are applied in the same order as beveled_block's mesh
-/// spawning: face first, then cardinal bevels (N, S, W, E — last overwrites
-/// at corner overlaps), then concave corners on top.
-/// Which surface a pixel belongs to on the beveled tile.
-enum BevelFace {
-    Top,
-    North,
-    South,
-    East,
-    West,
-}
-
-/// Determine which bevel face a pixel belongs to, using the same diagonal
-/// split logic as the brightness rasterizer.
-fn determine_bevel_face(
-    edges: &BevelEdges,
-    px: f64, py: f64,
-    bevel: f64, size: f64,
-) -> BevelFace {
-    let in_n = edges.n && py < bevel;
-    let in_s = edges.s && py >= size - bevel;
-    let in_w = edges.w && px < bevel;
-    let in_e = edges.e && px >= size - bevel;
-
-    // Convex corner diagonal splits
-    if in_n && in_w { return if py < px { BevelFace::North } else { BevelFace::West }; }
-    if in_n && in_e { return if py < size - px { BevelFace::North } else { BevelFace::East }; }
-    if in_s && in_w { return if py >= size - px { BevelFace::South } else { BevelFace::West }; }
-    if in_s && in_e { return if py >= px { BevelFace::South } else { BevelFace::East }; }
-
-    if in_n { return BevelFace::North; }
-    if in_s { return BevelFace::South; }
-    if in_w { return BevelFace::West; }
-    if in_e { return BevelFace::East; }
-
-    // Concave corners belong to whichever cardinal direction they face
-    let sx = size - 1.0 - px;
-    let sy = size - 1.0 - py;
-    if edges.inner_nw && px < bevel && py < bevel {
-        return if py >= px { BevelFace::North } else { BevelFace::West };
-    }
-    if edges.inner_ne && sx < bevel && py < bevel {
-        return if py >= sx { BevelFace::North } else { BevelFace::East };
-    }
-    if edges.inner_sw && px < bevel && sy < bevel {
-        return if sy >= px { BevelFace::South } else { BevelFace::West };
-    }
-    if edges.inner_se && sx < bevel && sy < bevel {
-        return if sy >= sx { BevelFace::South } else { BevelFace::East };
-    }
-
-    BevelFace::Top
-}
-
-/// Adjust texture sampling coordinates for bevel surface projection.
-/// - Stretches the coordinate perpendicular to the edge to match surface distance
-/// - Swaps coordinates on east/west faces so texture patterns orient correctly
-///   (e.g., wide bricks run along the edge, not across it)
-fn project_texture_coords(
-    local_x: f64, local_y: f64,
-    bevel: f64, size: f64,
-    face: &BevelFace,
-    slope_stretch: f64,
-) -> (f64, f64) {
-    match face {
-        BevelFace::Top => (local_x, local_y),
-        BevelFace::North => {
-            let dist_from_inner = bevel - local_y;
-            let ty = bevel - dist_from_inner * slope_stretch;
-            (local_x, ty)
-        }
-        BevelFace::South => {
-            let dist_from_inner = local_y - (size - bevel);
-            let ty = (size - bevel) + dist_from_inner * slope_stretch;
-            (local_x, ty)
-        }
-        BevelFace::West => {
-            // Swap X↔Y so texture orients along the vertical edge
-            let dist_from_inner = bevel - local_x;
-            let stretched_x = bevel - dist_from_inner * slope_stretch;
-            (local_y, stretched_x)
-        }
-        BevelFace::East => {
-            // Swap X↔Y so texture orients along the vertical edge
-            let dist_from_inner = local_x - (size - bevel);
-            let stretched_x = (size - bevel) + dist_from_inner * slope_stretch;
-            (local_y, stretched_x)
-        }
-    }
-}
-
 fn north_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
     let t = py / bevel;
     let s = px / (size - 1.0);
-    let outer = lerp(colors.north_left, colors.north_right, s);
-    lerp(outer, colors.top, t)
+    lerp(lerp(colors.north_left, colors.north_right, s), colors.top, t)
 }
 
 fn south_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
     let t = (size - 1.0 - py) / bevel;
     let s = px / (size - 1.0);
-    let outer = lerp(colors.south_left, colors.south_right, s);
-    lerp(outer, colors.bottom, t)
+    lerp(lerp(colors.south_left, colors.south_right, s), colors.bottom, t)
 }
 
 fn west_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
     let t = px / bevel;
     let s = py / (size - 1.0);
-    let outer = lerp(colors.west_top, colors.west_bottom, s);
-    lerp(outer, colors.left, t)
+    lerp(lerp(colors.west_top, colors.west_bottom, s), colors.left, t)
 }
 
 fn east_bevel(colors: &TileBevelColors, px: f64, py: f64, bevel: f64, size: f64) -> f64 {
     let t = (size - 1.0 - px) / bevel;
     let s = py / (size - 1.0);
-    let outer = lerp(colors.east_top, colors.east_bottom, s);
-    lerp(outer, colors.right, t)
+    lerp(lerp(colors.east_top, colors.east_bottom, s), colors.right, t)
 }
 
 fn rasterize_bevel_brightness_for_face(
     colors: &TileBevelColors,
-    face: &BevelFace,
+    face: &TileFace,
     edges: &BevelEdges,
     px: f64, py: f64,
     bevel: f64, size: f64,
 ) -> f64 {
-    // Cardinal bevels — use the pre-determined face
     let cardinal_brightness = match face {
-        BevelFace::Top => return colors.face,
-        BevelFace::North => north_bevel(colors, px, py, bevel, size),
-        BevelFace::South => south_bevel(colors, px, py, bevel, size),
-        BevelFace::West => west_bevel(colors, px, py, bevel, size),
-        BevelFace::East => east_bevel(colors, px, py, bevel, size),
+        TileFace::Top => return colors.face,
+        TileFace::North => north_bevel(colors, px, py, bevel, size),
+        TileFace::South => south_bevel(colors, px, py, bevel, size),
+        TileFace::West => west_bevel(colors, px, py, bevel, size),
+        TileFace::East => east_bevel(colors, px, py, bevel, size),
     };
 
-    // Concave corners override with flat brightness (higher Z)
-    let sx = size - 1.0 - px;
-    let sy = size - 1.0 - py;
+    // Concave corners override with flat brightness
+    let sx = size - px;
+    let sy = size - py;
     if edges.inner_nw && px < bevel && py < bevel {
         return if py >= px { colors.top } else { colors.left };
     }
@@ -1159,11 +1313,6 @@ fn rasterize_bevel_brightness_for_face(
     cardinal_brightness
 }
 
-// =====================================================================
-/// Apply brightness to texture color.
-/// In 3D mode, brightness is a real multiplier (0.0–1.0).
-/// In 2D mode, brightness encodes highlight/shadow as offset from 1.0:
-///   >1.0 lerps toward white, <1.0 lerps toward black.
 fn apply_brightness(color: [f64; 3], brightness: f64, is_3d: bool) -> [f64; 3] {
     if is_3d {
         [color[0] * brightness, color[1] * brightness, color[2] * brightness]
@@ -1176,6 +1325,7 @@ fn apply_brightness(color: [f64; 3], brightness: f64, is_3d: bool) -> [f64; 3] {
     }
 }
 
+// =====================================================================
 // Edge line overlay
 // =====================================================================
 
@@ -1197,8 +1347,6 @@ fn apply_edge_line_overlay(
     }
 }
 
-/// Check if a pixel falls on any edge line. Returns RGBA overlay if so.
-/// Checks convex edges first, then concave edges.
 fn find_edge_line(
     edges: &BevelEdges,
     px: f64, py: f64,
@@ -1208,68 +1356,44 @@ fn find_edge_line(
     let lighter: (f64, f64, f64, f64) = (1.0, 1.0, 1.0, 0.04);
     let darker: (f64, f64, f64, f64) = (0.0, 0.0, 0.0, 0.05);
 
-    // Face boundaries
     let face_left = if edges.w { bevel } else { 0.0 };
     let face_right = if edges.e { size - bevel } else { size };
     let face_top = if edges.n { bevel } else { 0.0 };
     let face_bottom = if edges.s { size - bevel } else { size };
 
-    // Convex inner square edges (lighter — top of bevel ridge)
-    if edges.n && point_on_horizontal_line(px, py, face_left, face_right, face_top) {
-        return Some(lighter);
-    }
-    if edges.s && point_on_horizontal_line(px, py, face_left, face_right, face_bottom) {
-        return Some(lighter);
-    }
-    if edges.w && point_on_vertical_line(px, py, face_left, face_top, face_bottom) {
-        return Some(lighter);
-    }
-    if edges.e && point_on_vertical_line(px, py, face_right, face_top, face_bottom) {
-        return Some(lighter);
-    }
+    if edges.n && point_on_horizontal_line(px, py, face_left, face_right, face_top) { return Some(lighter); }
+    if edges.s && point_on_horizontal_line(px, py, face_left, face_right, face_bottom) { return Some(lighter); }
+    if edges.w && point_on_vertical_line(px, py, face_left, face_top, face_bottom) { return Some(lighter); }
+    if edges.e && point_on_vertical_line(px, py, face_right, face_top, face_bottom) { return Some(lighter); }
 
-    // Convex corner diagonals (darker — where bevel meets face)
-    if edges.n && edges.w && point_on_segment(px, py, face_left, face_top, 0.0, 0.0) {
-        return Some(darker);
-    }
-    if edges.n && edges.e && point_on_segment(px, py, face_right, face_top, size - 1.0, 0.0) {
-        return Some(darker);
-    }
-    if edges.s && edges.w && point_on_segment(px, py, face_left, face_bottom, 0.0, size - 1.0) {
-        return Some(darker);
-    }
-    if edges.s && edges.e && point_on_segment(px, py, face_right, face_bottom, size - 1.0, size - 1.0) {
-        return Some(darker);
-    }
+    if edges.n && edges.w && point_on_segment(px, py, face_left, face_top, 0.0, 0.0) { return Some(darker); }
+    if edges.n && edges.e && point_on_segment(px, py, face_right, face_top, size - 1.0, 0.0) { return Some(darker); }
+    if edges.s && edges.w && point_on_segment(px, py, face_left, face_bottom, 0.0, size - 1.0) { return Some(darker); }
+    if edges.s && edges.e && point_on_segment(px, py, face_right, face_bottom, size - 1.0, size - 1.0) { return Some(darker); }
 
-    // Concave edge lines
     if edges.inner_nw {
-        let inner_x = bevel;
-        let inner_y = bevel;
-        if point_on_segment(px, py, inner_x, inner_y, inner_x, 0.0) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, 0.0, inner_y) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, 0.0, 0.0) { return Some(darker); }
+        let (ix, iy) = (bevel, bevel);
+        if point_on_segment(px, py, ix, iy, ix, 0.0) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, 0.0, iy) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, 0.0, 0.0) { return Some(darker); }
     }
     if edges.inner_ne {
-        let inner_x = size - bevel;
-        let inner_y = bevel;
-        if point_on_segment(px, py, inner_x, inner_y, inner_x, 0.0) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, size - 1.0, inner_y) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, size - 1.0, 0.0) { return Some(darker); }
+        let (ix, iy) = (size - bevel, bevel);
+        if point_on_segment(px, py, ix, iy, ix, 0.0) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, size - 1.0, iy) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, size - 1.0, 0.0) { return Some(darker); }
     }
     if edges.inner_sw {
-        let inner_x = bevel;
-        let inner_y = size - bevel;
-        if point_on_segment(px, py, inner_x, inner_y, inner_x, size - 1.0) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, 0.0, inner_y) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, 0.0, size - 1.0) { return Some(darker); }
+        let (ix, iy) = (bevel, size - bevel);
+        if point_on_segment(px, py, ix, iy, ix, size - 1.0) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, 0.0, iy) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, 0.0, size - 1.0) { return Some(darker); }
     }
     if edges.inner_se {
-        let inner_x = size - bevel;
-        let inner_y = size - bevel;
-        if point_on_segment(px, py, inner_x, inner_y, inner_x, size - 1.0) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, size - 1.0, inner_y) { return Some(lighter); }
-        if point_on_segment(px, py, inner_x, inner_y, size - 1.0, size - 1.0) { return Some(darker); }
+        let (ix, iy) = (size - bevel, size - bevel);
+        if point_on_segment(px, py, ix, iy, ix, size - 1.0) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, size - 1.0, iy) { return Some(lighter); }
+        if point_on_segment(px, py, ix, iy, size - 1.0, size - 1.0) { return Some(darker); }
     }
 
     None
@@ -1301,65 +1425,53 @@ fn distance_to_segment(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> 
 }
 
 // =====================================================================
-// Material sampling
+// Material sampling — works with TextureConfig instead of TexParams
 // =====================================================================
 
 fn sample_pattern(
-    params: &TexParams,
+    tex: &TextureConfig,
     perlin: &Perlin,
     simplex: &OpenSimplex,
     x: f64,
     y: f64,
 ) -> [f64; 3] {
-    let scale = params.noise_scale as f64;
-    let octaves = params.noise_octaves;
+    let scale = tex.noise_scale as f64;
+    let octaves = tex.noise_octaves;
 
-    let noise_val = match params.pattern {
+    let noise_val = match tex.pattern {
         0 => fbm(perlin, x * scale, y * scale, octaves),
         1 => cellular_noise(x * scale, y * scale),
         2 => ridged_multifractal(perlin, x * scale, y * scale, octaves),
-        3 => stripe_pattern(x, y, params, perlin, simplex),
-        4 => marble_pattern(x, y, params, perlin, simplex),
+        3 => stripe_pattern(x, y, tex, perlin, simplex),
+        4 => marble_pattern(x, y, tex, perlin, simplex),
         5 => turbulence(perlin, x * scale, y * scale, octaves),
         6 => domain_warp(perlin, simplex, x * scale, y * scale, octaves),
         _ => 0.0,
     };
 
-    let var = noise_val * params.color_variation as f64;
-    let base = [
-        params.base_color[0] as f64,
-        params.base_color[1] as f64,
-        params.base_color[2] as f64,
-    ];
+    let var = noise_val * tex.color_variation as f64;
+    let base = [tex.base_color[0] as f64, tex.base_color[1] as f64, tex.base_color[2] as f64];
 
-    if params.use_secondary {
-        let sec = [
-            params.secondary_color[0] as f64,
-            params.secondary_color[1] as f64,
-            params.secondary_color[2] as f64,
-        ];
+    if tex.use_secondary {
+        let sec = [tex.secondary_color[0] as f64, tex.secondary_color[1] as f64, tex.secondary_color[2] as f64];
         let t = (noise_val * 0.5 + 0.5).clamp(0.0, 1.0);
-        [
-            lerp(base[0], sec[0], t) + var,
-            lerp(base[1], sec[1], t) + var,
-            lerp(base[2], sec[2], t) + var,
-        ]
+        [lerp(base[0], sec[0], t) + var, lerp(base[1], sec[1], t) + var, lerp(base[2], sec[2], t) + var]
     } else {
         [base[0] + var, base[1] + var, base[2] + var]
     }
 }
 
-fn stripe_pattern(x: f64, y: f64, params: &TexParams, perlin: &Perlin, simplex: &OpenSimplex) -> f64 {
-    let scale = params.noise_scale as f64;
-    let angle = (params.stripe_angle as f64).to_radians();
+fn stripe_pattern(x: f64, y: f64, tex: &TextureConfig, perlin: &Perlin, simplex: &OpenSimplex) -> f64 {
+    let scale = tex.noise_scale as f64;
+    let angle = (tex.stripe_angle as f64).to_radians();
     let rotated = x * angle.cos() + y * angle.sin();
-    let stripe = fbm(perlin, rotated * scale * 3.0, 0.3, params.noise_octaves);
+    let stripe = fbm(perlin, rotated * scale * 3.0, 0.3, tex.noise_octaves);
     let detail = fbm(simplex, x * scale * 0.5, y * scale * 2.0, 2);
     stripe * 0.8 + detail * 0.2
 }
 
-fn marble_pattern(x: f64, y: f64, params: &TexParams, perlin: &Perlin, simplex: &OpenSimplex) -> f64 {
-    let scale = params.noise_scale as f64;
+fn marble_pattern(x: f64, y: f64, tex: &TextureConfig, perlin: &Perlin, simplex: &OpenSimplex) -> f64 {
+    let scale = tex.noise_scale as f64;
     let warp_x = fbm(perlin, x * scale, y * scale, 3) * 8.0;
     let warp_y = fbm(simplex, x * scale + 5.3, y * scale + 1.7, 3) * 8.0;
     let v = (x * scale + warp_x).sin() * 0.5 + 0.5;
@@ -1367,9 +1479,6 @@ fn marble_pattern(x: f64, y: f64, params: &TexParams, perlin: &Perlin, simplex: 
     v * 0.7 + detail * 0.3
 }
 
-/// Ridged multifractal: like FBM but takes the absolute value of each octave
-/// and inverts it, producing sharp ridges and valleys. Good for cracks, veins,
-/// mountain-like textures.
 fn ridged_multifractal<F: NoiseFn<f64, 2>>(noise: &F, x: f64, y: f64, octaves: u32) -> f64 {
     let mut value = 0.0;
     let mut amplitude = 1.0;
@@ -1386,8 +1495,6 @@ fn ridged_multifractal<F: NoiseFn<f64, 2>>(noise: &F, x: f64, y: f64, octaves: u
     value * 2.0 - 1.0
 }
 
-/// Turbulence: absolute value of FBM. Produces rough, billowing textures
-/// like fire, smoke, or rough stone surfaces.
 fn turbulence<F: NoiseFn<f64, 2>>(noise: &F, x: f64, y: f64, octaves: u32) -> f64 {
     let mut value = 0.0;
     let mut amplitude = 1.0;
@@ -1402,8 +1509,6 @@ fn turbulence<F: NoiseFn<f64, 2>>(noise: &F, x: f64, y: f64, octaves: u32) -> f6
     value / max_amp * 2.0 - 1.0
 }
 
-/// Domain warping: feed noise output back as coordinate offsets, producing
-/// flowing, organic, alien-looking patterns.
 fn domain_warp<F: NoiseFn<f64, 2>, G: NoiseFn<f64, 2>>(
     noise_a: &F, noise_b: &G,
     x: f64, y: f64, octaves: u32,
@@ -1416,17 +1521,13 @@ fn domain_warp<F: NoiseFn<f64, 2>, G: NoiseFn<f64, 2>>(
     fbm(noise_a, x + wx2, y + wy2, octaves)
 }
 
-fn apply_speckle(params: &TexParams, perlin: &Perlin, base: [f64; 3], x: f64, y: f64) -> [f64; 3] {
-    if params.speckle_density <= 0.0 {
+fn apply_speckle(tex: &TextureConfig, perlin: &Perlin, base: [f64; 3], x: f64, y: f64) -> [f64; 3] {
+    if tex.speckle_density <= 0.0 {
         return base;
     }
     let hash = perlin.get([x * 1.731, y * 2.399]);
-    if hash > 1.0 - params.speckle_density as f64 * 2.0 {
-        [
-            params.speckle_color[0] as f64,
-            params.speckle_color[1] as f64,
-            params.speckle_color[2] as f64,
-        ]
+    if hash > 1.0 - tex.speckle_density as f64 * 2.0 {
+        [tex.speckle_color[0] as f64, tex.speckle_color[1] as f64, tex.speckle_color[2] as f64]
     } else {
         base
     }

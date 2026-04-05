@@ -165,6 +165,8 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [bevy-scrollable-ui.md](research/bevy-scrollable-ui.md) — Bevy 0.18 scrollable UI: flexbox gotchas, scroll containers, scrollbar implementation
 - [autotile-blob-patterns.md](research/autotile-blob-patterns.md) — Auto-tiling systems: 47-tile blob patterns, Wang tiles, how they relate, LDtk/Tiled usage
 - [software-rasterizer-vs-distance-field.md](research/software-rasterizer-vs-distance-field.md) — Two approaches for CPU bevel rendering: quad rasterization vs distance-weighted normals
+- [algorithmic-rendering-theory.md](research/algorithmic-rendering-theory.md) — Theory roadmap for fully algorithmic asset rendering: noise, SDFs, biome blending, pseudo-3D, animation
+- [biome-variety-from-simple-parts.md](research/biome-variety-from-simple-parts.md) — Maximizing biome variety from minimal noise axes, overlay systems, and palette modifiers
 
 ### Postmortems
 
