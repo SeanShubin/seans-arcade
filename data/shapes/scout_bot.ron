@@ -8,9 +8,9 @@
             orient: X,
         ),
         "arm": (
-            shape: Box(size: (0.12, 0.4, 0.12)),
+            shape: Box(size: (0.12, 0.2, 0.12)),
             color: (0.25, 0.25, 0.28),
-            pivot: (0.0, -0.2, 0.0),
+            pivot: (0.0, -0.1, 0.0),
         ),
         "blade": (
             shape: Box(size: (0.06, 0.5, 0.04)),
@@ -56,7 +56,7 @@
                             (
                                 name: "blade",
                                 template: "blade",
-                                at: (0.0, -0.45, 0.0),
+                                at: (0.0, -0.25, 0.0),
                             ),
                         ],
                     ),
@@ -69,12 +69,12 @@
                     (
                         name: "wheel_front",
                         template: "wheel",
-                        at: (0.30, 0.18, 0.15),
+                        at: (0.30, 0.18, 0.25),
                     ),
                     (
                         name: "wheel_back",
                         template: "wheel",
-                        at: (0.30, 0.18, -0.15),
+                        at: (0.30, 0.18, -0.25),
                     ),
                 ],
             ),

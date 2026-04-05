@@ -167,11 +167,32 @@ fn process_node(
         let (mesh, material) = make_mesh(meshes, materials, shape, color, node.emissive);
         let mesh_offset = node.pivot.map(to_vec3).unwrap_or(Vec3::ZERO);
         let orient = orient_rotation(node.orient);
-        commands.entity(parent).with_child((
-            Mesh3d(mesh),
-            MeshMaterial3d(material),
-            Transform::from_translation(mesh_offset).with_rotation(orient),
-        ));
+
+        if node.children.is_empty() {
+            // Leaf node: attach mesh directly to parent
+            commands.entity(parent).with_child((
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform::from_translation(mesh_offset).with_rotation(orient),
+            ));
+        } else {
+            // Has children: split shape into its own named child so it can be
+            // toggled independently from the children
+            let shape_name = node.name.as_ref()
+                .map(|n| format!("{n}_shape"))
+                .unwrap_or_else(|| "shape".to_string());
+            let shape_entity = commands.spawn((
+                ShapePart { name: Some(shape_name) },
+                Transform::default(),
+                Visibility::default(),
+            )).id();
+            commands.entity(parent).add_child(shape_entity);
+            commands.entity(shape_entity).with_child((
+                Mesh3d(mesh),
+                MeshMaterial3d(material),
+                Transform::from_translation(mesh_offset).with_rotation(orient),
+            ));
+        }
     }
 
     for child in &node.children {
