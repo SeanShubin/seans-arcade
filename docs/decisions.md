@@ -64,6 +64,13 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Two-tier rendering** — some assets are pre-computed to textures (autotile blobs, terrain materials), others are generated at runtime (animation, effects, biome blending)
 - **Hybrid rasterizer + SDF rendering** — pre-render tiles with the software rasterizer (sharp bevels, one material per tile via `texture_lab`); blend between tiles at runtime with signed distance fields (biome transitions, terrain smoothing, normal maps, lighting) ([research](research/software-rasterizer-vs-distance-field.md))
 
+### Characters & Entities
+- **Robots, not humans** — all characters are mechanical/robotic. Removes uncanny valley, enables modular procedural generation (snap-together parts), and makes parametric animation natural (joints rotate, pistons extend, wheels spin)
+- **Modular body plans** — robots are defined as a tree of parts (chassis, limbs, weapons, locomotion). Variety comes from part count, type, and configuration, not art assets
+- **Reality as baseline, science fiction as vocabulary** — designs are grounded in physical intuition (heavy things are slow, big weapons have recoil, damage is visible) but embrace sci-fi concepts (hover, energy shields, beam weapons). Physics can be violated but physical intuition must not be — the player must always be able to look at something and correctly guess what it does
+- **Visual language over realism** — a player should intuit a robot's capabilities from its shape. Wide base = stable. Big arm = strong but slow. Glowing parts = energy/power. Treads = tough terrain. The visual must communicate the mechanic.
+- **Shape description as data, not code** — entity shapes are described in a pure data format (templates + parameters + context inheritance), interpreted by Rust. Three mechanisms provide the compression power of code without becoming a programming language: templates eliminate literal duplication, parameters eliminate structural duplication, context inheritance eliminates contextual duplication. A fixed set of combinators (mirror, repeat, smooth_union, taper) are executed by the interpreter. ([research](research/shape-description-language.md))
+
 ### Arcade Model (v2+)
 - The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it
 - Chat is **always visible** to everyone — playing or watching a game does not leave the chat

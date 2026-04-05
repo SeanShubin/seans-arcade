@@ -137,6 +137,8 @@ See [Decisions Needed](decisions.md#decisions-needed) in the decision register (
 - [design-topics-to-explore.md](research/design-topics-to-explore.md) — Design topics for future research
 - [maze-key-gate-design.md](research/maze-key-gate-design.md) — Maze generation with keys and gates: configuration knobs, dependency graphs, generation strategy
 - [character-rendering.md](research/character-rendering.md) — Character rendering approaches: goals, tensions, and tradeoffs (open question)
+- [robot-character-design.md](research/robot-character-design.md) — Procedural robot characters: modular body plans, animation, variety generation, visual language
+- [shape-description-language.md](research/shape-description-language.md) — Pure data shape descriptions: templates, parameters, context inheritance, fixed combinators
 - [third-party-assets.md](research/third-party-assets.md) — Free asset packs and tools for prototyping
 - [sprite-metadata-formats.md](research/sprite-metadata-formats.md) — Sprite and spritesheet metadata formats: what they contain, who uses them
 

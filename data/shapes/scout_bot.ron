@@ -1,0 +1,83 @@
+#![enable(implicit_some)]
+// Scout bot — wheels + melee blades (matches procedural_robot defaults)
+(
+    templates: {
+        "wheel": (
+            shape: Cylinder(radius: 0.18, height: 0.1),
+            color: (0.25, 0.25, 0.28),
+            orient: X,
+        ),
+        "arm": (
+            shape: Box(size: (0.12, 0.4, 0.12)),
+            color: (0.25, 0.25, 0.28),
+            pivot: (0.0, -0.2, 0.0),
+        ),
+        "blade": (
+            shape: Box(size: (0.06, 0.5, 0.04)),
+            color: (0.6, 0.25, 0.25),
+        ),
+    },
+
+    root: (
+        name: "root",
+        children: [
+            // Chassis
+            (
+                name: "chassis",
+                shape: Box(size: (0.7, 0.35, 0.5)),
+                at: (0.0, 0.55, 0.0),
+                color: (0.45, 0.45, 0.50),
+            ),
+            // Head / sensor dome
+            (
+                name: "head",
+                at: (0.0, 0.851, 0.0),
+                shape: Sphere(radius: 0.18),
+                color: (0.55, 0.55, 0.60),
+                children: [
+                    (
+                        name: "eye",
+                        shape: Sphere(radius: 0.06),
+                        at: (0.0, 0.0, 0.15),
+                        color: (0.9, 0.2, 0.1),
+                        emissive: true,
+                    ),
+                ],
+            ),
+            // Arms + blades — mirrored across X
+            (
+                mirror: X,
+                children: [
+                    (
+                        name: "arm",
+                        template: "arm",
+                        at: (0.41, 0.675, 0.0),
+                        children: [
+                            (
+                                name: "blade",
+                                template: "blade",
+                                at: (0.0, -0.45, 0.0),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            // Wheels — mirrored across X, front and back
+            (
+                mirror: X,
+                children: [
+                    (
+                        name: "wheel_front",
+                        template: "wheel",
+                        at: (0.42, 0.18, 0.15),
+                    ),
+                    (
+                        name: "wheel_back",
+                        template: "wheel",
+                        at: (0.42, 0.18, -0.15),
+                    ),
+                ],
+            ),
+        ],
+    ),
+)
