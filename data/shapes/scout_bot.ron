@@ -1,5 +1,5 @@
 #![enable(implicit_some)]
-// Scout bot — wheels + melee blades (matches procedural_robot defaults)
+// Scout bot — wheels + melee blades
 (
     templates: {
         "wheel": (
@@ -80,4 +80,32 @@
             ),
         ],
     ),
+
+    animations: [
+        // Idle — subtle head bob
+        (
+            name: "idle",
+            channels: [
+                (part: "head", property: Translation, motion: Bob(amplitude: 0.01, freq: 2.0), axis: Y),
+            ],
+        ),
+        // Walk — arms swing, wheels spin, chassis bobs
+        (
+            name: "walk",
+            channels: [
+                // Arm swing (opposite phase for mirrored arm)
+                (part: "arm", property: Rotation, motion: Oscillate(amplitude: 0.3, speed: 10.0, offset: 0.0), axis: X),
+                (part: "arm_mirrored", property: Rotation, motion: Oscillate(amplitude: 0.3, speed: 10.0, offset: 3.14159), axis: X),
+                // Wheel spin
+                (part: "wheel_front", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
+                (part: "wheel_back", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
+                (part: "wheel_front_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
+                (part: "wheel_back_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
+                // Chassis bob
+                (part: "chassis", property: Translation, motion: Oscillate(amplitude: 0.01, speed: 20.0, offset: 0.0), axis: Y),
+                // Head bob
+                (part: "head", property: Translation, motion: Oscillate(amplitude: 0.015, speed: 20.0, offset: 0.0), axis: Y),
+            ],
+        ),
+    ],
 )

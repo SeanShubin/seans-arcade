@@ -17,6 +17,8 @@ pub struct ShapeFile {
     #[serde(default)]
     pub templates: HashMap<String, ShapeNode>,
     pub root: ShapeNode,
+    #[serde(default)]
+    pub animations: Vec<AnimState>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -65,6 +67,48 @@ pub struct RepeatSpec {
 }
 
 // =====================================================================
+// Animation data
+// =====================================================================
+
+#[derive(Deserialize, Clone, Debug)]
+pub enum JointMotion {
+    /// Oscillates: sin(phase * speed + offset) * amplitude
+    Oscillate { amplitude: f32, speed: f32, #[serde(default)] offset: f32 },
+    /// Continuous spin: phase * rate
+    Spin { rate: f32 },
+    /// Constant bob: sin(time * freq) * amplitude (always active, ignores walk phase)
+    Bob { amplitude: f32, freq: f32 },
+}
+
+/// An animation channel: which part, what property, what motion.
+#[derive(Deserialize, Clone, Debug)]
+pub struct AnimChannel {
+    /// Name of the part to animate (matches ShapeNode.name).
+    pub part: String,
+    /// Which property to animate.
+    pub property: AnimProperty,
+    /// The motion curve.
+    pub motion: JointMotion,
+    /// Which axis to apply the motion on.
+    pub axis: Axis,
+}
+
+#[derive(Deserialize, Clone, Copy, Debug)]
+pub enum AnimProperty {
+    /// Rotate around the axis (radians).
+    Rotation,
+    /// Translate along the axis.
+    Translation,
+}
+
+/// A named animation state (e.g., "walk", "idle", "attack").
+#[derive(Deserialize, Clone, Debug)]
+pub struct AnimState {
+    pub name: String,
+    pub channels: Vec<AnimChannel>,
+}
+
+// =====================================================================
 // Components
 // =====================================================================
 
@@ -73,8 +117,142 @@ pub struct ShapePart {
     pub name: Option<String>,
 }
 
+/// Stores the original transform of a part, so animation can reset to it.
+#[derive(Component, Clone, Debug)]
+pub struct BaseTransform(pub Transform);
+
 #[derive(Component)]
 pub struct ShapeRoot;
+
+/// Runtime animation state, attached to the root entity.
+#[derive(Component, Clone, Debug)]
+pub struct ShapeAnimator {
+    pub states: Vec<AnimState>,
+    pub active_state: Option<usize>,
+    pub phase: f32,
+    pub speed: f32,
+    pub needs_reset: bool,
+}
+
+impl ShapeAnimator {
+    pub fn new(states: Vec<AnimState>) -> Self {
+        let active = if states.is_empty() { None } else { Some(0) };
+        Self { states, active_state: active, phase: 0.0, speed: 1.0, needs_reset: false }
+    }
+
+    pub fn active_name(&self) -> &str {
+        self.active_state
+            .and_then(|i| self.states.get(i))
+            .map(|s| s.name.as_str())
+            .unwrap_or("(none)")
+    }
+
+    pub fn cycle_state(&mut self) {
+        if self.states.is_empty() { return; }
+        self.active_state = Some(match self.active_state {
+            Some(i) => (i + 1) % self.states.len(),
+            None => 0,
+        });
+        self.phase = 0.0;
+        self.needs_reset = true;
+    }
+}
+
+/// System that advances animation phase and applies animation channels to parts.
+pub fn animate_shapes(
+    time: Res<Time>,
+    mut animators: Query<(&mut ShapeAnimator, &Children), With<ShapeRoot>>,
+    parts: Query<(&ShapePart, Option<&Children>)>,
+    base_transforms: Query<&BaseTransform>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (mut animator, root_children) in &mut animators {
+        animator.phase += time.delta_secs() * animator.speed;
+        let phase = animator.phase;
+        let t = time.elapsed_secs();
+
+        // Build a map of part name → entity by walking the tree
+        let mut name_map: HashMap<String, Vec<Entity>> = HashMap::new();
+        collect_named_parts(root_children, &parts, &mut name_map);
+
+        // Reset all parts to base transforms before applying new animation
+        if animator.needs_reset {
+            animator.needs_reset = false;
+            for entities in name_map.values() {
+                for &entity in entities {
+                    if let Ok(base) = base_transforms.get(entity) {
+                        if let Ok(mut tf) = transforms.get_mut(entity) {
+                            *tf = base.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        let Some(state_idx) = animator.active_state else { continue };
+        let Some(state) = animator.states.get(state_idx) else { continue };
+
+        for channel in &state.channels {
+            let Some(entities) = name_map.get(&channel.part) else { continue };
+
+            let value = evaluate_motion(&channel.motion, phase, t);
+
+            for &entity in entities {
+                let base = base_transforms.get(entity).map(|b| b.0).unwrap_or_default();
+                let Ok(mut tf) = transforms.get_mut(entity) else { continue };
+                match channel.property {
+                    AnimProperty::Rotation => {
+                        let rot = match channel.axis {
+                            Axis::X => Quat::from_rotation_x(value),
+                            Axis::Y => Quat::from_rotation_y(value),
+                            Axis::Z => Quat::from_rotation_z(value),
+                        };
+                        tf.rotation = base.rotation * rot;
+                    }
+                    AnimProperty::Translation => {
+                        // Start from base, add animation offset
+                        match channel.axis {
+                            Axis::X => tf.translation.x = base.translation.x + value,
+                            Axis::Y => tf.translation.y = base.translation.y + value,
+                            Axis::Z => tf.translation.z = base.translation.z + value,
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn collect_named_parts(
+    children: &Children,
+    parts: &Query<(&ShapePart, Option<&Children>)>,
+    map: &mut HashMap<String, Vec<Entity>>,
+) {
+    for child in children.iter() {
+        if let Ok((part, grandchildren)) = parts.get(child) {
+            if let Some(ref name) = part.name {
+                map.entry(name.clone()).or_default().push(child);
+            }
+            if let Some(gc) = grandchildren {
+                collect_named_parts(gc, parts, map);
+            }
+        }
+    }
+}
+
+fn evaluate_motion(motion: &JointMotion, phase: f32, time: f32) -> f32 {
+    match motion {
+        JointMotion::Oscillate { amplitude, speed, offset } => {
+            (phase * speed + offset).sin() * amplitude
+        }
+        JointMotion::Spin { rate } => {
+            phase * rate
+        }
+        JointMotion::Bob { amplitude, freq } => {
+            (time * freq).sin() * amplitude
+        }
+    }
+}
 
 // =====================================================================
 // Interpreter
@@ -95,10 +273,13 @@ pub fn spawn_shape(
     shape_file: &ShapeFile,
 ) -> Entity {
     let default_color = (0.5, 0.5, 0.5);
+    let root_tf = Transform::from_translation(to_vec3(shape_file.root.at));
     let root = commands.spawn((
         ShapeRoot,
         ShapePart { name: shape_file.root.name.clone() },
-        Transform::from_translation(to_vec3(shape_file.root.at)),
+        BaseTransform(root_tf),
+        ShapeAnimator::new(shape_file.animations.clone()),
+        root_tf,
         Visibility::default(),
     )).id();
 
@@ -183,6 +364,7 @@ fn process_node(
                 .unwrap_or_else(|| "shape".to_string());
             let shape_entity = commands.spawn((
                 ShapePart { name: Some(shape_name) },
+                BaseTransform(Transform::default()),
                 Transform::default(),
                 Visibility::default(),
             )).id();
@@ -209,9 +391,11 @@ fn spawn_child(
     templates: &HashMap<String, ShapeNode>,
     inherited_color: (f32, f32, f32),
 ) {
+    let child_tf = Transform::from_translation(to_vec3(node.at));
     let child = commands.spawn((
         ShapePart { name: node.name.clone() },
-        Transform::from_translation(to_vec3(node.at)),
+        BaseTransform(child_tf),
+        child_tf,
         Visibility::default(),
     )).id();
     commands.entity(parent).add_child(child);

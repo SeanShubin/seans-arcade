@@ -100,6 +100,7 @@ fn main() {
             orbit_camera,
             camera_zoom,
             keyboard_input,
+            animate_shapes,
             update_hud,
             draw_gizmos,
         ))
@@ -281,6 +282,7 @@ fn keyboard_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut needs_reload: ResMut<NeedsReload>,
     mut debug: ResMut<DebugSettings>,
+    mut animators: Query<&mut ShapeAnimator>,
 ) {
     if keys.just_pressed(KeyCode::KeyR) {
         needs_reload.0 = true;
@@ -288,6 +290,12 @@ fn keyboard_input(
     }
     if keys.just_pressed(KeyCode::F1) {
         debug.show_gizmos = !debug.show_gizmos;
+    }
+    if keys.just_pressed(KeyCode::Tab) {
+        for mut animator in &mut animators {
+            animator.cycle_state();
+            info!("Animation: {}", animator.active_name());
+        }
     }
 }
 
@@ -351,6 +359,7 @@ fn part_tree_ui(
     mut contexts: EguiContexts,
     roots: Query<Entity, With<ShapeRoot>>,
     parts: Query<(&ShapePart, Option<&Children>, &Visibility)>,
+    mut animators: Query<&mut ShapeAnimator>,
     mut commands: Commands,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -358,6 +367,24 @@ fn part_tree_ui(
     let mut toggles: Vec<(Entity, Visibility)> = Vec::new();
 
     egui::SidePanel::left("part_tree").min_width(200.0).show(ctx, |ui| {
+        // Animation controls
+        for root in &roots {
+            if let Ok(mut animator) = animators.get_mut(root) {
+                ui.heading("Animation");
+                ui.horizontal(|ui| {
+                    ui.label("State:");
+                    if ui.button(animator.active_name()).clicked() {
+                        animator.cycle_state();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Speed:");
+                    ui.add(egui::Slider::new(&mut animator.speed, 0.0..=5.0));
+                });
+                ui.separator();
+            }
+        }
+
         ui.heading("Part Tree");
         ui.separator();
 
