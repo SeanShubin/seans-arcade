@@ -69,12 +69,12 @@
                     (
                         name: "wheel_front",
                         template: "wheel",
-                        at: (0.42, 0.18, 0.15),
+                        at: (0.30, 0.18, 0.15),
                     ),
                     (
                         name: "wheel_back",
                         template: "wheel",
-                        at: (0.42, 0.18, -0.15),
+                        at: (0.30, 0.18, -0.15),
                     ),
                 ],
             ),
