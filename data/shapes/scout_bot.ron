@@ -2,10 +2,21 @@
 // Scout bot — wheels + melee blades
 (
     templates: {
+        "spoke": (
+            shape: Box(size: (0.02, 0.32, 0.02)),
+            color: (0.35, 0.35, 0.38),
+        ),
         "wheel": (
-            shape: Cylinder(radius: 0.18, height: 0.1),
-            color: (0.25, 0.25, 0.28),
+            // Hub + 8 spokes (4 bars at 0, 45, 90, 135 degrees)
+            shape: Cylinder(radius: 0.05, height: 0.08),
+            color: (0.3, 0.3, 0.33),
             orient: X,
+            children: [
+                (template: "spoke"),
+                (template: "spoke", rotate: (45.0, X)),
+                (template: "spoke", rotate: (90.0, X)),
+                (template: "spoke", rotate: (135.0, X)),
+            ],
         ),
         "arm": (
             shape: Box(size: (0.12, 0.2, 0.12)),
@@ -89,18 +100,18 @@
                 (part: "head", property: Translation, motion: Bob(amplitude: 0.01, freq: 2.0), axis: Y),
             ],
         ),
-        // Walk — arms swing, wheels spin, chassis bobs
+        // Walk — arms swing, wheels spin around axle (X), chassis bobs
         (
             name: "walk",
             channels: [
                 // Arm swing (opposite phase for mirrored arm)
                 (part: "arm", property: Rotation, motion: Oscillate(amplitude: 0.3, speed: 10.0, offset: 0.0), axis: X),
                 (part: "arm_mirrored", property: Rotation, motion: Oscillate(amplitude: 0.3, speed: 10.0, offset: 3.14159), axis: X),
-                // Wheel spin
-                (part: "wheel_front", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
-                (part: "wheel_back", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
-                (part: "wheel_front_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
-                (part: "wheel_back_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: Y),
+                // Wheel spin around axle (X axis after orient)
+                (part: "wheel_front", property: Rotation, motion: Spin(rate: 8.0), axis: X),
+                (part: "wheel_back", property: Rotation, motion: Spin(rate: 8.0), axis: X),
+                (part: "wheel_front_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: X),
+                (part: "wheel_back_mirrored", property: Rotation, motion: Spin(rate: 8.0), axis: X),
                 // Chassis bob
                 (part: "chassis", property: Translation, motion: Oscillate(amplitude: 0.01, speed: 20.0, offset: 0.0), axis: Y),
                 // Head bob

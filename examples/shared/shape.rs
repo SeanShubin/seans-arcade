@@ -37,6 +37,9 @@ pub struct ShapeNode {
     pub emissive: bool,
     #[serde(default)]
     pub orient: Option<Axis>,
+    /// Rotation in degrees around an axis.
+    #[serde(default)]
+    pub rotate: Option<(f32, Axis)>,
     #[serde(default)]
     pub template: Option<String>,
     #[serde(default)]
@@ -391,7 +394,15 @@ fn spawn_child(
     templates: &HashMap<String, ShapeNode>,
     inherited_color: (f32, f32, f32),
 ) {
-    let child_tf = Transform::from_translation(to_vec3(node.at));
+    let mut child_tf = Transform::from_translation(to_vec3(node.at));
+    if let Some((degrees, axis)) = node.rotate {
+        let rad = degrees.to_radians();
+        child_tf.rotation = match axis {
+            Axis::X => Quat::from_rotation_x(rad),
+            Axis::Y => Quat::from_rotation_y(rad),
+            Axis::Z => Quat::from_rotation_z(rad),
+        };
+    }
     let child = commands.spawn((
         ShapePart { name: node.name.clone() },
         BaseTransform(child_tf),
@@ -476,6 +487,7 @@ fn merge_template(instance: &ShapeNode, template: &ShapeNode) -> ShapeNode {
         color: instance.color.or(template.color),
         emissive: instance.emissive || template.emissive,
         orient: instance.orient.or(template.orient),
+        rotate: instance.rotate.or(template.rotate),
         template: None,
         children: if instance.children.is_empty() {
             template.children.clone()
