@@ -21,6 +21,7 @@ mod shape;
 
 use bevy::input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
+use bevy_egui::{EguiContexts, EguiPrimaryContextPass, EguiPlugin, egui};
 use shape::*;
 
 // =====================================================================
@@ -80,19 +81,20 @@ fn main() {
     let shape_path = std::env::args().nth(1).unwrap_or_else(|| DEFAULT_SHAPE_PATH.to_string());
 
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+        .add_plugins((DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Shape Viewer".into(),
                 resolution: bevy::window::WindowResolution::new(900, 700),
                 ..default()
             }),
             ..default()
-        }))
+        }), EguiPlugin::default()))
         .insert_resource(ShapeFilePath(shape_path))
         .insert_resource(NeedsReload(true))
         .insert_resource(OrbitState::default())
         .insert_resource(DebugSettings::default())
         .add_systems(Startup, (setup_scene, setup_hud))
+        .add_systems(EguiPrimaryContextPass, part_tree_ui)
         .add_systems(Update, (
             reload_shape,
             orbit_camera,
@@ -144,7 +146,7 @@ fn setup_hud(mut commands: Commands) {
         HudLabel,
         Text::new(""),
         TextFont { font_size: 18.0, ..default() },
-        Node { margin: UiRect::all(Val::Px(10.0)), ..default() },
+        Node { margin: UiRect::all(Val::Px(10.0)), left: Val::Px(220.0), ..default() },
     ));
 }
 
@@ -212,7 +214,9 @@ fn orbit_camera(
     mut motion: MessageReader<MouseMotion>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    mut contexts: EguiContexts,
 ) {
+    let egui_wants = contexts.ctx_mut().is_ok_and(|ctx| ctx.wants_pointer_input());
     let Ok((mut tf, proj)) = camera.single_mut() else { return };
     let scale = match proj {
         Projection::Orthographic(o) => o.scale,
@@ -226,7 +230,7 @@ fn orbit_camera(
             let up = tf.up();
             orbit.target += (-ev.delta.x * right + ev.delta.y * up) * scale;
         }
-    } else if mouse.pressed(MouseButton::Left) {
+    } else if mouse.pressed(MouseButton::Left) && !egui_wants {
         // Left mouse drag to orbit
         for ev in motion.read() {
             orbit.yaw += ev.delta.x * 0.3;
@@ -328,5 +332,142 @@ fn draw_gizmos(
             0.02,
             Color::srgb(1.0, 1.0, 0.0),
         );
+    }
+}
+
+// =====================================================================
+// Part tree UI
+// =====================================================================
+
+/// Tri-state: all visible, all hidden, or mixed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TriState {
+    Visible,
+    Hidden,
+    Mixed,
+}
+
+fn part_tree_ui(
+    mut contexts: EguiContexts,
+    roots: Query<Entity, With<ShapeRoot>>,
+    parts: Query<(&ShapePart, Option<&Children>, &Visibility)>,
+    mut commands: Commands,
+) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+
+    let mut toggles: Vec<(Entity, Visibility)> = Vec::new();
+
+    egui::SidePanel::left("part_tree").min_width(200.0).show(ctx, |ui| {
+        ui.heading("Part Tree");
+        ui.separator();
+
+        for root in &roots {
+            draw_tree_node(ui, root, &parts, &mut toggles, 0, &[]);
+        }
+    });
+
+    for (entity, vis) in toggles {
+        commands.entity(entity).insert(vis);
+    }
+}
+
+/// Compute the tri-state for a node based on its own visibility and all descendants.
+fn compute_tri_state(
+    entity: Entity,
+    parts: &Query<(&ShapePart, Option<&Children>, &Visibility)>,
+) -> TriState {
+    let Ok((_part, children, vis)) = parts.get(entity) else {
+        return TriState::Visible;
+    };
+
+    let self_visible = *vis != Visibility::Hidden;
+
+    // Collect shape-part children
+    let child_parts: Vec<Entity> = children
+        .map(|c| c.iter().filter(|e| parts.get(*e).is_ok()).collect())
+        .unwrap_or_default();
+
+    if child_parts.is_empty() {
+        // Leaf node — just this node's visibility
+        return if self_visible { TriState::Visible } else { TriState::Hidden };
+    }
+
+    // Branch node — combine own state with children
+    let mut all_visible = self_visible;
+    let mut all_hidden = !self_visible;
+    for child in &child_parts {
+        match compute_tri_state(*child, parts) {
+            TriState::Visible => all_hidden = false,
+            TriState::Hidden => all_visible = false,
+            TriState::Mixed => { all_visible = false; all_hidden = false; }
+        }
+    }
+
+    if all_visible { TriState::Visible }
+    else if all_hidden { TriState::Hidden }
+    else { TriState::Mixed }
+}
+
+/// Collect all shape-part entities in the subtree (including the root).
+fn collect_subtree(
+    entity: Entity,
+    parts: &Query<(&ShapePart, Option<&Children>, &Visibility)>,
+    out: &mut Vec<Entity>,
+) {
+    if parts.get(entity).is_err() { return; }
+    out.push(entity);
+    if let Ok((_, Some(children), _)) = parts.get(entity) {
+        for child in children.iter() {
+            collect_subtree(child, parts, out);
+        }
+    }
+}
+
+fn draw_tree_node(
+    ui: &mut egui::Ui,
+    entity: Entity,
+    parts: &Query<(&ShapePart, Option<&Children>, &Visibility)>,
+    toggles: &mut Vec<(Entity, Visibility)>,
+    depth: usize,
+    ancestors: &[Entity],
+) {
+    let Ok((part, children, _vis)) = parts.get(entity) else { return };
+
+    let state = compute_tri_state(entity, parts);
+    let label = part.name.as_deref().unwrap_or("(unnamed)");
+    let indent = "  ".repeat(depth);
+    let icon = match state {
+        TriState::Visible => "[+]",
+        TriState::Hidden => "[-]",
+        TriState::Mixed => "[~]",
+    };
+
+    if ui.selectable_label(false, format!("{indent}{icon} {label}")).clicked() {
+        // Clicking visible or mixed → hide all. Clicking hidden → show all.
+        let new_vis = match state {
+            TriState::Hidden => Visibility::Inherited,
+            _ => Visibility::Hidden,
+        };
+        let mut subtree = Vec::new();
+        collect_subtree(entity, parts, &mut subtree);
+        for e in subtree {
+            toggles.push((e, new_vis));
+        }
+        // When showing, ensure all ancestors are also visible
+        if new_vis == Visibility::Inherited {
+            for &ancestor in ancestors {
+                toggles.push((ancestor, Visibility::Inherited));
+            }
+        }
+    }
+
+    if let Some(children) = children {
+        let mut path = ancestors.to_vec();
+        path.push(entity);
+        for child in children.iter() {
+            if parts.get(child).is_ok() {
+                draw_tree_node(ui, child, parts, toggles, depth + 1, &path);
+            }
+        }
     }
 }
