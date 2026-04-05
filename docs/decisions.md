@@ -62,6 +62,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Vector graphics and parametric animation** — characters and objects are composed from geometric primitives, animated through math and state, not sprite sheets ([research](research/procedural-animation.md))
 - **Smooth biome transitions** — biome boundaries blend gradually, not hard tile edges; interpolation across biome weight maps
 - **Two-tier rendering** — some assets are pre-computed to textures (autotile blobs, terrain materials), others are generated at runtime (animation, effects, biome blending)
+- **Hybrid rasterizer + SDF rendering** — pre-render tiles with the software rasterizer (sharp bevels, one material per tile via `texture_lab`); blend between tiles at runtime with signed distance fields (biome transitions, terrain smoothing, normal maps, lighting) ([research](research/software-rasterizer-vs-distance-field.md))
 
 ### Arcade Model (v2+)
 - The arcade is the **main application** — chat is the always-on social layer, games are sub-applications within it

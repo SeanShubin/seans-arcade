@@ -95,9 +95,10 @@ Building blocks used across all the above.
 
 Each prototype exercises a theory area and produces something visible.
 
-1. **Noise visualizer** — render Simplex, fBM, Voronoi, domain warping to screen. Interactive parameters.
-2. **SDF shape composer** — draw shapes from SDF primitives with boolean ops and smooth blending.
-3. **Autotile blob generator** — use SDFs + noise to procedurally generate all 47 blob tiles for one terrain type.
-4. **Normal map lighting** — generate normal maps from height/SDF, apply directional lighting for pseudo-3D.
-5. **Biome blender** — generate a multi-biome map with smooth weight-based transitions.
-6. **Parametric character** — animate a vector graphics character with easing functions and procedural state.
+1. **Noise visualizer** — render Simplex, fBM, Voronoi, domain warping to screen. Interactive parameters. *(done: `noise_visualizer.rs`)*
+2. **SDF shape composer** — draw shapes from SDF primitives with boolean ops and smooth blending. *(done: `sdf_composer.rs`)*
+3. **Normal map lighting** — generate normal maps from height/SDF, apply directional lighting for pseudo-3D.
+4. **Biome blender** — generate a multi-biome map with smooth SDF-based transitions between rasterized tiles.
+5. **Parametric character** — animate a vector graphics character with easing functions and procedural state.
+
+Note: Autotile blob tile generation is already covered by `texture_lab.rs` (software rasterizer approach). Per the hybrid rendering decision, tiles are pre-rendered with the rasterizer; SDFs are used at runtime for blending, normal maps, and lighting — not for generating the tiles themselves.
