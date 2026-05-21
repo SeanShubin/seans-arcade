@@ -50,6 +50,9 @@ struct RelayState {
     total_messages: u64,
     /// Messages processed since last S3 sync.
     messages_since_sync: u64,
+    /// Content hash of the last value uploaded for each S3 key. Lets the sync
+    /// skip PUTs for objects whose content has not changed since last upload.
+    s3_uploaded: HashMap<String, u64>,
 }
 
 impl RelayState {
@@ -272,17 +275,62 @@ fn execute_actions(
             RelayAction::SyncChatHistory => {
                 if let Some(s3) = s3_client {
                     let persisted = protocol::persist_entries(&state.chat_history);
-                    s3.put_json("admin/chat-history.json", &persisted);
+                    put_if_changed(
+                        s3,
+                        &mut state.s3_uploaded,
+                        "admin/chat-history.json",
+                        &persisted,
+                    );
                 }
             }
         }
     }
 }
 
-const S3_SYNC_INTERVAL_SECS: u64 = 15;
+const S3_SYNC_INTERVAL_SECS: u64 = 300;
+
+/// Hash of arbitrary bytes, used to detect whether an S3 object's content changed.
+fn content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// PUT a JSON object to S3 only if its content differs from the last upload of
+/// this key. Returns true if a PUT was performed. This keeps unchanged objects
+/// (log files from prior runs, idle chat history) from being re-uploaded on
+/// every sync cycle — the source of the runaway S3 PutObject cost.
+fn put_if_changed<T: serde::Serialize>(
+    s3: &s3::S3Client,
+    uploaded: &mut HashMap<String, u64>,
+    key: &str,
+    value: &T,
+) -> bool {
+    let bytes = match serde_json::to_vec(value) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("relay: s3: failed to serialize {key}: {e}");
+            return false;
+        }
+    };
+    let hash = content_hash(&bytes);
+    if uploaded.get(key) == Some(&hash) {
+        return false;
+    }
+    if s3.put_json(key, value) {
+        uploaded.insert(key.to_string(), hash);
+        true
+    } else {
+        false
+    }
+}
 
 /// Write all admin state to S3. Best-effort: logs errors but never crashes.
-/// If any file is deleted from S3, it gets recreated on the next sync cycle.
+/// The heartbeat, connected users, and identity list are written every cycle.
+/// Chat history and log files are written only when their content changed since
+/// the last upload (see put_if_changed) — restart the relay to force a full
+/// re-sync.
 fn sync_to_s3(state: &mut RelayState, s3: &s3::S3Client, start_time: Instant, relay_start_rfc3339: &str) {
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -320,9 +368,9 @@ fn sync_to_s3(state: &mut RelayState, s3: &s3::S3Client, start_time: Instant, re
         },
     );
 
-    // Chat history (shared across all versions)
+    // Chat history (shared across all versions) — written only when it changed.
     let persisted = protocol::persist_entries(&state.chat_history);
-    s3.put_json("admin/chat-history.json", &persisted);
+    put_if_changed(s3, &mut state.s3_uploaded, "admin/chat-history.json", &persisted);
 
     // Registered identities (names only, no secrets)
     s3.put_json(
@@ -333,10 +381,12 @@ fn sync_to_s3(state: &mut RelayState, s3: &s3::S3Client, start_time: Instant, re
         },
     );
 
-    // Upload local log files to S3
+    // Upload local log files to S3 — only files whose content changed since the
+    // last upload. Log files from prior relay runs never change, so after the
+    // first sync they are skipped instead of being re-uploaded every cycle.
     for (filename, contents) in state.log_writer.all_log_files() {
         let key = format!("admin/logs/{filename}");
-        s3.put_json(&key, &contents);
+        put_if_changed(s3, &mut state.s3_uploaded, &key, &contents);
     }
 }
 
@@ -492,6 +542,7 @@ mod tests {
                 chat_history: VecDeque::new(),
                 total_messages: 0,
                 messages_since_sync: 0,
+                s3_uploaded: HashMap::new(),
             };
             Self {
                 state,
@@ -908,6 +959,7 @@ fn main() {
         chat_history: restored_history,
         total_messages: 0,
         messages_since_sync: 0,
+        s3_uploaded: HashMap::new(),
     };
 
     // Write schema.json for our version on startup

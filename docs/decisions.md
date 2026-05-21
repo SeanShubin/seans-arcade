@@ -63,6 +63,7 @@ This file contains **decisions only**. Analysis, rationale, alternatives conside
 - **Smooth biome transitions** — biome boundaries blend gradually, not hard tile edges; interpolation across biome weight maps
 - **Two-tier rendering** — some assets are pre-computed to textures (autotile blobs, terrain materials), others are generated at runtime (animation, effects, biome blending)
 - **Hybrid rasterizer + SDF rendering** — pre-render tiles with the software rasterizer (sharp bevels, one material per tile via `texture_lab`); blend between tiles at runtime with signed distance fields (biome transitions, terrain smoothing, normal maps, lighting) ([research](research/software-rasterizer-vs-distance-field.md))
+- **Procedural materials + stickers** — base surface appearance is a spatial function (noise evaluated at world/object position), not UV-mapped textures. Seams between tiles, faces, and parts are invisible because the function is continuous. Placed details (logos, stripes, damage marks) use stickers — bounded SDF shapes projected onto surfaces and composited over the base material. Neither system uses texture files. ([research](research/procedural-materials-and-stickers.md))
 
 ### Characters & Entities
 - **Robots, not humans** — all characters are mechanical/robotic. Removes uncanny valley, enables modular procedural generation (snap-together parts), and makes parametric animation natural (joints rotate, pistons extend, wheels spin)
